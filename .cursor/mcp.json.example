@@ -1,0 +1,14 @@
+{
+    "mcpServers": {
+      "excalidraw": {
+        "command": "node",
+        "args": [
+          "/path/to/your/directory/mcp_excalidraw/src/index.js"
+        ],
+        "env": {
+          "LOG_LEVEL": "info",
+          "DEBUG": "false"
+        }
+      }
+    }
+  } 

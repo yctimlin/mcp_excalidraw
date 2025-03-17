@@ -83,6 +83,32 @@ To use this server with the Claude Desktop application, add the following config
 }
 ```
 
+## Integration with Cursor
+
+To use this server with Cursor, create a `.cursor/mcp.json` file in your workspace with the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": [
+        "/path/to/your/directory/mcp_excalidraw/src/index.js"
+      ],
+      "env": {
+        "LOG_LEVEL": "info",
+        "DEBUG": "false"
+      }
+    }
+  }
+}
+```
+
+Make sure to:
+1. Replace `/path/to/your/directory` with the actual absolute path to your mcp_excalidraw installation
+2. Create the `.cursor` directory if it doesn't exist
+3. Ensure the path to `index.js` is correct and the file exists
+
 ### Docker Integration
 
 ```json
