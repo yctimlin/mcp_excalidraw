@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/yctimlin-mcp-excalidraw-badge.png)](https://mseep.ai/app/yctimlin-mcp-excalidraw)
+
 # Excalidraw MCP Server: Powerful Drawing API for LLM Integration
 
 A comprehensive Model Context Protocol (MCP) server that enables seamless interaction with Excalidraw diagrams and drawings. This server provides LLMs (Large Language Models) with the ability to create, modify, query, and manipulate Excalidraw drawings through a structured, developer-friendly API.
