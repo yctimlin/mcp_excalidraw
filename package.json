@@ -14,7 +14,8 @@
     "lint": "eslint src/**/*.js",
     "build": "tsc",
     "docker:build": "docker build -t mcp/excalidraw .",
-    "docker:run": "docker run -p 3000:3000 mcp/excalidraw"
+    "docker:run": "docker run -p 3000:3000 mcp/excalidraw",
+    "prepare": "node -e \"try { require('fs').chmodSync('./src/cli.js', '755') } catch(e) { console.log(e) }\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
@@ -37,5 +38,16 @@
     "drawing"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ]
 } 

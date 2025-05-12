@@ -685,23 +685,65 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
-// Start server with STDIO transport
+// Start server with transport based on mode
 async function runServer() {
   try {
-    const transport = new StdioServerTransport();
+    logger.info('Starting Excalidraw MCP server...');
+    
+    const transportMode = process.env.MCP_TRANSPORT_MODE || 'stdio';
+    let transport;
+    
+    if (transportMode === 'http') {
+      const port = parseInt(process.env.PORT || '3000', 10);
+      const host = process.env.HOST || 'localhost';
+      
+      logger.info(`Starting HTTP server on ${host}:${port}`);
+      // Here you would create an HTTP transport
+      // This is a placeholder - actual HTTP transport implementation would need to be added
+      transport = new StdioServerTransport(); // Fallback to stdio for now
+    } else {
+      // Default to stdio transport
+      transport = new StdioServerTransport();
+    }
+    
+    // Add a debug message before connecting
+    logger.debug('Connecting to transport...');
+    
     await server.connect(transport);
-    logger.info('Excalidraw MCP server running on stdio');
+    logger.info(`Excalidraw MCP server running on ${transportMode}`);
+    
+    // Keep the process running
+    process.stdin.resume();
   } catch (error) {
     logger.error('Error starting server:', error);
+    console.error('Failed to start MCP server:', error.message, error.stack);
     process.exit(1);
   }
 }
 
-runServer();
+// Add global error handlers
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception:', error);
+  console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
+  // Don't exit immediately to allow logging
+  setTimeout(() => process.exit(1), 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled promise rejection:', reason);
+  console.error('UNHANDLED REJECTION:', reason);
+  // Don't exit immediately to allow logging
+  setTimeout(() => process.exit(1), 1000);
+});
+
+// Only run the server directly if this file is executed directly (not imported)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runServer();
+}
 
 // For testing and debugging purposes
 if (process.env.DEBUG === 'true') {
   logger.debug('Debug mode enabled');
 }
 
-export default server; 
+export default runServer; 

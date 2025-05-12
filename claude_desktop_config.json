@@ -1,14 +1,8 @@
 {
   "mcpServers": {
-    "excalidraw": {
-      "command": "node",
-      "args": [
-        "src/index.js"
-      ],
-      "env": {
-        "LOG_LEVEL": "info",
-        "DEBUG": "false"
-      }
+    "mcp_excalidraw": {
+      "command": "npx",
+      "args": ["-y", "excalidraw-mcp"]
     }
   }
-} 
+}

@@ -1,3 +1,4 @@
 node_modules
 .env
 package-lock.json
+.cursor

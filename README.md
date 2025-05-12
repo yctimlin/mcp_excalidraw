@@ -1,6 +1,28 @@
 # Excalidraw MCP Server: Powerful Drawing API for LLM Integration
 
+> **📣 NEWS: We're excited to announce npx support!** You can now run Excalidraw MCP directly using `npx excalidraw-mcp` without installation. See Quick Start below for details.
+
 A comprehensive Model Context Protocol (MCP) server that enables seamless interaction with Excalidraw diagrams and drawings. This server provides LLMs (Large Language Models) with the ability to create, modify, query, and manipulate Excalidraw drawings through a structured, developer-friendly API.
+
+## Quick Start
+
+You can run the Excalidraw MCP server directly using npx:
+
+```bash
+npx excalidraw-mcp
+```
+
+### Examples
+
+Run with default options:
+```bash
+npx excalidraw-mcp
+```
+
+Enable debug logging:
+```bash
+npx excalidraw-mcp --debug
+```
 
 ## Features
 
@@ -71,13 +93,24 @@ To use this server with the Claude Desktop application, add the following config
 ```json
 {
   "mcpServers": {
-    "excalidraw": {
-      "command": "node",
-      "args": ["src/index.js"],
-      "env": {
-        "LOG_LEVEL": "info",
-        "DEBUG": "false"
-      }
+    "mcp_excalidraw": {
+      "command": "npx",
+      "args": ["-y", "excalidraw-mcp"]
+    }
+  }
+}
+```
+
+## Integration with Cursor
+
+To use this server with the Cursor application, add the following configuration to the "mcpServers" section of your `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp_excalidraw": {
+      "command": "npx",
+      "args": ["-y", "excalidraw-mcp"]
     }
   }
 }
@@ -171,4 +204,20 @@ Here are some practical examples of how to use the Excalidraw MCP server:
 
 ## License
 
-This Excalidraw MCP server is licensed under the MIT License. You are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository. 
+This Excalidraw MCP server is licensed under the MIT License. You are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+
+## Development
+
+Clone the repository and install dependencies:
+
+```bash
+git clone <repository-url>
+cd excalidraw-mcp
+npm install
+```
+
+Start the development server:
+
+```bash
+npm run dev
+``` 
