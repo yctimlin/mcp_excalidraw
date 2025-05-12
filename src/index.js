@@ -1,3 +1,7 @@
+// Disable colors to prevent ANSI color codes from breaking JSON parsing
+process.env.NODE_DISABLE_COLORS = '1';
+process.env.NO_COLOR = '1';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { 
@@ -716,7 +720,7 @@ async function runServer() {
     process.stdin.resume();
   } catch (error) {
     logger.error('Error starting server:', error);
-    console.error('Failed to start MCP server:', error.message, error.stack);
+    process.stderr.write(`Failed to start MCP server: ${error.message}\n${error.stack}\n`);
     process.exit(1);
   }
 }
@@ -724,22 +728,15 @@ async function runServer() {
 // Add global error handlers
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught exception:', error);
-  console.error('UNCAUGHT EXCEPTION:', error.message, error.stack);
-  // Don't exit immediately to allow logging
+  process.stderr.write(`UNCAUGHT EXCEPTION: ${error.message}\n${error.stack}\n`);
   setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled promise rejection:', reason);
-  console.error('UNHANDLED REJECTION:', reason);
-  // Don't exit immediately to allow logging
+  process.stderr.write(`UNHANDLED REJECTION: ${reason}\n`);
   setTimeout(() => process.exit(1), 1000);
 });
-
-// Only run the server directly if this file is executed directly (not imported)
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runServer();
-}
 
 // For testing and debugging purposes
 if (process.env.DEBUG === 'true') {

@@ -70,13 +70,13 @@ async function main() {
     await runServer();
 
   } catch (error) {
-    console.error('Error starting MCP server:', error);
+    process.stderr.write(`Error starting MCP server: ${error}\n`);
     process.exit(1);
   }
 }
 
 function showHelp() {
-  console.log(`
+  process.stderr.write(`
   Excalidraw MCP Server
 
   Usage: 
@@ -94,10 +94,10 @@ function showHelp() {
     npx excalidraw-mcp --port 4000
     npx excalidraw-mcp --mode http
     npx excalidraw-mcp --debug
-  `);
+  \n`);
 }
 
 main().catch(error => {
-  console.error('Fatal error:', error);
+  process.stderr.write(`Fatal error: ${error}\n`);
   process.exit(1);
 }); 
