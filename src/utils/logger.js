@@ -2,21 +2,26 @@ import winston from 'winston';
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
+
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
     winston.format.uncolorize(),
-    winston.format.json()
+    winston.format.printf(info =>
+      `${info.timestamp} [${info.level}] ${info.message}`
+    )
   ),
+
   transports: [
     new winston.transports.Console({
-      stderrLevels: ['error', 'warn', 'info', 'debug', 'silly'],
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.uncolorize(),
-        winston.format.simple()
-      )
+      level: 'warn',                 // only warn+error to stderr
+      stderrLevels: ['warn','error']
+    }),
+
+    new winston.transports.File({
+      filename: 'excalidraw.log',    // all levels to file
+      level: 'debug'
     })
   ]
 });
 
-export default logger; 
+export default logger;
