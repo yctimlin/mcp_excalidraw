@@ -139,6 +139,26 @@ To use this server with the Cursor application, add the following configuration 
 }
 ```
 
+## Integration with Cursor
+
+To use this server with Cursor, create a `.cursor/mcp.json` file in your workspace with the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcp_excalidraw": {
+      "command": "npx",
+      "args": ["-y", "excalidraw-mcp"]
+    }
+  }
+}
+```
+
+Make sure to:
+1. Replace `/path/to/your/directory` with the actual absolute path to your mcp_excalidraw installation
+2. Create the `.cursor` directory if it doesn't exist
+3. Ensure the path to `index.js` is correct and the file exists
+
 ### Docker Integration
 
 ```json
