@@ -1,16 +1,39 @@
 # Excalidraw MCP Server: Powerful Drawing API for LLM Integration
 
-> **📣 NEWS: We're excited to announce npx support!** You can now run Excalidraw MCP directly using `npx excalidraw-mcp` without installation. See Quick Start below for details.
+> **📣 NEWS: Version 1.0.0 is now published to npm!** You can run Excalidraw MCP directly using `npx excalidraw-mcp` without installation. No setup required - just run and enjoy!
 
 A comprehensive Model Context Protocol (MCP) server that enables seamless interaction with Excalidraw diagrams and drawings. This server provides LLMs (Large Language Models) with the ability to create, modify, query, and manipulate Excalidraw drawings through a structured, developer-friendly API.
 
 ## Quick Start
 
-You can run the Excalidraw MCP server directly using npx:
+You can run the Excalidraw MCP server directly using npx without installing anything:
 
 ```bash
 npx excalidraw-mcp
 ```
+
+If you prefer to install it globally:
+
+```bash
+npm install -g excalidraw-mcp
+excalidraw-mcp
+```
+
+### Options
+
+The following command-line options are available:
+
+```
+-d, --debug            Enable debug logging
+-?, --help             Show this help message
+```
+
+> **Note:** The following options are currently only fully functional in the Docker version:
+> ```
+> -p, --port <port>      Port to run the server on (default: 3000)
+> -h, --host <host>      Host to bind the server to (default: localhost)
+> -m, --mode <mode>      Transport mode: 'stdio' or 'http' (default: stdio)
+> ```
 
 ### Examples
 
@@ -138,6 +161,20 @@ To use this server with the Cursor application, add the following configuration 
 ### NPM Installation
 
 ```bash
+# Install globally
+npm install -g excalidraw-mcp
+
+# Run the server
+excalidraw-mcp
+```
+
+### Local Development Setup
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd excalidraw-mcp
+
 # Install dependencies
 npm install
 
