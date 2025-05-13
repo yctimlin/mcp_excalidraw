@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/yctimlin-mcp-excalidraw-badge.png)](https://mseep.ai/app/yctimlin-mcp-excalidraw)
+
 # Excalidraw MCP Server: Powerful Drawing API for LLM Integration
 
 > **📣 NEWS: Version 1.0.0 is now published to npm!** You can run Excalidraw MCP directly using `npx excalidraw-mcp` without installation. No setup required - just run and enjoy!
