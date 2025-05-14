@@ -4,6 +4,10 @@
 
 A comprehensive Model Context Protocol (MCP) server that enables seamless interaction with Excalidraw diagrams and drawings. This server provides LLMs (Large Language Models) with the ability to create, modify, query, and manipulate Excalidraw drawings through a structured, developer-friendly API.
 
+<a href="https://glama.ai/mcp/servers/@yctimlin/mcp_excalidraw">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@yctimlin/mcp_excalidraw/badge" alt="Excalidraw Server MCP server" />
+</a>
+
 ## Quick Start
 
 You can run the Excalidraw MCP server directly using npx without installing anything:
@@ -277,4 +281,4 @@ Start the development server:
 
 ```bash
 npm run dev
-``` 
+```
