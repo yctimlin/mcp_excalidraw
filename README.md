@@ -1,6 +1,8 @@
-# Excalidraw MCP Canvas: Live Visual Diagramming with AI Integration
+# MCP Excalidraw Server: Advanced Live Visual Diagramming with AI Integration
 
 A comprehensive system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
+
+> **🚀 NEW: Now available as `mcp-excalidraw-server` on npm!** Install with `npm install -g mcp-excalidraw-server` or run directly with `npx mcp-excalidraw-server`.
 
 ## 🚀 What This System Does
 
@@ -55,9 +57,35 @@ A comprehensive system that combines **Excalidraw's powerful drawing capabilitie
 - Node.js 16+ 
 - npm or yarn
 
-### **1. Clone and Install**
+### **Option 1: NPM Installation (Recommended)**
+
+#### **Global Installation**
 ```bash
-git clone <repository-url>
+# Install globally
+npm install -g mcp-excalidraw-server
+
+# Run the server
+mcp-excalidraw-server
+```
+
+#### **Run Without Installation**
+```bash
+# Run directly with npx (no installation needed)
+npx mcp-excalidraw-server
+```
+
+#### **Local Project Installation**
+```bash
+# Install in your project
+npm install mcp-excalidraw-server
+
+# Run from node_modules
+npx mcp-excalidraw-server
+```
+
+### **Option 2: Clone from Source**
+```bash
+git clone https://github.com/yctimlin/mcp_excalidraw.git
 cd mcp_excalidraw
 npm install
 ```
@@ -174,35 +202,102 @@ The MCP server provides these tools for creating visual diagrams:
 
 ## 🔌 Integration with Claude Desktop
 
+### **Using NPM Package (Recommended)**
+
 Add this configuration to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "excalidraw_canvas": {
-      "command": "node",
-      "args": ["/path/to/mcp_excalidraw/src/index.js"],
+    "excalidraw": {
+      "command": "npx",
+      "args": ["-y", "mcp-excalidraw-server"]
     }
   }
 }
 ```
 
-## Integration with Cursor
+### **Using Global Installation**
 
-Add this configuration to your `claude_desktop_config.json`:
+If you installed globally with `npm install -g mcp-excalidraw-server`:
 
 ```json
 {
-    "mcpServers": {
-      "mcp_excalidraw": {
-        "command": "node",
-        "args": ["/path/to/mcp_excalidraw/src/index.js"]
+  "mcpServers": {
+    "excalidraw": {
+      "command": "mcp-excalidraw-server",
+      "args": []
+    }
+  }
+}
+```
+
+### **Using Source Installation**
+
+If you cloned from source:
+
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": ["/path/to/mcp_excalidraw/src/index.js"]
     }
   }
 }
 ```
 
 **Important**: Replace `/path/to/mcp_excalidraw` with the actual absolute path to your installation.
+
+## 🔧 Integration with Other Tools
+
+### **Cursor IDE**
+
+Add to your `claude_desktop_config.json` or MCP settings:
+
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "npx",
+      "args": ["-y", "mcp-excalidraw-server"]
+    }
+  }
+}
+```
+
+### **VS Code MCP Extension**
+
+For VS Code MCP extension, add to your settings:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "excalidraw": {
+        "command": "npx",
+        "args": ["-y", "mcp-excalidraw-server"]
+      }
+    }
+  }
+}
+```
+
+### **Command Line Usage**
+
+```bash
+# Run directly with npx (no installation needed)
+npx mcp-excalidraw-server
+
+# Run with global installation
+mcp-excalidraw-server
+
+# Run with custom canvas server URL
+EXPRESS_SERVER_URL=http://localhost:8080 npx mcp-excalidraw-server
+
+# Run with debug logging
+DEBUG=true npx mcp-excalidraw-server
+```
 
 ## 🛠️ Environment Variables
 

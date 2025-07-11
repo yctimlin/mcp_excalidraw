@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // Disable colors to prevent ANSI color codes from breaking JSON parsing
 process.env.NODE_DISABLE_COLORS = '1';
 process.env.NO_COLOR = '1';

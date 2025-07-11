@@ -1,15 +1,19 @@
 {
-  "name": "excalidraw-mcp",
+  "name": "mcp-excalidraw-server",
   "version": "1.0.0",
-  "description": "MCP server for Excalidraw",
+  "description": "Advanced MCP server for Excalidraw with real-time canvas, WebSocket sync, and comprehensive diagram management",
   "main": "src/index.js",
   "type": "module",
+  "bin": {
+    "mcp-excalidraw-server": "src/index.js"
+  },
   "scripts": {
     "start": "node src/index.js",
     "canvas": "node src/server.js",
     "build": "vite build",
     "dev": "concurrently \"npm run canvas\" \"vite\"",
-    "production": "npm run build && npm run canvas"
+    "production": "npm run build && npm run canvas",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
@@ -32,21 +36,42 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "excalidraw",
     "model-context-protocol",
     "ai",
-    "drawing"
+    "drawing",
+    "diagrams",
+    "canvas",
+    "real-time",
+    "websocket",
+    "visualization",
+    "claude",
+    "ai-tools"
   ],
-  "author": "",
+  "author": {
+    "name": "yctimlin",
+    "email": "c22647809@gmail.com"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yctimlin/mcp_excalidraw.git"
+  },
+  "homepage": "https://github.com/yctimlin/mcp_excalidraw#readme",
+  "bugs": {
+    "url": "https://github.com/yctimlin/mcp_excalidraw/issues"
+  },
   "engines": {
     "node": ">=16.0.0"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "src/**/*",
+    "dist/**/*",
     "README.md",
     "LICENSE"
   ]
