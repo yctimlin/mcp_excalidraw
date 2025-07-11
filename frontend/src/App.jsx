@@ -312,10 +312,32 @@ function App() {
     }
   }
 
-  const clearCanvas = () => {
+  const clearCanvas = async () => {
     if (excalidrawAPI) {
-      excalidrawAPI.updateScene({ elements: [] })
-      showNotification('Canvas cleared!', 'success')
+      try {
+        // First, get all current elements
+        const response = await fetch('/api/elements')
+        const result = await response.json()
+        
+        if (result.success && result.elements) {
+          // Delete all elements from backend
+          const deletePromises = result.elements.map(element => 
+            fetch(`/api/elements/${element.id}`, { method: 'DELETE' })
+          )
+          
+          await Promise.all(deletePromises)
+          console.log('All elements deleted from backend')
+        }
+        
+        // Clear the frontend canvas
+        excalidrawAPI.updateScene({ elements: [] })
+        showNotification('Canvas cleared completely!', 'success')
+      } catch (error) {
+        console.error('Error clearing canvas:', error)
+        // Still clear frontend even if backend fails
+        excalidrawAPI.updateScene({ elements: [] })
+        showNotification('Canvas cleared (frontend only)', 'warning')
+      }
     }
   }
 

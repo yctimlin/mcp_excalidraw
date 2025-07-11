@@ -17,9 +17,104 @@ import {
   generateId, 
   EXCALIDRAW_ELEMENT_TYPES 
 } from './types.js';
+import fetch from 'node-fetch';
 
 // Load environment variables
 dotenv.config();
+
+// Express server configuration
+const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || 'http://localhost:3000';
+const ENABLE_CANVAS_SYNC = process.env.ENABLE_CANVAS_SYNC !== 'false'; // Default to true
+
+// Helper functions to sync with Express server (canvas)
+async function syncToCanvas(operation, data) {
+  if (!ENABLE_CANVAS_SYNC) {
+    logger.debug('Canvas sync disabled, skipping');
+    return null;
+  }
+
+  try {
+    let url, options;
+    
+    switch (operation) {
+      case 'create':
+        url = `${EXPRESS_SERVER_URL}/api/elements`;
+        options = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        };
+        break;
+        
+      case 'update':
+        url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
+        options = {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        };
+        break;
+        
+      case 'delete':
+        url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
+        options = { method: 'DELETE' };
+        break;
+        
+      case 'batch_create':
+        url = `${EXPRESS_SERVER_URL}/api/elements/batch`;
+        options = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ elements: data })
+        };
+        break;
+        
+      default:
+        logger.warn(`Unknown sync operation: ${operation}`);
+        return null;
+    }
+
+    logger.debug(`Syncing to canvas: ${operation}`, { url, data });
+    const response = await fetch(url, options);
+    
+    if (!response.ok) {
+      throw new Error(`Canvas sync failed: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    logger.debug(`Canvas sync successful: ${operation}`, result);
+    return result;
+    
+  } catch (error) {
+    logger.warn(`Canvas sync failed for ${operation}:`, error.message);
+    // Don't throw - we want MCP operations to work even if canvas is unavailable
+    return null;
+  }
+}
+
+// Helper to sync element creation to canvas
+async function createElementOnCanvas(elementData) {
+  const result = await syncToCanvas('create', elementData);
+  return result?.element || elementData;
+}
+
+// Helper to sync element update to canvas  
+async function updateElementOnCanvas(elementData) {
+  const result = await syncToCanvas('update', elementData);
+  return result?.element || elementData;
+}
+
+// Helper to sync element deletion to canvas
+async function deleteElementOnCanvas(elementId) {
+  const result = await syncToCanvas('delete', { id: elementId });
+  return result;
+}
+
+// Helper to sync batch creation to canvas
+async function batchCreateElementsOnCanvas(elementsData) {
+  const result = await syncToCanvas('batch_create', elementsData);
+  return result?.elements || elementsData;
+}
 
 // In-memory storage for scene state
 const sceneState = {
@@ -261,6 +356,40 @@ const server = new Server(
             required: ['elementIds']
           }
         },
+        batch_create_elements: {
+          description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              elements: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: { 
+                      type: 'string', 
+                      enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+                    },
+                    x: { type: 'number' },
+                    y: { type: 'number' },
+                    width: { type: 'number' },
+                    height: { type: 'number' },
+                    backgroundColor: { type: 'string' },
+                    strokeColor: { type: 'string' },
+                    strokeWidth: { type: 'number' },
+                    roughness: { type: 'number' },
+                    opacity: { type: 'number' },
+                    text: { type: 'string' },
+                    fontSize: { type: 'number' },
+                    fontFamily: { type: 'string' }
+                  },
+                  required: ['type', 'x', 'y']
+                }
+              }
+            },
+            required: ['elements']
+          }
+        },
       }
     }
   }
@@ -275,7 +404,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case 'create_element': {
         const params = ElementSchema.parse(args);
-        logger.info('Creating element', { type: params.type });
+        logger.info('Creating element via MCP', { type: params.type });
 
         const id = generateId();
         const element = {
@@ -286,10 +415,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           version: 1
         };
 
+        // Store locally (MCP server storage)
         elements.set(id, element);
         
+        // Sync to canvas (Express server + WebSocket broadcast)
+        const canvasElement = await createElementOnCanvas(element);
+        
+        const result = canvasElement || element;
+        logger.info('Element created via MCP and synced to canvas', { 
+          id: result.id, 
+          type: result.type,
+          synced: !!canvasElement 
+        });
+        
         return {
-          content: [{ type: 'text', text: JSON.stringify(element, null, 2) }]
+          content: [{ 
+            type: 'text', 
+            text: `Element created successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still created locally)'}` 
+          }]
         };
       }
       
@@ -312,10 +455,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           version: existingElement.version + 1
         };
 
+        // Store locally (MCP server storage)
         elements.set(id, updatedElement);
         
+        // Sync to canvas (Express server + WebSocket broadcast)
+        const canvasElement = await updateElementOnCanvas(updatedElement);
+        
+        const result = canvasElement || updatedElement;
+        logger.info('Element updated via MCP and synced to canvas', { 
+          id: result.id, 
+          synced: !!canvasElement 
+        });
+        
         return {
-          content: [{ type: 'text', text: JSON.stringify(updatedElement, null, 2) }]
+          content: [{ 
+            type: 'text', 
+            text: `Element updated successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still updated locally)'}` 
+          }]
         };
       }
       
@@ -325,10 +481,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         
         if (!elements.has(id)) throw new Error(`Element with ID ${id} not found`);
         
+        // Delete locally (MCP server storage)
         elements.delete(id);
         
+        // Sync to canvas (Express server + WebSocket broadcast)
+        const canvasResult = await deleteElementOnCanvas(id);
+        
+        const result = { id, deleted: true, syncedToCanvas: !!canvasResult };
+        logger.info('Element deleted via MCP and synced to canvas', result);
+        
         return {
-          content: [{ type: 'text', text: JSON.stringify({ id, deleted: true }, null, 2) }]
+          content: [{ 
+            type: 'text', 
+            text: `Element deleted successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasResult ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still deleted locally)'}` 
+          }]
         };
       }
       
@@ -480,6 +646,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = { unlocked: true, elementIds };
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+        };
+      }
+      
+      case 'batch_create_elements': {
+        const params = z.object({ elements: z.array(ElementSchema) }).parse(args);
+        logger.info('Batch creating elements via MCP', { count: params.elements.length });
+
+        const createdElements = [];
+        
+        // Create each element with unique ID
+        for (const elementData of params.elements) {
+          const id = generateId();
+          const element = {
+            id,
+            ...elementData,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1
+          };
+          
+          // Store locally (MCP server storage)
+          elements.set(id, element);
+          createdElements.push(element);
+        }
+        
+        // Sync all elements to canvas at once (Express server + WebSocket broadcast)
+        const canvasElements = await batchCreateElementsOnCanvas(createdElements);
+        
+        const result = {
+          success: true,
+          elements: canvasElements || createdElements,
+          count: createdElements.length,
+          syncedToCanvas: !!canvasElements
+        };
+        
+        logger.info('Batch elements created via MCP and synced to canvas', { 
+          count: result.count,
+          synced: result.syncedToCanvas 
+        });
+        
+        return {
+          content: [{ 
+            type: 'text', 
+            text: `${result.count} elements created successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${result.syncedToCanvas ? '✅ All elements synced to canvas' : '⚠️  Canvas sync failed (elements still created locally)'}` 
+          }]
         };
       }
       
@@ -683,6 +894,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
         required: ['elementIds']
       }
+    },
+    {
+      name: 'batch_create_elements',
+      description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          elements: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type: { 
+                  type: 'string', 
+                  enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+                },
+                x: { type: 'number' },
+                y: { type: 'number' },
+                width: { type: 'number' },
+                height: { type: 'number' },
+                backgroundColor: { type: 'string' },
+                strokeColor: { type: 'string' },
+                strokeWidth: { type: 'number' },
+                roughness: { type: 'number' },
+                opacity: { type: 'number' },
+                text: { type: 'string' },
+                fontSize: { type: 'number' },
+                fontFamily: { type: 'string' }
+              },
+              required: ['type', 'x', 'y']
+            }
+          }
+        },
+        required: ['elements']
+      }
     }
   ];
   
@@ -741,6 +987,14 @@ process.on('unhandledRejection', (reason, promise) => {
 // For testing and debugging purposes
 if (process.env.DEBUG === 'true') {
   logger.debug('Debug mode enabled');
+}
+
+// Start the server if this file is run directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runServer().catch(error => {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  });
 }
 
 export default runServer; 
