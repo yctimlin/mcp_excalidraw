@@ -4,24 +4,12 @@
   "description": "MCP server for Excalidraw",
   "main": "src/index.js",
   "type": "module",
-  "bin": {
-    "excalidraw-mcp": "./src/cli.js"
-  },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "server": "node src/server.js",
-    "server:dev": "nodemon src/server.js",
-    "frontend:dev": "vite",
-    "frontend:build": "vite build",
-    "frontend:preview": "vite preview",
-    "build": "npm run frontend:build",
-    "poc": "concurrently \"npm run server\" \"npm run frontend:dev\"",
-    "test": "jest",
-    "lint": "eslint src/**/*.js",
-    "docker:build": "docker build -t mcp/excalidraw .",
-    "docker:run": "docker run -p 3000:3000 mcp/excalidraw",
-    "prepare": "node -e \"try { require('fs').chmodSync('./src/cli.js', '755') } catch(e) { console.log(e) }\""
+    "canvas": "node src/server.js",
+    "build": "vite build",
+    "dev": "concurrently \"npm run canvas\" \"vite\"",
+    "production": "npm run build && npm run canvas"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
@@ -40,9 +28,6 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.6.0",
     "concurrently": "^9.2.0",
-    "eslint": "^8.56.0",
-    "jest": "^29.7.0",
-    "nodemon": "^3.0.2",
     "vite": "^6.3.5"
   },
   "keywords": [

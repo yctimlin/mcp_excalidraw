@@ -27,11 +27,8 @@ const wss = new WebSocketServer({ server });
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the build directory for production
-// or from the old public directory for development
-const staticDir = process.env.NODE_ENV === 'production' 
-  ? path.join(__dirname, '../public/dist')
-  : path.join(__dirname, '../public');
+// Serve static files from the build directory
+const staticDir = path.join(__dirname, '../dist');
 app.use(express.static(staticDir));
 
 // WebSocket connections
@@ -345,9 +342,7 @@ app.post('/api/elements/batch', (req, res) => {
 
 // Serve the frontend
 app.get('/', (req, res) => {
-  const htmlFile = process.env.NODE_ENV === 'production' 
-    ? path.join(__dirname, '../public/dist/index.html')
-    : path.join(__dirname, '../public/index.html');
+  const htmlFile = path.join(__dirname, '../dist/index.html');
   res.sendFile(htmlFile);
 });
 
