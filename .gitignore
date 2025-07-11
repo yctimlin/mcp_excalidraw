@@ -3,3 +3,4 @@ node_modules
 package-lock.json
 .cursor
 *.excalidraw
+public/dist/assets/

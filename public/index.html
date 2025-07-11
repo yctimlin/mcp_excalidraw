@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excalidraw POC - Backend API Integration</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #333;
+            font-size: 24px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: #218838;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .status-connected {
+            background-color: #28a745;
+        }
+        
+        .status-disconnected {
+            background-color: #dc3545;
+        }
+        
+        .canvas-container {
+            height: calc(100vh - 80px);
+            width: 100%;
+            position: relative;
+        }
+        
+        .api-panel {
+            position: fixed;
+            right: 20px;
+            top: 100px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 20px;
+            width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+        
+        .api-panel h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 18px;
+        }
+        
+        .api-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        label {
+            font-weight: 500;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .toggle-panel {
+            position: fixed;
+            right: 20px;
+            top: 60px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            z-index: 1001;
+        }
+        
+        .api-panel.hidden {
+            display: none;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            border-radius: 4px;
+            color: white;
+            font-size: 14px;
+            z-index: 1002;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .notification.success {
+            background-color: #28a745;
+        }
+        
+        .notification.error {
+            background-color: #dc3545;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .element-count {
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Excalidraw POC - Backend API Integration</h1>
+        <div class="controls">
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+            <div class="element-count">
+                Elements: <span id="elementCount">0</span>
+            </div>
+            <button class="btn-secondary" onclick="clearCanvas()">Clear Canvas</button>
+            <button class="btn-primary" onclick="createSampleElements()">Create Sample Elements</button>
+        </div>
+    </div>
+    
+    <button class="toggle-panel" onclick="toggleApiPanel()">API Panel</button>
+    
+    <div class="api-panel" id="apiPanel">
+        <h3>Create Element via API</h3>
+        <form class="api-form" onsubmit="createElementFromForm(event)">
+            <div class="form-group">
+                <label for="elementType">Element Type:</label>
+                <select id="elementType" required>
+                    <option value="rectangle">Rectangle</option>
+                    <option value="ellipse">Ellipse</option>
+                    <option value="diamond">Diamond</option>
+                    <option value="text">Text</option>
+                    <option value="arrow">Arrow</option>
+                    <option value="line">Line</option>
+                </select>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="x">X Position:</label>
+                    <input type="number" id="x" value="100" required>
+                </div>
+                <div class="form-group">
+                    <label for="y">Y Position:</label>
+                    <input type="number" id="y" value="100" required>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="width">Width:</label>
+                    <input type="number" id="width" value="100">
+                </div>
+                <div class="form-group">
+                    <label for="height">Height:</label>
+                    <input type="number" id="height" value="100">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="text">Text (for text elements):</label>
+                <input type="text" id="text" placeholder="Enter text content">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="backgroundColor">Background Color:</label>
+                    <input type="color" id="backgroundColor" value="#ffffff">
+                </div>
+                <div class="form-group">
+                    <label for="strokeColor">Stroke Color:</label>
+                    <input type="color" id="strokeColor" value="#000000">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="strokeWidth">Stroke Width:</label>
+                <input type="number" id="strokeWidth" value="2" min="1" max="10">
+            </div>
+            
+            <button type="submit" class="btn-success">Create Element</button>
+        </form>
+    </div>
+    
+    <div class="canvas-container">
+        <div id="excalidraw-container">
+            <div style="display: flex; justify-content: center; align-items: center; height: 100%; font-size: 16px; color: #666;">
+                <div style="text-align: center;">
+                    <div style="margin-bottom: 10px;">⏳</div>
+                    <div>Loading Excalidraw...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let excalidrawAPI = null;
+        let websocket = null;
+        let isConnected = false;
+        let apiPanelVisible = true;
+        
+        // Initialize Excalidraw when the page loads
+        window.addEventListener('load', async () => {
+            try {
+                // Load Excalidraw from CDN
+                const { Excalidraw, convertToExcalidrawElements } = await import('https://esm.sh/@excalidraw/excalidraw@0.17.0');
+                
+                // Make convertToExcalidrawElements available globally
+                window.convertToExcalidrawElements = convertToExcalidrawElements;
+                
+                // Initialize Excalidraw
+                const excalidrawContainer = document.getElementById('excalidraw-container');
+                
+                // Create Excalidraw instance
+                const excalidrawComponent = React.createElement(Excalidraw, {
+                    excalidrawAPI: (api) => {
+                        excalidrawAPI = api;
+                        console.log('Excalidraw API initialized');
+                    },
+                    onChange: (excalidrawElements, appState, files) => {
+                        updateElementCount(excalidrawElements.length);
+                    },
+                    initialData: {
+                        elements: [],
+                        appState: {
+                            theme: 'light',
+                            viewBackgroundColor: '#ffffff'
+                        }
+                    }
+                });
+                
+                // Render Excalidraw
+                const root = ReactDOM.createRoot(excalidrawContainer);
+                root.render(excalidrawComponent);
+                
+                // Initialize WebSocket connection after Excalidraw loads
+                connectWebSocket();
+                
+            } catch (error) {
+                console.error('Error loading Excalidraw:', error);
+                document.getElementById('excalidraw-container').innerHTML = 
+                    '<div style="padding: 20px; text-align: center; color: #666;">' +
+                    '<h3>Error loading Excalidraw</h3>' +
+                    '<p>Please check the console for more details.</p>' +
+                    '</div>';
+            }
+        });
+        
+        // WebSocket connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = () => {
+                console.log('WebSocket connected');
+                isConnected = true;
+                updateConnectionStatus();
+            };
+            
+            websocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+            
+            websocket.onclose = () => {
+                console.log('WebSocket disconnected');
+                isConnected = false;
+                updateConnectionStatus();
+                // Reconnect after 5 seconds
+                setTimeout(connectWebSocket, 5000);
+            };
+            
+            websocket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                isConnected = false;
+                updateConnectionStatus();
+            };
+        }
+        
+        // Handle WebSocket messages
+        function handleWebSocketMessage(data) {
+            if (!excalidrawAPI || !window.convertToExcalidrawElements) return;
+            
+            const currentElements = excalidrawAPI.getSceneElements();
+            
+            switch (data.type) {
+                case 'initial_elements':
+                    if (data.elements && data.elements.length > 0) {
+                        const convertedElements = window.convertToExcalidrawElements(data.elements);
+                        excalidrawAPI.updateScene({ elements: convertedElements });
+                    }
+                    break;
+                    
+                case 'element_created':
+                    const newElement = window.convertToExcalidrawElements([data.element]);
+                    excalidrawAPI.updateScene({
+                        elements: [...currentElements, ...newElement]
+                    });
+                    showNotification('Element created successfully!', 'success');
+                    break;
+                    
+                case 'element_updated':
+                    const updatedElements = currentElements.map(el => 
+                        el.id === data.element.id ? window.convertToExcalidrawElements([data.element])[0] : el
+                    );
+                    excalidrawAPI.updateScene({ elements: updatedElements });
+                    showNotification('Element updated successfully!', 'success');
+                    break;
+                    
+                case 'element_deleted':
+                    const filteredElements = currentElements.filter(el => el.id !== data.elementId);
+                    excalidrawAPI.updateScene({ elements: filteredElements });
+                    showNotification('Element deleted successfully!', 'success');
+                    break;
+                    
+                case 'elements_batch_created':
+                    const batchElements = window.convertToExcalidrawElements(data.elements);
+                    excalidrawAPI.updateScene({
+                        elements: [...currentElements, ...batchElements]
+                    });
+                    showNotification(`${data.elements.length} elements created!`, 'success');
+                    break;
+            }
+        }
+        
+        // Update connection status
+        function updateConnectionStatus() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            if (isConnected) {
+                statusDot.className = 'status-dot status-connected';
+                statusText.textContent = 'Connected';
+            } else {
+                statusDot.className = 'status-dot status-disconnected';
+                statusText.textContent = 'Disconnected';
+            }
+        }
+        
+        // Update element count
+        function updateElementCount(count) {
+            const elementCountElement = document.getElementById('elementCount');
+            elementCountElement.textContent = count;
+        }
+        
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+        
+        // API Functions
+        async function createElementFromForm(event) {
+            event.preventDefault();
+            
+            const elementData = {
+                type: document.getElementById('elementType').value,
+                x: parseInt(document.getElementById('x').value),
+                y: parseInt(document.getElementById('y').value),
+                width: parseInt(document.getElementById('width').value) || undefined,
+                height: parseInt(document.getElementById('height').value) || undefined,
+                backgroundColor: document.getElementById('backgroundColor').value,
+                strokeColor: document.getElementById('strokeColor').value,
+                strokeWidth: parseInt(document.getElementById('strokeWidth').value)
+            };
+            
+            const textValue = document.getElementById('text').value;
+            if (textValue) {
+                elementData.text = textValue;
+            }
+            
+            // Remove undefined values
+            Object.keys(elementData).forEach(key => {
+                if (elementData[key] === undefined) {
+                    delete elementData[key];
+                }
+            });
+            
+            try {
+                const response = await fetch('/api/elements', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(elementData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showNotification('Element created via API!', 'success');
+                    // Reset form
+                    document.getElementById('x').value = Math.floor(Math.random() * 400) + 50;
+                    document.getElementById('y').value = Math.floor(Math.random() * 300) + 50;
+                } else {
+                    showNotification(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error creating element:', error);
+                showNotification('Failed to create element', 'error');
+            }
+        }
+        
+        // Create sample elements
+        async function createSampleElements() {
+            const sampleElements = [
+                {
+                    type: 'rectangle',
+                    x: 50,
+                    y: 50,
+                    width: 150,
+                    height: 100,
+                    backgroundColor: '#ffeaa7',
+                    strokeColor: '#2d3436'
+                },
+                {
+                    type: 'ellipse',
+                    x: 250,
+                    y: 50,
+                    width: 120,
+                    height: 120,
+                    backgroundColor: '#74b9ff',
+                    strokeColor: '#0984e3'
+                },
+                {
+                    type: 'diamond',
+                    x: 50,
+                    y: 200,
+                    width: 100,
+                    height: 100,
+                    backgroundColor: '#fd79a8',
+                    strokeColor: '#e84393'
+                },
+                {
+                    type: 'text',
+                    x: 250,
+                    y: 220,
+                    text: 'Hello from API!',
+                    fontSize: 20,
+                    strokeColor: '#2d3436'
+                }
+            ];
+            
+            try {
+                const response = await fetch('/api/elements/batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ elements: sampleElements })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showNotification(`${result.count} sample elements created!`, 'success');
+                } else {
+                    showNotification(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error creating sample elements:', error);
+                showNotification('Failed to create sample elements', 'error');
+            }
+        }
+        
+        // Clear canvas
+        function clearCanvas() {
+            if (excalidrawAPI) {
+                excalidrawAPI.updateScene({ elements: [] });
+                showNotification('Canvas cleared!', 'success');
+            }
+        }
+        
+        // Toggle API panel
+        function toggleApiPanel() {
+            const apiPanel = document.getElementById('apiPanel');
+            apiPanelVisible = !apiPanelVisible;
+            
+            if (apiPanelVisible) {
+                apiPanel.classList.remove('hidden');
+            } else {
+                apiPanel.classList.add('hidden');
+            }
+        }
+        
+        // Export functions to global scope
+        window.createElementFromForm = createElementFromForm;
+        window.createSampleElements = createSampleElements;
+        window.clearCanvas = clearCanvas;
+        window.toggleApiPanel = toggleApiPanel;
+    </script>
+    
+    <!-- React dependencies -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+</body>
+</html> 
