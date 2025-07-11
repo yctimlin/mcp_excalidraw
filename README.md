@@ -1,280 +1,329 @@
-# Excalidraw MCP Server: Powerful Drawing API for LLM Integration
+# Excalidraw MCP Canvas: Live Visual Diagramming with AI Integration
 
-> **📣 NEWS: Version 1.0.0 is now published to npm!** You can run Excalidraw MCP directly using `npx excalidraw-mcp` without installation. No setup required - just run and enjoy!
+A comprehensive system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
 
-A comprehensive Model Context Protocol (MCP) server that enables seamless interaction with Excalidraw diagrams and drawings. This server provides LLMs (Large Language Models) with the ability to create, modify, query, and manipulate Excalidraw drawings through a structured, developer-friendly API.
+## 🚀 What This System Does
 
-## Quick Start
+- **🎨 Live Canvas**: Real-time Excalidraw canvas accessible via web browser
+- **🤖 AI Integration**: MCP server allows AI agents (like Claude) to create visual diagrams
+- **⚡ Real-time Sync**: Elements created via MCP API appear instantly on the canvas
+- **🔄 WebSocket Updates**: Live synchronization across multiple connected clients
+- **🏗️ Production Ready**: Clean, minimal UI suitable for end users
 
-You can run the Excalidraw MCP server directly using npx without installing anything:
+## 🏛️ Architecture Overview
 
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   AI Agent      │───▶│   MCP Server     │───▶│  Canvas Server  │
+│   (Claude)      │    │  (src/index.js) │    │ (src/server.js) │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                         │
+                                                         ▼
+                                               ┌─────────────────┐
+                                               │  Frontend       │
+                                               │  (React + WS)   │
+                                               └─────────────────┘
+```
+
+## 🌟 Key Features
+
+### **Real-time Canvas Integration**
+- Elements created via MCP appear instantly on the live canvas
+- WebSocket-based real-time synchronization
+- Multi-client support with live updates
+
+### **Production-Ready Interface**
+- Clean, minimal UI with connection status
+- Simple "Clear Canvas" functionality
+- No development clutter or debug information
+
+### **Comprehensive MCP API**
+- **Element Creation**: rectangles, ellipses, diamonds, arrows, text, lines
+- **Element Management**: update, delete, query with filters
+- **Batch Operations**: create multiple elements in one call
+- **Advanced Features**: grouping, alignment, distribution, locking
+
+### **Robust Architecture**
+- Express.js backend with REST API + WebSocket
+- React frontend with official Excalidraw package
+- Dual-path element loading for reliability
+- Auto-reconnection and error handling
+
+## 📦 Installation & Setup
+
+### **Prerequisites**
+- Node.js 16+ 
+- npm or yarn
+
+### **1. Clone and Install**
 ```bash
-npx excalidraw-mcp
-```
-
-If you prefer to install it globally:
-
-```bash
-npm install -g excalidraw-mcp
-excalidraw-mcp
-```
-
-### Options
-
-The following command-line options are available:
-
-```
--d, --debug            Enable debug logging
--?, --help             Show this help message
-```
-
-> **Note:** The following options are currently only fully functional in the Docker version:
-> ```
-> -p, --port <port>      Port to run the server on (default: 3000)
-> -h, --host <host>      Host to bind the server to (default: localhost)
-> -m, --mode <mode>      Transport mode: 'stdio' or 'http' (default: stdio)
-> ```
-
-### Examples
-
-Run with default options:
-```bash
-npx excalidraw-mcp
-```
-
-Enable debug logging:
-```bash
-npx excalidraw-mcp --debug
-```
-
-## Features
-
-- **Full Excalidraw Element Control**: Create, update, delete, and query any Excalidraw element
-- **Advanced Element Manipulation**: Group, align, distribute, lock, and unlock elements
-- **Resource Management**: Access and modify scene information, libraries, themes, and elements
-- **Easy Integration**: Works with Claude Desktop and other LLM platforms
-- **Docker Support**: Simple deployment with containerization options
-
-## API Tools Reference
-
-### Element Creation and Modification
-
-* **create_element**
-  * Create a new Excalidraw element (rectangle, ellipse, diamond, etc.)
-  * Required inputs: `type`, `x`, `y` coordinates
-  * Optional inputs: dimensions, colors, styling properties
-
-* **update_element**
-  * Update an existing Excalidraw element by ID
-  * Required input: `id` of the element to update
-  * Optional inputs: any element property to modify
-
-* **delete_element**
-  * Delete an Excalidraw element
-  * Required input: `id` of the element to delete
-
-* **query_elements**
-  * Query elements with optional filtering
-  * Optional inputs: `type` to filter by element type, `filter` object with key-value pairs
-
-### Resource Management
-
-* **get_resource**
-  * Get a specific resource like scene information or all elements
-  * Required input: `resource` type (scene, library, theme, elements)
-
-### Element Organization
-
-* **group_elements**
-  * Group multiple elements together
-  * Required input: `elementIds` array of element IDs to group
-
-* **ungroup_elements**
-  * Ungroup a group of elements
-  * Required input: `groupId` of the group to ungroup
-
-* **align_elements**
-  * Align multiple elements based on specified alignment
-  * Required inputs: `elementIds` array and `alignment` (left, center, right, top, middle, bottom)
-
-* **distribute_elements**
-  * Distribute elements evenly across space
-  * Required inputs: `elementIds` array and `direction` (horizontal or vertical)
-
-* **lock_elements**
-  * Lock elements to prevent modification
-  * Required input: `elementIds` array of elements to lock
-
-* **unlock_elements**
-  * Unlock elements to allow modification
-  * Required input: `elementIds` array of elements to unlock
-
-## Integration with Claude Desktop
-
-To use this server with the Claude Desktop application, add the following configuration to the "mcpServers" section of your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "mcp_excalidraw": {
-      "command": "npx",
-      "args": ["-y", "excalidraw-mcp"]
-    }
-  }
-}
-```
-
-## Integration with Cursor
-
-To use this server with the Cursor application, add the following configuration to the "mcpServers" section of your `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "mcp_excalidraw": {
-      "command": "npx",
-      "args": ["-y", "excalidraw-mcp"]
-    }
-  }
-}
-```
-
-## Integration with Cursor
-
-To use this server with Cursor, create a `.cursor/mcp.json` file in your workspace with the following configuration:
-
-```json
-{
-  "mcpServers": {
-    "mcp_excalidraw": {
-      "command": "npx",
-      "args": ["-y", "excalidraw-mcp"]
-    }
-  }
-}
-```
-
-Make sure to:
-1. Replace `/path/to/your/directory` with the actual absolute path to your mcp_excalidraw installation
-2. Create the `.cursor` directory if it doesn't exist
-3. Ensure the path to `index.js` is correct and the file exists
-
-### Docker Integration
-
-```json
-{
-  "mcpServers": {
-    "excalidraw": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "mcp/excalidraw"],
-      "env": {
-        "LOG_LEVEL": "info",
-        "DEBUG": "false"
-      }
-    }
-  }
-}
-```
-
-## Installation Guide
-
-### NPM Installation
-
-```bash
-# Install globally
-npm install -g excalidraw-mcp
-
-# Run the server
-excalidraw-mcp
-```
-
-### Local Development Setup
-
-```bash
-# Clone the repository
 git clone <repository-url>
-cd excalidraw-mcp
-
-# Install dependencies
+cd mcp_excalidraw
 npm install
-
-# Start the server
-npm start
 ```
 
-### Docker Installation
-
+### **2. Build the Frontend**
 ```bash
-# Build the Docker image
-docker build -t mcp/excalidraw .
-
-# Run the container
-docker run -i --rm mcp/excalidraw
+npm run build
 ```
 
-## Configuration Options
+### **3. Start the System**
 
-The server can be configured using the following environment variables:
+#### **Option A: Production Mode**
+```bash
+# Start canvas server (serves frontend + API)
+npm run canvas
+```
 
-- `LOG_LEVEL` - Set the logging level (default: "info")
-- `DEBUG` - Enable debug mode (default: "false")
-- `DEFAULT_THEME` - Set the default theme (default: "light")
+#### **Option B: Development Mode**
+```bash
+# Start both canvas server and Vite dev server
+npm run dev
+```
 
-## Usage Examples
+### **4. Access the Canvas**
+Open your browser and navigate to:
+```
+http://localhost:3000
+```
 
-Here are some practical examples of how to use the Excalidraw MCP server:
+## 🔧 Available Scripts
 
-### Creating a Rectangle Element
+| Script | Description |
+|--------|-------------|
+| `npm start` | Start MCP server (`src/index.js`) |
+| `npm run canvas` | Start canvas server (`src/server.js`) |
+| `npm run build` | Build frontend for production |
+| `npm run dev` | Start canvas + Vite dev server |
+| `npm run production` | Build + start in production mode |
 
-```json
+## 🎯 Usage Guide
+
+### **For End Users**
+1. Open the canvas at `http://localhost:3000`
+2. Check connection status (should show "Connected")
+3. AI agents can now create diagrams that appear in real-time
+4. Use "Clear Canvas" to remove all elements
+
+### **For AI Agents (via MCP)**
+The MCP server provides these tools for creating visual diagrams:
+
+#### **Basic Element Creation**
+```javascript
+// Create a rectangle
 {
   "type": "rectangle",
   "x": 100,
-  "y": 100,
+  "y": 100, 
   "width": 200,
   "height": 100,
-  "backgroundColor": "#ffffff",
-  "strokeColor": "#000000",
-  "strokeWidth": 2,
-  "roughness": 1
+  "backgroundColor": "#e3f2fd",
+  "strokeColor": "#1976d2",
+  "strokeWidth": 2
 }
 ```
 
-### Querying Specific Elements
+#### **Create Text Elements**
+```javascript
+{
+  "type": "text",
+  "x": 150,
+  "y": 125,
+  "text": "Process Step",
+  "fontSize": 16,
+  "strokeColor": "#333333"
+}
+```
+
+#### **Create Arrows & Lines**
+```javascript
+{
+  "type": "arrow",
+  "x": 300,
+  "y": 130,
+  "width": 100,
+  "height": 0,
+  "strokeColor": "#666666",
+  "strokeWidth": 2
+}
+```
+
+#### **Batch Creation for Complex Diagrams**
+```javascript
+{
+  "elements": [
+    {
+      "type": "rectangle",
+      "x": 100,
+      "y": 100,
+      "width": 120,
+      "height": 60,
+      "backgroundColor": "#fff3e0",
+      "strokeColor": "#ff9800"
+    },
+    {
+      "type": "text", 
+      "x": 130,
+      "y": 125,
+      "text": "Start",
+      "fontSize": 16
+    }
+  ]
+}
+```
+
+## 🔌 Integration with Claude Desktop
+
+Add this configuration to your `claude_desktop_config.json`:
 
 ```json
 {
-  "type": "rectangle",
-  "filter": {
-    "strokeColor": "#000000"
+  "mcpServers": {
+    "excalidraw_canvas": {
+      "command": "node",
+      "args": ["/path/to/mcp_excalidraw/src/index.js"],
+    }
   }
 }
 ```
 
-### Grouping Multiple Elements
+## Integration with Cursor
+
+Add this configuration to your `claude_desktop_config.json`:
 
 ```json
 {
-  "elementIds": ["elem1", "elem2", "elem3"]
+    "mcpServers": {
+      "mcp_excalidraw": {
+        "command": "node",
+        "args": ["/path/to/mcp_excalidraw/src/index.js"]
+    }
+  }
 }
 ```
 
-## License
+**Important**: Replace `/path/to/mcp_excalidraw` with the actual absolute path to your installation.
 
-This Excalidraw MCP server is licensed under the MIT License. You are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
+## 🛠️ Environment Variables
 
-## Development
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXPRESS_SERVER_URL` | `http://localhost:3000` | Canvas server URL for MCP sync |
+| `ENABLE_CANVAS_SYNC` | `true` | Enable/disable canvas synchronization |
+| `DEBUG` | `false` | Enable debug logging |
+| `PORT` | `3000` | Canvas server port |
+| `HOST` | `localhost` | Canvas server host |
 
-Clone the repository and install dependencies:
+## 📊 API Endpoints
 
-```bash
-git clone <repository-url>
-cd excalidraw-mcp
-npm install
+The canvas server provides these REST endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/elements` | Get all elements |
+| `POST` | `/api/elements` | Create new element |
+| `PUT` | `/api/elements/:id` | Update element |
+| `DELETE` | `/api/elements/:id` | Delete element |
+| `POST` | `/api/elements/batch` | Create multiple elements |
+| `GET` | `/health` | Server health check |
+
+## 🎨 MCP Tools Available
+
+### **Element Management**
+- `create_element` - Create any type of Excalidraw element
+- `update_element` - Modify existing elements
+- `delete_element` - Remove elements
+- `query_elements` - Search elements with filters
+
+### **Batch Operations**
+- `batch_create_elements` - Create complex diagrams in one call
+
+### **Element Organization**  
+- `group_elements` - Group multiple elements
+- `ungroup_elements` - Ungroup element groups
+- `align_elements` - Align elements (left, center, right, top, middle, bottom)
+- `distribute_elements` - Distribute elements evenly
+- `lock_elements` / `unlock_elements` - Lock/unlock elements
+
+### **Resource Access**
+- `get_resource` - Access scene, library, theme, or elements data
+
+## 🏗️ Development Architecture
+
+### **Frontend** (`frontend/src/`)
+- **React + Vite**: Modern build system
+- **Official Excalidraw**: `@excalidraw/excalidraw` package
+- **WebSocket Client**: Real-time element sync
+- **Clean UI**: Production-ready interface
+
+### **Canvas Server** (`src/server.js`)
+- **Express.js**: REST API + static file serving
+- **WebSocket**: Real-time client communication  
+- **Element Storage**: In-memory with persistence options
+- **CORS**: Cross-origin support
+
+### **MCP Server** (`src/index.js`)
+- **MCP Protocol**: Standard Model Context Protocol
+- **Canvas Sync**: HTTP requests to canvas server
+- **Element Management**: Full CRUD operations
+- **Batch Support**: Complex diagram creation
+
+## 🐛 Troubleshooting
+
+### **Canvas Not Loading**
+- Ensure `npm run build` completed successfully
+- Check that `dist/index.html` exists
+- Verify canvas server is running on port 3000
+
+### **Elements Not Syncing**
+- Confirm MCP server is running (`npm start`)
+- Check `ENABLE_CANVAS_SYNC=true` in environment
+- Verify canvas server is accessible at `EXPRESS_SERVER_URL`
+
+### **WebSocket Connection Issues**  
+- Check browser console for WebSocket errors
+- Ensure no firewall blocking WebSocket connections
+- Try refreshing the browser page
+
+### **Build Errors**
+- Delete `node_modules` and run `npm install`
+- Check Node.js version (requires 16+)
+- Ensure all dependencies are installed
+
+## 📋 Project Structure
+
+```
+mcp_excalidraw/
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx          # Main React component
+│   │   └── main.jsx         # React entry point
+│   └── index.html           # HTML template
+├── src/
+│   ├── index.js            # MCP server
+│   ├── server.js           # Canvas server (Express + WebSocket)
+│   ├── types.js            # Shared types and utilities
+│   └── utils/
+│       └── logger.js       # Logging utility
+├── dist/                   # Built frontend (generated)
+├── vite.config.js         # Vite build configuration
+├── package.json           # Dependencies and scripts
+└── README.md              # This file
 ```
 
-Start the development server:
+## 🤝 Contributing
 
-```bash
-npm run dev
-``` 
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Excalidraw Team** - For the amazing drawing library
+- **MCP Community** - For the Model Context Protocol specification
