@@ -2,7 +2,24 @@
 
 A comprehensive system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
 
-> **🚀 NEW: Now available as `mcp-excalidraw-server` on npm!** Install with `npm install -g mcp-excalidraw-server` or run directly with `npx mcp-excalidraw-server`.
+## 🚦 Current Status & Version Information
+
+> **📋 Choose Your Installation Method**
+
+| Version | Status | Recommended For |
+|---------|--------|----------------|
+| **Local Development** | ✅ **FULLY TESTED** | **🎯 RECOMMENDED** |
+| **NPM Published** | 🔧 **DEBUGGING IN PROGRESS** | Development testing |
+| **Docker Version** | 🔧 **UNDER DEVELOPMENT** | Future deployment |
+
+### **Current Recommendation: Local Development**
+
+For the most stable experience, we recommend using the local development setup. We're actively working on improving the NPM package and Docker deployment options.
+
+### **Development Notes**
+- **NPM Package**: Currently debugging MCP tool registration issues
+- **Docker Version**: Improving canvas synchronization reliability
+- **Local Version**: ✅ All features fully functional
 
 ## 🚀 What This System Does
 
@@ -53,66 +70,55 @@ A comprehensive system that combines **Excalidraw's powerful drawing capabilitie
 
 ## 📦 Installation & Setup
 
-### **Prerequisites**
-- Node.js 16+ 
-- npm or yarn
+### **✅ Recommended: Local Development Setup**
 
-### **Option 1: NPM Installation (Recommended)**
+> **Most stable and feature-complete option**
 
-#### **Global Installation**
-```bash
-# Install globally
-npm install -g mcp-excalidraw-server
-
-# Run the server
-mcp-excalidraw-server
-```
-
-#### **Run Without Installation**
-```bash
-# Run directly with npx (no installation needed)
-npx mcp-excalidraw-server
-```
-
-#### **Local Project Installation**
-```bash
-# Install in your project
-npm install mcp-excalidraw-server
-
-# Run from node_modules
-npx mcp-excalidraw-server
-```
-
-### **Option 2: Clone from Source**
+#### **1. Clone the Repository**
 ```bash
 git clone https://github.com/yctimlin/mcp_excalidraw.git
 cd mcp_excalidraw
 npm install
 ```
 
-### **2. Build the Frontend**
+#### **2. Build the Frontend**
 ```bash
 npm run build
 ```
 
-### **3. Start the System**
+#### **3. Start the System**
 
-#### **Option A: Production Mode**
+##### **Option A: Production Mode (Recommended)**
 ```bash
 # Start canvas server (serves frontend + API)
 npm run canvas
 ```
 
-#### **Option B: Development Mode**
+##### **Option B: Development Mode**
 ```bash
 # Start both canvas server and Vite dev server
 npm run dev
 ```
 
-### **4. Access the Canvas**
+#### **4. Access the Canvas**
 Open your browser and navigate to:
 ```
 http://localhost:3000
+```
+
+### **🔧 Alternative Installation Methods (In Development)**
+
+#### **NPM Package (Beta)**
+```bash
+# Currently debugging tool registration - feedback welcome!
+npm install -g mcp-excalidraw-server
+npx mcp-excalidraw-server
+```
+
+#### **Docker Version (Coming Soon)**
+```bash
+# Canvas sync improvements in progress
+docker run -p 3000:3000 mcp-excalidraw-server
 ```
 
 ## 🔧 Available Scripts
@@ -202,65 +208,63 @@ The MCP server provides these tools for creating visual diagrams:
 
 ## 🔌 Integration with Claude Desktop
 
-### **Using NPM Package (Recommended)**
+### **✅ Recommended: Using Local Installation**
 
-Add this configuration to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "excalidraw": {
-      "command": "npx",
-      "args": ["-y", "mcp-excalidraw-server"]
-    }
-  }
-}
-```
-
-### **Using Global Installation**
-
-If you installed globally with `npm install -g mcp-excalidraw-server`:
-
-```json
-{
-  "mcpServers": {
-    "excalidraw": {
-      "command": "mcp-excalidraw-server",
-      "args": []
-    }
-  }
-}
-```
-
-### **Using Source Installation**
-
-If you cloned from source:
+For the **local development version** (most stable), add this configuration to your `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "excalidraw": {
       "command": "node",
-      "args": ["/path/to/mcp_excalidraw/src/index.js"]
+      "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
     }
   }
 }
 ```
 
-**Important**: Replace `/path/to/mcp_excalidraw` with the actual absolute path to your installation.
+**Important**: Replace `/absolute/path/to/mcp_excalidraw` with the actual absolute path to your cloned repository.
 
-## 🔧 Integration with Other Tools
+### **🔧 Alternative Configurations (Beta)**
 
-### **Cursor IDE**
-
-Add to your `claude_desktop_config.json` or MCP settings:
-
+#### **NPM Package (Beta Testing)**
 ```json
 {
   "mcpServers": {
     "excalidraw": {
       "command": "npx",
       "args": ["-y", "mcp-excalidraw-server"]
+    }
+  }
+}
+```
+*Currently debugging tool registration - let us know if you encounter issues!*
+
+#### **Docker Version (Coming Soon)**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "mcp-excalidraw-server"]
+    }
+  }
+}
+```
+*Canvas sync improvements in progress.*
+
+## 🔧 Integration with Other Tools
+
+### **Cursor IDE**
+
+Add to your `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
     }
   }
 }
@@ -275,28 +279,12 @@ For VS Code MCP extension, add to your settings:
   "mcp": {
     "servers": {
       "excalidraw": {
-        "command": "npx",
-        "args": ["-y", "mcp-excalidraw-server"]
+        "command": "node",
+        "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
       }
     }
   }
 }
-```
-
-### **Command Line Usage**
-
-```bash
-# Run directly with npx (no installation needed)
-npx mcp-excalidraw-server
-
-# Run with global installation
-mcp-excalidraw-server
-
-# Run with custom canvas server URL
-EXPRESS_SERVER_URL=http://localhost:8080 npx mcp-excalidraw-server
-
-# Run with debug logging
-DEBUG=true npx mcp-excalidraw-server
 ```
 
 ## 🛠️ Environment Variables
@@ -365,6 +353,16 @@ The canvas server provides these REST endpoints:
 
 ## 🐛 Troubleshooting
 
+### **NPM Package Issues**
+- **Symptoms**: MCP tools not registering properly
+- **Temporary Solution**: Use local development setup
+- **Status**: Actively debugging - updates coming soon
+
+### **Docker Version Notes**
+- **Symptoms**: Elements may not sync to canvas immediately
+- **Temporary Solution**: Use local development setup
+- **Status**: Improving synchronization reliability
+
 ### **Canvas Not Loading**
 - Ensure `npm run build` completed successfully
 - Check that `dist/index.html` exists
@@ -406,7 +404,16 @@ mcp_excalidraw/
 └── README.md              # This file
 ```
 
+## 🔮 Development Roadmap
+
+- **NPM Package**: Resolving MCP tool registration issues
+- **Docker Deployment**: Improving canvas synchronization
+- **Enhanced Features**: Additional MCP tools and capabilities
+- **Performance Optimization**: Real-time sync improvements
+
 ## 🤝 Contributing
+
+We welcome contributions! If you're experiencing issues with the NPM package or Docker version, please:
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
