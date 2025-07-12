@@ -342,8 +342,13 @@ app.post('/api/elements/batch', (req, res) => {
 
 // Serve the frontend
 app.get('/', (req, res) => {
-  const htmlFile = path.join(__dirname, '../dist/index.html');
-  res.sendFile(htmlFile);
+  const htmlFile = path.join(__dirname, '../dist/frontend/index.html');
+  res.sendFile(htmlFile, (err) => {
+    if (err) {
+      logger.error('Error serving frontend:', err);
+      res.status(404).send('Frontend not found. Please run "npm run build" first.');
+    }
+  });
 });
 
 // Health check endpoint
