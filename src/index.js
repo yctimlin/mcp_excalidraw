@@ -178,9 +178,9 @@ const ResourceSchema = z.object({
 // Initialize MCP server
 const server = new Server(
   {
-    name: "excalidraw-mcp-server",
-    version: "1.0.0",
-    description: "MCP server for Excalidraw"
+    name: "mcp-excalidraw-server",
+    version: "1.0.2",
+    description: "Advanced MCP server for Excalidraw with real-time canvas"
   },
   {
     capabilities: {
