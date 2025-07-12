@@ -7,8 +7,7 @@ export const EXCALIDRAW_ELEMENT_TYPES = {
   TEXT: 'text',
   LABEL: 'label',
   FREEDRAW: 'freedraw',
-  LINE: 'line',
-  ARROW_LABEL: 'arrowLabel'
+  LINE: 'line'
 };
 
 // In-memory storage for Excalidraw elements

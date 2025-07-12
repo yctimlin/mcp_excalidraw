@@ -1,53 +1,84 @@
 {
-  "name": "excalidraw-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for Excalidraw",
+  "name": "mcp-excalidraw-server",
+  "version": "1.0.2",
+  "description": "Advanced MCP server for Excalidraw with real-time canvas, WebSocket sync, and comprehensive diagram management",
   "main": "src/index.js",
   "type": "module",
   "bin": {
-    "excalidraw-mcp": "./src/cli.js"
+    "mcp-excalidraw-server": "src/index.js"
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
-    "lint": "eslint src/**/*.js",
-    "build": "tsc",
-    "docker:build": "docker build -t mcp/excalidraw .",
-    "docker:run": "docker run -p 3000:3000 mcp/excalidraw",
-    "prepare": "node -e \"try { require('fs').chmodSync('./src/cli.js', '755') } catch(e) { console.log(e) }\""
+    "canvas": "node src/server.js",
+    "build": "npm run build:frontend && npm run build:types",
+    "build:frontend": "vite build",
+    "build:types": "npx tsc --emitDeclarationOnly",
+    "build:server": "npx tsc",
+    "dev": "concurrently \"npm run canvas\" \"vite\"",
+    "production": "npm run build && npm run canvas",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
     "@modelcontextprotocol/sdk": "latest",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "winston": "^3.11.0",
+    "ws": "^8.14.2",
     "zod": "^3.22.4",
     "zod-to-json-schema": "^3.22.3"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "jest": "^29.7.0",
-    "eslint": "^8.56.0"
+    "@types/node": "^20.19.7",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "excalidraw",
     "model-context-protocol",
     "ai",
-    "drawing"
+    "drawing",
+    "diagrams",
+    "canvas",
+    "real-time",
+    "websocket",
+    "visualization",
+    "claude",
+    "ai-tools"
   ],
-  "author": "",
+  "author": {
+    "name": "yctimlin",
+    "email": "c22647809@gmail.com"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yctimlin/mcp_excalidraw.git"
+  },
+  "homepage": "https://github.com/yctimlin/mcp_excalidraw#readme",
+  "bugs": {
+    "url": "https://github.com/yctimlin/mcp_excalidraw/issues"
+  },
   "engines": {
     "node": ">=16.0.0"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "files": [
     "src/**/*",
+    "dist/**/*",
+    "*.d.ts",
     "README.md",
     "LICENSE"
   ]
-} 
+}
