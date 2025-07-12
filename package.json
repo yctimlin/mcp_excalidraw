@@ -10,7 +10,10 @@
   "scripts": {
     "start": "node src/index.js",
     "canvas": "node src/server.js",
-    "build": "vite build",
+    "build": "npm run build:frontend && npm run build:types",
+    "build:frontend": "vite build",
+    "build:types": "npx tsc --emitDeclarationOnly",
+    "build:server": "npx tsc",
     "dev": "concurrently \"npm run canvas\" \"vite\"",
     "production": "npm run build && npm run canvas",
     "prepublishOnly": "npm run build"
@@ -30,8 +33,10 @@
     "zod-to-json-schema": "^3.22.3"
   },
   "devDependencies": {
+    "@types/node": "^20.19.7",
     "@vitejs/plugin-react": "^4.6.0",
     "concurrently": "^9.2.0",
+    "typescript": "^5.8.3",
     "vite": "^6.3.5"
   },
   "keywords": [
@@ -72,6 +77,7 @@
   "files": [
     "src/**/*",
     "dist/**/*",
+    "*.d.ts",
     "README.md",
     "LICENSE"
   ]
