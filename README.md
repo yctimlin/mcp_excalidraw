@@ -33,7 +33,7 @@ For the most stable experience, we recommend using the local development setup. 
 
 > **See MCP Excalidraw in Action!**
 
-[![MCP Excalidraw Demo](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+[![MCP Excalidraw Demo](https://img.youtube.com/vi/RRN7AF7QIew/maxresdefault.jpg)](https://youtu.be/RRN7AF7QIew)
 
 *Watch how AI agents create and manipulate diagrams in real-time on the live canvas*
 
