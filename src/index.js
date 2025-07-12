@@ -401,6 +401,11 @@ const server = new Server(
 function convertTextToLabel(element) {
   const { text, ...rest } = element;
   if (text) {
+    // For standalone text elements, keep text as direct property
+    if (element.type === 'text') {
+      return element; // Keep text as direct property
+    }
+    // For other elements (rectangle, ellipse, diamond), convert to label format
     return {
       ...rest,
       label: { text }
