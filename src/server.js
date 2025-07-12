@@ -30,6 +30,8 @@ app.use(express.json());
 // Serve static files from the build directory
 const staticDir = path.join(__dirname, '../dist');
 app.use(express.static(staticDir));
+// Also serve frontend assets
+app.use(express.static(path.join(__dirname, '../dist/frontend')));
 
 // WebSocket connections
 const clients = new Set();
@@ -79,6 +81,9 @@ const CreateElementSchema = z.object({
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
+  label: z.object({
+    text: z.string()
+  }).optional(),
   fontSize: z.number().optional(),
   fontFamily: z.string().optional()
 });
@@ -96,6 +101,9 @@ const UpdateElementSchema = z.object({
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
+  label: z.object({
+    text: z.string()
+  }).optional(),
   fontSize: z.number().optional(),
   fontFamily: z.string().optional()
 });

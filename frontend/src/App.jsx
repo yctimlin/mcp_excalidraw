@@ -2,6 +2,17 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Excalidraw, convertToExcalidrawElements } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 
+// Helper function to clean elements for Excalidraw
+const cleanElementForExcalidraw = (element) => {
+  const {
+    createdAt,
+    updatedAt,
+    version,
+    ...cleanElement
+  } = element;
+  return cleanElement;
+}
+
 function App() {
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
@@ -35,7 +46,8 @@ function App() {
       const result = await response.json()
       
       if (result.success && result.elements && result.elements.length > 0) {
-        const convertedElements = convertToExcalidrawElements(result.elements)
+        const cleanedElements = result.elements.map(cleanElementForExcalidraw)
+        const convertedElements = convertToExcalidrawElements(cleanedElements)
         excalidrawAPI.updateScene({ elements: convertedElements })
       }
     } catch (error) {
@@ -96,19 +108,22 @@ function App() {
       switch (data.type) {
         case 'initial_elements':
           if (data.elements && data.elements.length > 0) {
-            const convertedElements = convertToExcalidrawElements(data.elements)
+            const cleanedElements = data.elements.map(cleanElementForExcalidraw)
+            const convertedElements = convertToExcalidrawElements(cleanedElements)
             excalidrawAPI.updateScene({ elements: convertedElements })
           }
           break
           
         case 'element_created':
-          const newElement = convertToExcalidrawElements([data.element])
+          const cleanedNewElement = cleanElementForExcalidraw(data.element)
+          const newElement = convertToExcalidrawElements([cleanedNewElement])
           const updatedElementsAfterCreate = [...currentElements, ...newElement]
           excalidrawAPI.updateScene({ elements: updatedElementsAfterCreate })
           break
           
         case 'element_updated':
-          const convertedUpdatedElement = convertToExcalidrawElements([data.element])[0]
+          const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
+          const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement])[0]
           const updatedElements = currentElements.map(el => 
             el.id === data.element.id ? convertedUpdatedElement : el
           )
@@ -121,7 +136,8 @@ function App() {
           break
           
         case 'elements_batch_created':
-          const batchElements = convertToExcalidrawElements(data.elements)
+          const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
+          const batchElements = convertToExcalidrawElements(cleanedBatchElements)
           const updatedElementsAfterBatch = [...currentElements, ...batchElements]
           excalidrawAPI.updateScene({ elements: updatedElementsAfterBatch })
           break

@@ -397,6 +397,18 @@ const server = new Server(
   }
 );
 
+// Helper function to convert text property to label format for Excalidraw
+function convertTextToLabel(element) {
+  const { text, ...rest } = element;
+  if (text) {
+    return {
+      ...rest,
+      label: { text }
+    };
+  }
+  return element;
+}
+
 // Set up request handler for tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
@@ -417,23 +429,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           version: 1
         };
 
-        // Store locally (MCP server storage)
-        elements.set(id, element);
+        // Convert text to label format for Excalidraw
+        const excalidrawElement = convertTextToLabel(element);
+        
+        // Store the converted element locally (MCP server storage)
+        elements.set(id, excalidrawElement);
         
         // Sync to canvas (Express server + WebSocket broadcast)
-        const canvasElement = await createElementOnCanvas(element);
+        const canvasElement = await createElementOnCanvas(excalidrawElement);
         
-        const result = canvasElement || element;
         logger.info('Element created via MCP and synced to canvas', { 
-          id: result.id, 
-          type: result.type,
+          id: excalidrawElement.id, 
+          type: excalidrawElement.type,
           synced: !!canvasElement 
         });
         
         return {
           content: [{ 
             type: 'text', 
-            text: `Element created successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still created locally)'}` 
+            text: `Element created successfully!\n\n${JSON.stringify(excalidrawElement, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still created locally)'}` 
           }]
         };
       }
@@ -457,22 +471,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           version: existingElement.version + 1
         };
 
-        // Store locally (MCP server storage)
-        elements.set(id, updatedElement);
+        // Convert text to label format for Excalidraw
+        const excalidrawElement = convertTextToLabel(updatedElement);
+        
+        // Store the converted element locally (MCP server storage)
+        elements.set(id, excalidrawElement);
         
         // Sync to canvas (Express server + WebSocket broadcast)
-        const canvasElement = await updateElementOnCanvas(updatedElement);
+        const canvasElement = await updateElementOnCanvas(excalidrawElement);
         
-        const result = canvasElement || updatedElement;
         logger.info('Element updated via MCP and synced to canvas', { 
-          id: result.id, 
+          id: excalidrawElement.id, 
           synced: !!canvasElement 
         });
         
         return {
           content: [{ 
             type: 'text', 
-            text: `Element updated successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still updated locally)'}` 
+            text: `Element updated successfully!\n\n${JSON.stringify(excalidrawElement, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still updated locally)'}` 
           }]
         };
       }
@@ -668,9 +684,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             version: 1
           };
           
-          // Store locally (MCP server storage)
-          elements.set(id, element);
-          createdElements.push(element);
+          // Convert text to label format for Excalidraw
+          const excalidrawElement = convertTextToLabel(element);
+          
+          // Store the converted element locally (MCP server storage)
+          elements.set(id, excalidrawElement);
+          createdElements.push(excalidrawElement);
         }
         
         // Sync all elements to canvas at once (Express server + WebSocket broadcast)
@@ -678,7 +697,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         
         const result = {
           success: true,
-          elements: canvasElements || createdElements,
+          elements: createdElements,
           count: createdElements.length,
           syncedToCanvas: !!canvasElements
         };

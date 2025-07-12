@@ -29,6 +29,14 @@ For the most stable experience, we recommend using the local development setup. 
 - **🔄 WebSocket Updates**: Live synchronization across multiple connected clients
 - **🏗️ Production Ready**: Clean, minimal UI suitable for end users
 
+## 🎥 Demo Video
+
+> **See MCP Excalidraw in Action!**
+
+[![MCP Excalidraw Demo](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+
+*Watch how AI agents create and manipulate diagrams in real-time on the live canvas*
+
 ## 🏛️ Architecture Overview
 
 ```
