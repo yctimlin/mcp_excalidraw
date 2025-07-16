@@ -4,6 +4,8 @@
 process.env.NODE_DISABLE_COLORS = '1';
 process.env.NO_COLOR = '1';
 
+import { fileURLToPath } from "url";
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { 
@@ -1016,7 +1018,7 @@ if (process.env.DEBUG === 'true') {
 }
 
 // Start the server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
   runServer().catch(error => {
     logger.error('Failed to start server:', error);
     process.exit(1);
