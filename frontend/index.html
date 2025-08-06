@@ -231,6 +231,50 @@
         .loading-content div:first-child {
             margin-bottom: 10px;
         }
+        
+        /* Sync Controls Styles */
+        .sync-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-loading {
+            position: relative;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #ffffff40;
+            border-top: 2px solid #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 5px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .sync-status {
+            font-size: 12px;
+            min-width: 100px;
+        }
+
+        .sync-success {
+            color: #4caf50;
+        }
+
+        .sync-error {
+            color: #f44336;
+        }
+
+        .sync-time {
+            color: #666;
+        }
     </style>
 </head>
 <body>

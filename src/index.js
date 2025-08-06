@@ -460,7 +460,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       
       case 'update_element': {
-        const params = ElementSchema.partial().extend(ElementIdSchema).parse(args);
+        const params = ElementIdSchema.merge(ElementSchema.partial()).parse(args);
         const { id, ...updates } = params;
         
         if (!id) throw new Error('Element ID is required');

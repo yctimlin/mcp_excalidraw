@@ -57,6 +57,13 @@ wss.on('connection', (ws) => {
     elements: Array.from(elements.values())
   }));
   
+  // Send sync status to new client
+  ws.send(JSON.stringify({
+    type: 'sync_status',
+    elementCount: elements.size,
+    timestamp: new Date().toISOString()
+  }));
+  
   ws.on('close', () => {
     clients.delete(ws);
     logger.info('WebSocket connection closed');
@@ -70,6 +77,7 @@ wss.on('connection', (ws) => {
 
 // Schema validation
 const CreateElementSchema = z.object({
+  id: z.string().optional(), // 允许传入ID，用于MCP同步
   type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES)),
   x: z.number(),
   y: z.number(),
@@ -134,7 +142,8 @@ app.post('/api/elements', (req, res) => {
     const params = CreateElementSchema.parse(req.body);
     logger.info('Creating element via API', { type: params.type });
 
-    const id = generateId();
+    // 优先使用传入的ID（用于MCP同步），否则生成新ID
+    const id = params.id || generateId();
     const element = {
       id,
       ...params,
@@ -348,6 +357,90 @@ app.post('/api/elements/batch', (req, res) => {
   }
 });
 
+// Sync elements from frontend (覆盖式同步)
+app.post('/api/elements/sync', (req, res) => {
+  try {
+    const { elements: frontendElements, timestamp } = req.body;
+    
+    logger.info(`Sync request received: ${frontendElements.length} elements`, {
+      timestamp,
+      elementCount: frontendElements.length
+    });
+    
+    // 验证输入数据
+    if (!Array.isArray(frontendElements)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Expected elements to be an array'
+      });
+    }
+    
+    // 记录同步前的元素数量
+    const beforeCount = elements.size;
+    
+    // 1. 清空现有内存存储
+    elements.clear();
+    logger.info(`Cleared existing elements: ${beforeCount} elements removed`);
+    
+    // 2. 批量写入新数据
+    let successCount = 0;
+    const processedElements = [];
+    
+    frontendElements.forEach((element, index) => {
+      try {
+        // 确保元素有ID，如果没有则生成一个
+        const elementId = element.id || generateId();
+        
+        // 添加服务端元数据
+        const processedElement = {
+          ...element,
+          id: elementId,
+          syncedAt: new Date().toISOString(),
+          source: 'frontend_sync',
+          syncTimestamp: timestamp,
+          version: 1
+        };
+        
+        // 存储到内存
+        elements.set(elementId, processedElement);
+        processedElements.push(processedElement);
+        successCount++;
+        
+      } catch (elementError) {
+        logger.warn(`Failed to process element ${index}:`, elementError);
+      }
+    });
+    
+    logger.info(`Sync completed: ${successCount}/${frontendElements.length} elements synced`);
+    
+    // 3. 广播同步事件给所有WebSocket客户端
+    broadcast({
+      type: 'elements_synced',
+      count: successCount,
+      timestamp: new Date().toISOString(),
+      source: 'manual_sync'
+    });
+    
+    // 4. 返回同步结果
+    res.json({
+      success: true,
+      message: `Successfully synced ${successCount} elements`,
+      count: successCount,
+      syncedAt: new Date().toISOString(),
+      beforeCount,
+      afterCount: elements.size
+    });
+    
+  } catch (error) {
+    logger.error('Sync error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: 'Internal server error during sync operation'
+    });
+  }
+});
+
 // Serve the frontend
 app.get('/', (req, res) => {
   const htmlFile = path.join(__dirname, '../dist/frontend/index.html');
@@ -366,6 +459,20 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     elements_count: elements.size,
     websocket_clients: clients.size
+  });
+});
+
+// Sync status endpoint
+app.get('/api/sync/status', (req, res) => {
+  res.json({
+    success: true,
+    elementCount: elements.size,
+    timestamp: new Date().toISOString(),
+    memoryUsage: {
+      heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
+      heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024), // MB
+    },
+    websocketClients: clients.size
   });
 });
 

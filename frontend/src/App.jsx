@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Excalidraw, convertToExcalidrawElements } from '@excalidraw/excalidraw'
+import { Excalidraw, convertToExcalidrawElements, CaptureUpdateAction } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 
 // Helper function to clean elements for Excalidraw
@@ -13,10 +13,62 @@ const cleanElementForExcalidraw = (element) => {
   return cleanElement;
 }
 
+// Helper function to validate and fix element binding data
+const validateAndFixBindings = (elements) => {
+  const elementMap = new Map(elements.map(el => [el.id, el]));
+  
+  return elements.map(element => {
+    const fixedElement = { ...element };
+    
+    // Validate and fix boundElements
+    if (fixedElement.boundElements) {
+      if (Array.isArray(fixedElement.boundElements)) {
+        fixedElement.boundElements = fixedElement.boundElements.filter(binding => {
+          // Ensure binding has required properties
+          if (!binding || typeof binding !== 'object') return false;
+          if (!binding.id || !binding.type) return false;
+          
+          // Ensure the referenced element exists
+          const referencedElement = elementMap.get(binding.id);
+          if (!referencedElement) return false;
+          
+          // Validate binding type
+          if (!['text', 'arrow'].includes(binding.type)) return false;
+          
+          return true;
+        });
+        
+        // Remove boundElements if empty
+        if (fixedElement.boundElements.length === 0) {
+          fixedElement.boundElements = null;
+        }
+      } else {
+        // Invalid boundElements format, set to null
+        fixedElement.boundElements = null;
+      }
+    }
+    
+    // Validate and fix containerId
+    if (fixedElement.containerId) {
+      const containerElement = elementMap.get(fixedElement.containerId);
+      if (!containerElement) {
+        // Container doesn't exist, remove containerId
+        fixedElement.containerId = null;
+      }
+    }
+    
+    return fixedElement;
+  });
+}
+
 function App() {
   const [excalidrawAPI, setExcalidrawAPI] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const websocketRef = useRef(null)
+  
+  // Sync state management
+  const [syncStatus, setSyncStatus] = useState('idle') // idle, syncing, success, error
+  const [lastSyncTime, setLastSyncTime] = useState(null)
 
   // WebSocket connection
   useEffect(() => {
@@ -97,6 +149,38 @@ function App() {
     }
   }
 
+  // 调试函数：记录删除操作详情
+  const debugDeleteOperation = (operation, data, additionalInfo = {}) => {
+    const timestamp = new Date().toISOString()
+    const debugInfo = {
+      operation,
+      timestamp,
+      data,
+      elementCount: excalidrawAPI?.getSceneElements()?.length || 0,
+      ...additionalInfo
+    }
+    
+    console.group(`🔍 DELETE DEBUG: ${operation}`)
+    console.log('详细信息:', debugInfo)
+    
+    if (operation === 'websocket_received' && data.type === 'element_deleted') {
+      const currentElements = excalidrawAPI?.getSceneElements() || []
+      const targetElement = currentElements.find(el => el.id === data.elementId)
+      
+      console.log('目标元素存在:', !!targetElement)
+      console.log('当前元素ID列表:', currentElements.map(el => el.id))
+      console.log('要删除的ID:', data.elementId)
+      console.log('ID类型匹配检查:', currentElements.map(el => ({
+        id: el.id,
+        type: typeof el.id,
+        matches: el.id === data.elementId,
+        strictEquals: el.id === data.elementId
+      })))
+    }
+    
+    console.groupEnd()
+  }
+
   const handleWebSocketMessage = (data) => {
     if (!excalidrawAPI) {
       return
@@ -104,13 +188,20 @@ function App() {
 
     try {
       const currentElements = excalidrawAPI.getSceneElements()
+      console.log('当前元素:', currentElements);
 
       switch (data.type) {
         case 'initial_elements':
           if (data.elements && data.elements.length > 0) {
             const cleanedElements = data.elements.map(cleanElementForExcalidraw)
-            const convertedElements = convertToExcalidrawElements(cleanedElements)
-            excalidrawAPI.updateScene({ elements: convertedElements })
+            const validatedElements = validateAndFixBindings(cleanedElements)
+            const convertedElements = convertToExcalidrawElements(validatedElements)
+            excalidrawAPI.updateScene({ 
+              elements: convertedElements,
+              captureUpdate: CaptureUpdateAction.NEVER
+            })
+            console.log('Loaded initial elements with validated bindings:', convertedElements)
+            debugElementBindings(convertedElements)
           }
           break
           
@@ -118,7 +209,10 @@ function App() {
           const cleanedNewElement = cleanElementForExcalidraw(data.element)
           const newElement = convertToExcalidrawElements([cleanedNewElement])
           const updatedElementsAfterCreate = [...currentElements, ...newElement]
-          excalidrawAPI.updateScene({ elements: updatedElementsAfterCreate })
+          excalidrawAPI.updateScene({ 
+            elements: updatedElementsAfterCreate,
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
           break
           
         case 'element_updated':
@@ -127,19 +221,46 @@ function App() {
           const updatedElements = currentElements.map(el => 
             el.id === data.element.id ? convertedUpdatedElement : el
           )
-          excalidrawAPI.updateScene({ elements: updatedElements })
+          excalidrawAPI.updateScene({ 
+            elements: updatedElements,
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
           break
           
         case 'element_deleted':
+          debugDeleteOperation('websocket_received', data)
           const filteredElements = currentElements.filter(el => el.id !== data.elementId)
-          excalidrawAPI.updateScene({ elements: filteredElements })
+          debugDeleteOperation('after_filter', data, { 
+            originalCount: currentElements.length, 
+            filteredCount: filteredElements.length,
+            actuallyRemoved: currentElements.length - filteredElements.length
+          })
+          excalidrawAPI.updateScene({ 
+            elements: filteredElements,
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
+          debugDeleteOperation('after_update_scene', data, {
+            finalElementCount: excalidrawAPI.getSceneElements().length
+          })
           break
           
         case 'elements_batch_created':
           const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
           const batchElements = convertToExcalidrawElements(cleanedBatchElements)
           const updatedElementsAfterBatch = [...currentElements, ...batchElements]
-          excalidrawAPI.updateScene({ elements: updatedElementsAfterBatch })
+          excalidrawAPI.updateScene({ 
+            elements: updatedElementsAfterBatch,
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
+          break
+          
+        case 'elements_synced':
+          console.log(`Sync confirmed by server: ${data.count} elements`)
+          // Sync confirmation already handled by HTTP response
+          break
+          
+        case 'sync_status':
+          console.log(`Server sync status: ${data.elementCount} elements`)
           break
           
         default:
@@ -148,6 +269,89 @@ function App() {
     } catch (error) {
       console.error('Error processing WebSocket message:', error, data)
     }
+  }
+
+  // Data format conversion for backend
+  const convertToBackendFormat = (element) => {
+    return {
+      ...element
+    }
+  }
+
+  // Format sync time display
+  const formatSyncTime = (time) => {
+    if (!time) return ''
+    return time.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  }
+
+  // Main sync function
+  const syncToBackend = async () => {
+    if (!excalidrawAPI) {
+      console.warn('Excalidraw API not available')
+      return
+    }
+    
+    setSyncStatus('syncing')
+    
+    try {
+      // 1. Get current elements
+      const currentElements = excalidrawAPI.getSceneElements()
+      console.log(`Syncing ${currentElements.length} elements to backend`)
+      
+      // 2. Filter out deleted elements
+      const activeElements = currentElements.filter(el => !el.isDeleted)
+      
+      // 3. Convert to backend format
+      const backendElements = activeElements.map(convertToBackendFormat)
+      
+      // 4. Send to backend
+      const response = await fetch('/api/elements/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          elements: backendElements,
+          timestamp: new Date().toISOString()
+        })
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        setSyncStatus('success')
+        setLastSyncTime(new Date())
+        console.log(`Sync successful: ${result.count} elements synced`)
+        
+        // Reset status after 2 seconds
+        setTimeout(() => setSyncStatus('idle'), 2000)
+      } else {
+        const error = await response.json()
+        setSyncStatus('error')
+        console.error('Sync failed:', error.error)
+      }
+    } catch (error) {
+      setSyncStatus('error')
+      console.error('Sync error:', error)
+    }
+  }
+
+  // Debug function to check element bindings
+  const debugElementBindings = (elements) => {
+    console.group('🔍 Element Binding Debug');
+    elements.forEach(element => {
+      if (element.boundElements || element.containerId) {
+        console.log(`Element ${element.id} (${element.type}):`, {
+          boundElements: element.boundElements,
+          containerId: element.containerId,
+          text: element.text || 'N/A'
+        });
+      }
+    });
+    console.groupEnd();
   }
 
   const clearCanvas = async () => {
@@ -165,11 +369,17 @@ function App() {
         }
         
         // Clear the frontend canvas
-        excalidrawAPI.updateScene({ elements: [] })
+        excalidrawAPI.updateScene({ 
+          elements: [],
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY
+        })
       } catch (error) {
         console.error('Error clearing canvas:', error)
         // Still clear frontend even if backend fails
-        excalidrawAPI.updateScene({ elements: [] })
+        excalidrawAPI.updateScene({ 
+          elements: [],
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY
+        })
       }
     }
   }
@@ -184,6 +394,34 @@ function App() {
             <div className={`status-dot ${isConnected ? 'status-connected' : 'status-disconnected'}`}></div>
             <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
+          
+          {/* Sync Controls */}
+          <div className="sync-controls">
+            <button 
+              className={`btn-primary ${syncStatus === 'syncing' ? 'btn-loading' : ''}`}
+              onClick={syncToBackend}
+              disabled={syncStatus === 'syncing' || !excalidrawAPI}
+            >
+              {syncStatus === 'syncing' && <span className="spinner"></span>}
+              {syncStatus === 'syncing' ? 'Syncing...' : 'Sync to Backend'}
+            </button>
+            
+            {/* Sync Status */}
+            <div className="sync-status">
+              {syncStatus === 'success' && (
+                <span className="sync-success">✅ Synced</span>
+              )}
+              {syncStatus === 'error' && (
+                <span className="sync-error">❌ Sync Failed</span>
+              )}
+              {lastSyncTime && syncStatus === 'idle' && (
+                <span className="sync-time">
+                  Last sync: {formatSyncTime(lastSyncTime)}
+                </span>
+              )}
+            </div>
+          </div>
+          
           <button className="btn-secondary" onClick={clearCanvas}>Clear Canvas</button>
         </div>
       </div>
