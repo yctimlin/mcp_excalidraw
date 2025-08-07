@@ -157,7 +157,7 @@ function App() {
 
     try {
       const currentElements = excalidrawAPI.getSceneElements()
-      console.log('当前元素:', currentElements);
+      console.log('Current elements:', currentElements);
 
       switch (data.type) {
         case 'initial_elements':
