@@ -16,8 +16,6 @@ import { z } from 'zod';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import { 
-  elements,
-  validateElement, 
   generateId, 
   EXCALIDRAW_ELEMENT_TYPES 
 } from './types.js';
@@ -439,11 +437,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Convert text to label format for Excalidraw
         const excalidrawElement = convertTextToLabel(element);
         
-        // Store the converted element locally (MCP server storage)
-        elements.set(id, excalidrawElement);
-        
-        // Sync to canvas (Express server + WebSocket broadcast)
+        // Create element directly on HTTP server (no local storage)
         const canvasElement = await createElementOnCanvas(excalidrawElement);
+        
+        if (!canvasElement) {
+          throw new Error('Failed to create element: HTTP server unavailable');
+        }
         
         logger.info('Element created via MCP and synced to canvas', { 
           id: excalidrawElement.id, 
@@ -454,7 +453,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ 
             type: 'text', 
-            text: `Element created successfully!\n\n${JSON.stringify(excalidrawElement, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still created locally)'}` 
+            text: `Element created successfully!\n\n${JSON.stringify(canvasElement, null, 2)}\n\n✅ Synced to canvas` 
           }]
         };
       }
@@ -465,27 +464,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         
         if (!id) throw new Error('Element ID is required');
 
-        const existingElement = elements.get(id);
-        if (!existingElement) throw new Error(`Element with ID ${id} not found`);
-
-        // Validate the updated element
-        ElementSchema.parse({ ...existingElement, ...updates });
-
-        const updatedElement = {
-          ...existingElement,
+        // Build update payload with timestamp and version increment
+        const updatePayload = {
+          id,
           ...updates,
-          updatedAt: new Date().toISOString(),
-          version: existingElement.version + 1
+          updatedAt: new Date().toISOString()
         };
 
         // Convert text to label format for Excalidraw
-        const excalidrawElement = convertTextToLabel(updatedElement);
+        const excalidrawElement = convertTextToLabel(updatePayload);
         
-        // Store the converted element locally (MCP server storage)
-        elements.set(id, excalidrawElement);
-        
-        // Sync to canvas (Express server + WebSocket broadcast)
+        // Update element directly on HTTP server (no local storage)
         const canvasElement = await updateElementOnCanvas(excalidrawElement);
+        
+        if (!canvasElement) {
+          throw new Error('Failed to update element: HTTP server unavailable or element not found');
+        }
         
         logger.info('Element updated via MCP and synced to canvas', { 
           id: excalidrawElement.id, 
@@ -495,7 +489,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ 
             type: 'text', 
-            text: `Element updated successfully!\n\n${JSON.stringify(excalidrawElement, null, 2)}\n\n${canvasElement ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still updated locally)'}` 
+            text: `Element updated successfully!\n\n${JSON.stringify(canvasElement, null, 2)}\n\n✅ Synced to canvas` 
           }]
         };
       }
@@ -504,21 +498,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = ElementIdSchema.parse(args);
         const { id } = params;
         
-        if (!elements.has(id)) throw new Error(`Element with ID ${id} not found`);
-        
-        // Delete locally (MCP server storage)
-        elements.delete(id);
-        
-        // Sync to canvas (Express server + WebSocket broadcast)
+        // Delete element directly on HTTP server (no local storage)
         const canvasResult = await deleteElementOnCanvas(id);
         
-        const result = { id, deleted: true, syncedToCanvas: !!canvasResult };
+        if (!canvasResult) {
+          throw new Error('Failed to delete element: HTTP server unavailable or element not found');
+        }
+        
+        const result = { id, deleted: true, syncedToCanvas: true };
         logger.info('Element deleted via MCP and synced to canvas', result);
         
         return {
           content: [{ 
             type: 'text', 
-            text: `Element deleted successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${canvasResult ? '✅ Synced to canvas' : '⚠️  Canvas sync failed (element still deleted locally)'}` 
+            text: `Element deleted successfully!\n\n${JSON.stringify(result, null, 2)}\n\n✅ Synced to canvas` 
           }]
         };
       }
@@ -527,23 +520,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = QuerySchema.parse(args || {});
         const { type, filter } = params;
         
-        let results = Array.from(elements.values());
-        
-        if (type) {
-          results = results.filter(element => element.type === type);
-        }
-        
-        if (filter) {
-          results = results.filter(element => {
-            return Object.entries(filter).every(([key, value]) => {
-              return element[key] === value;
+        try {
+          // Build query parameters
+          const queryParams = new URLSearchParams();
+          if (type) queryParams.set('type', type);
+          if (filter) {
+            Object.entries(filter).forEach(([key, value]) => {
+              queryParams.set(key, value);
             });
-          });
+          }
+          
+          // Query elements from HTTP server
+          const url = `${EXPRESS_SERVER_URL}/api/elements/search?${queryParams}`;
+          const response = await fetch(url);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          const results = data.elements || [];
+          
+          return {
+            content: [{ type: 'text', text: JSON.stringify(results, null, 2) }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to query elements: ${error.message}`);
         }
-        
-        return {
-          content: [{ type: 'text', text: JSON.stringify(results, null, 2) }]
-        };
       }
       
       case 'get_resource': {
@@ -561,18 +564,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
             break;
           case 'library':
-            result = {
-              elements: Array.from(elements.values())
-            };
+          case 'elements':
+            try {
+              // Get elements from HTTP server
+              const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+              if (!response.ok) {
+                throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
+              }
+              const data = await response.json();
+              result = {
+                elements: data.elements || []
+              };
+            } catch (error) {
+              throw new Error(`Failed to get elements: ${error.message}`);
+            }
             break;
           case 'theme':
             result = {
               theme: sceneState.theme
-            };
-            break;
-          case 'elements':
-            result = {
-              elements: Array.from(elements.values())
             };
             break;
           default:
@@ -644,34 +653,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = ElementIdsSchema.parse(args);
         const { elementIds } = params;
         
-        elementIds.forEach(id => {
-          const element = elements.get(id);
-          if (element) {
-            element.locked = true;
+        try {
+          // Lock elements through HTTP API updates
+          const updatePromises = elementIds.map(async (id) => {
+            return await updateElementOnCanvas({ id, locked: true });
+          });
+          
+          const results = await Promise.all(updatePromises);
+          const successCount = results.filter(result => result).length;
+          
+          if (successCount === 0) {
+            throw new Error('Failed to lock any elements: HTTP server unavailable');
           }
-        });
-        
-        const result = { locked: true, elementIds };
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-        };
+          
+          const result = { locked: true, elementIds, successCount };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to lock elements: ${error.message}`);
+        }
       }
       
       case 'unlock_elements': {
         const params = ElementIdsSchema.parse(args);
         const { elementIds } = params;
         
-        elementIds.forEach(id => {
-          const element = elements.get(id);
-          if (element) {
-            element.locked = false;
+        try {
+          // Unlock elements through HTTP API updates
+          const updatePromises = elementIds.map(async (id) => {
+            return await updateElementOnCanvas({ id, locked: false });
+          });
+          
+          const results = await Promise.all(updatePromises);
+          const successCount = results.filter(result => result).length;
+          
+          if (successCount === 0) {
+            throw new Error('Failed to unlock any elements: HTTP server unavailable');
           }
-        });
-        
-        const result = { unlocked: true, elementIds };
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-        };
+          
+          const result = { unlocked: true, elementIds, successCount };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to unlock elements: ${error.message}`);
+        }
       }
       
       case 'batch_create_elements': {
@@ -693,20 +720,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           
           // Convert text to label format for Excalidraw
           const excalidrawElement = convertTextToLabel(element);
-          
-          // Store the converted element locally (MCP server storage)
-          elements.set(id, excalidrawElement);
           createdElements.push(excalidrawElement);
         }
         
-        // Sync all elements to canvas at once (Express server + WebSocket broadcast)
+        // Create all elements directly on HTTP server (no local storage)
         const canvasElements = await batchCreateElementsOnCanvas(createdElements);
+        
+        if (!canvasElements) {
+          throw new Error('Failed to batch create elements: HTTP server unavailable');
+        }
         
         const result = {
           success: true,
-          elements: createdElements,
-          count: createdElements.length,
-          syncedToCanvas: !!canvasElements
+          elements: canvasElements,
+          count: canvasElements.length,
+          syncedToCanvas: true
         };
         
         logger.info('Batch elements created via MCP and synced to canvas', { 

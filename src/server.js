@@ -248,32 +248,6 @@ app.delete('/api/elements/:id', (req, res) => {
   }
 });
 
-// Get element by ID
-app.get('/api/elements/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const element = elements.get(id);
-    
-    if (!element) {
-      return res.status(404).json({
-        success: false,
-        error: `Element with ID ${id} not found`
-      });
-    }
-    
-    res.json({
-      success: true,
-      element: element
-    });
-  } catch (error) {
-    logger.error('Error fetching element:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Query elements with filters
 app.get('/api/elements/search', (req, res) => {
   try {
@@ -301,6 +275,32 @@ app.get('/api/elements/search', (req, res) => {
     });
   } catch (error) {
     logger.error('Error querying elements:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get element by ID
+app.get('/api/elements/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const element = elements.get(id);
+    
+    if (!element) {
+      return res.status(404).json({
+        success: false,
+        error: `Element with ID ${id} not found`
+      });
+    }
+    
+    res.json({
+      success: true,
+      element: element
+    });
+  } catch (error) {
+    logger.error('Error fetching element:', error);
     res.status(500).json({
       success: false,
       error: error.message

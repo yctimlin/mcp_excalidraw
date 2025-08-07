@@ -99,7 +99,7 @@ function App() {
       
       if (result.success && result.elements && result.elements.length > 0) {
         const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertToExcalidrawElements(cleanedElements)
+        const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
         excalidrawAPI.updateScene({ elements: convertedElements })
       }
     } catch (error) {
@@ -149,37 +149,6 @@ function App() {
     }
   }
 
-  // 调试函数：记录删除操作详情
-  const debugDeleteOperation = (operation, data, additionalInfo = {}) => {
-    const timestamp = new Date().toISOString()
-    const debugInfo = {
-      operation,
-      timestamp,
-      data,
-      elementCount: excalidrawAPI?.getSceneElements()?.length || 0,
-      ...additionalInfo
-    }
-    
-    console.group(`🔍 DELETE DEBUG: ${operation}`)
-    console.log('详细信息:', debugInfo)
-    
-    if (operation === 'websocket_received' && data.type === 'element_deleted') {
-      const currentElements = excalidrawAPI?.getSceneElements() || []
-      const targetElement = currentElements.find(el => el.id === data.elementId)
-      
-      console.log('目标元素存在:', !!targetElement)
-      console.log('当前元素ID列表:', currentElements.map(el => el.id))
-      console.log('要删除的ID:', data.elementId)
-      console.log('ID类型匹配检查:', currentElements.map(el => ({
-        id: el.id,
-        type: typeof el.id,
-        matches: el.id === data.elementId,
-        strictEquals: el.id === data.elementId
-      })))
-    }
-    
-    console.groupEnd()
-  }
 
   const handleWebSocketMessage = (data) => {
     if (!excalidrawAPI) {
@@ -200,8 +169,6 @@ function App() {
               elements: convertedElements,
               captureUpdate: CaptureUpdateAction.NEVER
             })
-            console.log('Loaded initial elements with validated bindings:', convertedElements)
-            debugElementBindings(convertedElements)
           }
           break
           
@@ -228,19 +195,10 @@ function App() {
           break
           
         case 'element_deleted':
-          debugDeleteOperation('websocket_received', data)
           const filteredElements = currentElements.filter(el => el.id !== data.elementId)
-          debugDeleteOperation('after_filter', data, { 
-            originalCount: currentElements.length, 
-            filteredCount: filteredElements.length,
-            actuallyRemoved: currentElements.length - filteredElements.length
-          })
           excalidrawAPI.updateScene({ 
             elements: filteredElements,
             captureUpdate: CaptureUpdateAction.NEVER
-          })
-          debugDeleteOperation('after_update_scene', data, {
-            finalElementCount: excalidrawAPI.getSceneElements().length
           })
           break
           
@@ -339,20 +297,6 @@ function App() {
     }
   }
 
-  // Debug function to check element bindings
-  const debugElementBindings = (elements) => {
-    console.group('🔍 Element Binding Debug');
-    elements.forEach(element => {
-      if (element.boundElements || element.containerId) {
-        console.log(`Element ${element.id} (${element.type}):`, {
-          boundElements: element.boundElements,
-          containerId: element.containerId,
-          text: element.text || 'N/A'
-        });
-      }
-    });
-    console.groupEnd();
-  }
 
   const clearCanvas = async () => {
     if (excalidrawAPI) {
