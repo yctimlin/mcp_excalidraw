@@ -2,21 +2,23 @@
   "name": "mcp-excalidraw-server",
   "version": "1.0.2",
   "description": "Advanced MCP server for Excalidraw with real-time canvas, WebSocket sync, and comprehensive diagram management",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "mcp-excalidraw-server": "src/index.js"
+    "mcp-excalidraw-server": "dist/index.js"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "canvas": "node src/server.js",
-    "build": "npm run build:frontend && npm run build:types",
+    "start": "npm run build:server && node dist/index.js",
+    "canvas": "npm run build:server && node dist/server.js",
+    "build": "npm run build:frontend && npm run build:server",
     "build:frontend": "vite build",
-    "build:types": "npx tsc --emitDeclarationOnly",
     "build:server": "npx tsc",
-    "dev": "concurrently \"npm run canvas\" \"vite\"",
+    "build:types": "npx tsc --emitDeclarationOnly",
+    "dev": "concurrently \"npm run dev:server\" \"vite\"",
+    "dev:server": "npx tsc --watch",
     "production": "npm run build && npm run canvas",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "type-check": "npx tsc --noEmit"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
@@ -33,7 +35,12 @@
     "zod-to-json-schema": "^3.22.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
     "@types/node": "^20.19.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.6.0",
     "concurrently": "^9.2.0",
     "typescript": "^5.8.3",

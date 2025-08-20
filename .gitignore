@@ -18,3 +18,5 @@ public/dist/
 
 # Development artifacts
 *.excalidraw
+
+docs/
