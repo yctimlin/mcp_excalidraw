@@ -5,19 +5,23 @@ process.env.NODE_DISABLE_COLORS = '1';
 process.env.NO_COLOR = '1';
 
 import { fileURLToPath } from "url";
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { 
   CallToolRequestSchema, 
-  ListToolsRequestSchema 
+  ListToolsRequestSchema,
+  CallToolRequest,
+  Tool
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import { 
   generateId, 
-  EXCALIDRAW_ELEMENT_TYPES 
+  EXCALIDRAW_ELEMENT_TYPES,
+  ServerElement,
+  ExcalidrawElementType,
+  validateElement
 } from './types.js';
 import fetch from 'node-fetch';
 
@@ -28,15 +32,30 @@ dotenv.config();
 const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || 'http://localhost:3000';
 const ENABLE_CANVAS_SYNC = process.env.ENABLE_CANVAS_SYNC !== 'false'; // Default to true
 
+// API Response types
+interface ApiResponse {
+  success: boolean;
+  element?: ServerElement;
+  elements?: ServerElement[];
+  message?: string;
+  count?: number;
+}
+
+interface SyncResponse {
+  element?: ServerElement;
+  elements?: ServerElement[];
+}
+
 // Helper functions to sync with Express server (canvas)
-async function syncToCanvas(operation, data) {
+async function syncToCanvas(operation: string, data: any): Promise<SyncResponse | null> {
   if (!ENABLE_CANVAS_SYNC) {
     logger.debug('Canvas sync disabled, skipping');
     return null;
   }
 
   try {
-    let url, options;
+    let url: string;
+    let options: any;
     
     switch (operation) {
       case 'create':
@@ -83,43 +102,50 @@ async function syncToCanvas(operation, data) {
       throw new Error(`Canvas sync failed: ${response.status} ${response.statusText}`);
     }
     
-    const result = await response.json();
+    const result = await response.json() as ApiResponse;
     logger.debug(`Canvas sync successful: ${operation}`, result);
-    return result;
+    return result as SyncResponse;
     
   } catch (error) {
-    logger.warn(`Canvas sync failed for ${operation}:`, error.message);
+    logger.warn(`Canvas sync failed for ${operation}:`, (error as Error).message);
     // Don't throw - we want MCP operations to work even if canvas is unavailable
     return null;
   }
 }
 
 // Helper to sync element creation to canvas
-async function createElementOnCanvas(elementData) {
+async function createElementOnCanvas(elementData: ServerElement): Promise<ServerElement | null> {
   const result = await syncToCanvas('create', elementData);
   return result?.element || elementData;
 }
 
 // Helper to sync element update to canvas  
-async function updateElementOnCanvas(elementData) {
+async function updateElementOnCanvas(elementData: Partial<ServerElement> & { id: string }): Promise<ServerElement | null> {
   const result = await syncToCanvas('update', elementData);
-  return result?.element || elementData;
+  return result?.element || null;
 }
 
 // Helper to sync element deletion to canvas
-async function deleteElementOnCanvas(elementId) {
+async function deleteElementOnCanvas(elementId: string): Promise<any> {
   const result = await syncToCanvas('delete', { id: elementId });
   return result;
 }
 
 // Helper to sync batch creation to canvas
-async function batchCreateElementsOnCanvas(elementsData) {
+async function batchCreateElementsOnCanvas(elementsData: ServerElement[]): Promise<ServerElement[] | null> {
   const result = await syncToCanvas('batch_create', elementsData);
   return result?.elements || elementsData;
 }
 
 // In-memory storage for scene state
-const sceneState = {
+interface SceneState {
+  theme: string;
+  viewport: { x: number; y: number; zoom: number };
+  selectedElements: Set<string>;
+  groups: Map<string, string[]>;
+}
+
+const sceneState: SceneState = {
   theme: 'light',
   viewport: { x: 0, y: 0, zoom: 1 },
   selectedElements: new Set(),
@@ -128,7 +154,7 @@ const sceneState = {
 
 // Schema definitions using zod
 const ElementSchema = z.object({
-  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES)),
+  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]),
   x: z.number(),
   y: z.number(),
   width: z.number().optional(),
@@ -167,7 +193,7 @@ const DistributeElementsSchema = z.object({
 });
 
 const QuerySchema = z.object({
-  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES)).optional(),
+  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]).optional(),
   filter: z.record(z.any()).optional()
 });
 
@@ -175,19 +201,201 @@ const ResourceSchema = z.object({
   resource: z.enum(['scene', 'library', 'theme', 'elements'])
 });
 
-// Initialize MCP server
-const server = new Server(
+// Tool definitions
+const tools: Tool[] = [
   {
-    name: "mcp-excalidraw-server",
-    version: "1.0.2",
-    description: "Advanced MCP server for Excalidraw with real-time canvas"
+    name: 'create_element',
+    description: 'Create a new Excalidraw element',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { 
+          type: 'string', 
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        },
+        x: { type: 'number' },
+        y: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        backgroundColor: { type: 'string' },
+        strokeColor: { type: 'string' },
+        strokeWidth: { type: 'number' },
+        roughness: { type: 'number' },
+        opacity: { type: 'number' },
+        text: { type: 'string' },
+        fontSize: { type: 'number' },
+        fontFamily: { type: 'string' }
+      },
+      required: ['type', 'x', 'y']
+    }
   },
   {
-    capabilities: {
-      tools: {
-        create_element: {
-          description: 'Create a new Excalidraw element',
-          inputSchema: {
+    name: 'update_element',
+    description: 'Update an existing Excalidraw element',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        type: { 
+          type: 'string', 
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        },
+        x: { type: 'number' },
+        y: { type: 'number' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+        backgroundColor: { type: 'string' },
+        strokeColor: { type: 'string' },
+        strokeWidth: { type: 'number' },
+        roughness: { type: 'number' },
+        opacity: { type: 'number' },
+        text: { type: 'string' },
+        fontSize: { type: 'number' },
+        fontFamily: { type: 'string' }
+      },
+      required: ['id']
+    }
+  },
+  {
+    name: 'delete_element',
+    description: 'Delete an Excalidraw element',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' }
+      },
+      required: ['id']
+    }
+  },
+  {
+    name: 'query_elements',
+    description: 'Query Excalidraw elements with optional filters',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: { 
+          type: 'string', 
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        },
+        filter: { 
+          type: 'object',
+          additionalProperties: true
+        }
+      }
+    }
+  },
+  {
+    name: 'get_resource',
+    description: 'Get an Excalidraw resource',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        resource: { 
+          type: 'string', 
+          enum: ['scene', 'library', 'theme', 'elements'] 
+        }
+      },
+      required: ['resource']
+    }
+  },
+  {
+    name: 'group_elements',
+    description: 'Group multiple elements together',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementIds: { 
+          type: 'array',
+          items: { type: 'string' }
+        }
+      },
+      required: ['elementIds']
+    }
+  },
+  {
+    name: 'ungroup_elements',
+    description: 'Ungroup a group of elements',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        groupId: { type: 'string' }
+      },
+      required: ['groupId']
+    }
+  },
+  {
+    name: 'align_elements',
+    description: 'Align elements to a specific position',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementIds: { 
+          type: 'array',
+          items: { type: 'string' }
+        },
+        alignment: { 
+          type: 'string', 
+          enum: ['left', 'center', 'right', 'top', 'middle', 'bottom'] 
+        }
+      },
+      required: ['elementIds', 'alignment']
+    }
+  },
+  {
+    name: 'distribute_elements',
+    description: 'Distribute elements evenly',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementIds: { 
+          type: 'array',
+          items: { type: 'string' }
+        },
+        direction: { 
+          type: 'string', 
+          enum: ['horizontal', 'vertical'] 
+        }
+      },
+      required: ['elementIds', 'direction']
+    }
+  },
+  {
+    name: 'lock_elements',
+    description: 'Lock elements to prevent modification',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementIds: { 
+          type: 'array',
+          items: { type: 'string' }
+        }
+      },
+      required: ['elementIds']
+    }
+  },
+  {
+    name: 'unlock_elements',
+    description: 'Unlock elements to allow modification',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementIds: { 
+          type: 'array',
+          items: { type: 'string' }
+        }
+      },
+      required: ['elementIds']
+    }
+  },
+  {
+    name: 'batch_create_elements',
+    description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elements: {
+          type: 'array',
+          items: {
             type: 'object',
             properties: {
               type: { 
@@ -209,196 +417,32 @@ const server = new Server(
             },
             required: ['type', 'x', 'y']
           }
-        },
-        update_element: {
-          description: 'Update an existing Excalidraw element',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              type: { 
-                type: 'string', 
-                enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-              },
-              x: { type: 'number' },
-              y: { type: 'number' },
-              width: { type: 'number' },
-              height: { type: 'number' },
-              backgroundColor: { type: 'string' },
-              strokeColor: { type: 'string' },
-              strokeWidth: { type: 'number' },
-              roughness: { type: 'number' },
-              opacity: { type: 'number' },
-              text: { type: 'string' },
-              fontSize: { type: 'number' },
-              fontFamily: { type: 'string' }
-            },
-            required: ['id']
-          }
-        },
-        delete_element: {
-          description: 'Delete an Excalidraw element',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' }
-            },
-            required: ['id']
-          }
-        },
-        query_elements: {
-          description: 'Query Excalidraw elements with optional filters',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              type: { 
-                type: 'string', 
-                enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-              },
-              filter: { 
-                type: 'object',
-                additionalProperties: true
-              }
-            }
-          }
-        },
-        get_resource: {
-          description: 'Get an Excalidraw resource',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              resource: { 
-                type: 'string', 
-                enum: ['scene', 'library', 'theme', 'elements'] 
-              }
-            },
-            required: ['resource']
-          }
-        },
-        group_elements: {
-          description: 'Group multiple elements together',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elementIds: { 
-                type: 'array',
-                items: { type: 'string' }
-              }
-            },
-            required: ['elementIds']
-          }
-        },
-        ungroup_elements: {
-          description: 'Ungroup a group of elements',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              groupId: { type: 'string' }
-            },
-            required: ['groupId']
-          }
-        },
-        align_elements: {
-          description: 'Align elements to a specific position',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elementIds: { 
-                type: 'array',
-                items: { type: 'string' }
-              },
-              alignment: { 
-                type: 'string', 
-                enum: ['left', 'center', 'right', 'top', 'middle', 'bottom'] 
-              }
-            },
-            required: ['elementIds', 'alignment']
-          }
-        },
-        distribute_elements: {
-          description: 'Distribute elements evenly',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elementIds: { 
-                type: 'array',
-                items: { type: 'string' }
-              },
-              direction: { 
-                type: 'string', 
-                enum: ['horizontal', 'vertical'] 
-              }
-            },
-            required: ['elementIds', 'direction']
-          }
-        },
-        lock_elements: {
-          description: 'Lock elements to prevent modification',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elementIds: { 
-                type: 'array',
-                items: { type: 'string' }
-              }
-            },
-            required: ['elementIds']
-          }
-        },
-        unlock_elements: {
-          description: 'Unlock elements to allow modification',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elementIds: { 
-                type: 'array',
-                items: { type: 'string' }
-              }
-            },
-            required: ['elementIds']
-          }
-        },
-        batch_create_elements: {
-          description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              elements: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    type: { 
-                      type: 'string', 
-                      enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-                    },
-                    x: { type: 'number' },
-                    y: { type: 'number' },
-                    width: { type: 'number' },
-                    height: { type: 'number' },
-                    backgroundColor: { type: 'string' },
-                    strokeColor: { type: 'string' },
-                    strokeWidth: { type: 'number' },
-                    roughness: { type: 'number' },
-                    opacity: { type: 'number' },
-                    text: { type: 'string' },
-                    fontSize: { type: 'number' },
-                    fontFamily: { type: 'string' }
-                  },
-                  required: ['type', 'x', 'y']
-                }
-              }
-            },
-            required: ['elements']
-          }
-        },
-      }
+        }
+      },
+      required: ['elements']
+    }
+  }
+];
+
+// Initialize MCP server
+const server = new Server(
+  {
+    name: "mcp-excalidraw-server",
+    version: "1.0.2",
+    description: "Advanced MCP server for Excalidraw with real-time canvas"
+  },
+  {
+    capabilities: {
+      tools: Object.fromEntries(tools.map(tool => [tool.name, {
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }]))
     }
   }
 );
 
 // Helper function to convert text property to label format for Excalidraw
-function convertTextToLabel(element) {
+function convertTextToLabel(element: ServerElement): ServerElement {
   const { text, ...rest } = element;
   if (text) {
     // For standalone text elements, keep text as direct property
@@ -409,13 +453,13 @@ function convertTextToLabel(element) {
     return {
       ...rest,
       label: { text }
-    };
+    } as ServerElement;
   }
   return element;
 }
 
 // Set up request handler for tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
   try {
     const { name, arguments: args } = request.params;
     logger.info(`Handling tool call: ${name}`);
@@ -426,7 +470,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         logger.info('Creating element via MCP', { type: params.type });
 
         const id = generateId();
-        const element = {
+        const element: ServerElement = {
           id,
           ...params,
           createdAt: new Date().toISOString(),
@@ -465,14 +509,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!id) throw new Error('Element ID is required');
 
         // Build update payload with timestamp and version increment
-        const updatePayload = {
+        const updatePayload: Partial<ServerElement> & { id: string } = {
           id,
           ...updates,
           updatedAt: new Date().toISOString()
         };
 
         // Convert text to label format for Excalidraw
-        const excalidrawElement = convertTextToLabel(updatePayload);
+        const excalidrawElement = convertTextToLabel(updatePayload as ServerElement);
         
         // Update element directly on HTTP server (no local storage)
         const canvasElement = await updateElementOnCanvas(excalidrawElement);
@@ -526,7 +570,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (type) queryParams.set('type', type);
           if (filter) {
             Object.entries(filter).forEach(([key, value]) => {
-              queryParams.set(key, value);
+              queryParams.set(key, String(value));
             });
           }
           
@@ -538,14 +582,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
           }
           
-          const data = await response.json();
+          const data = await response.json() as ApiResponse;
           const results = data.elements || [];
           
           return {
             content: [{ type: 'text', text: JSON.stringify(results, null, 2) }]
           };
         } catch (error) {
-          throw new Error(`Failed to query elements: ${error.message}`);
+          throw new Error(`Failed to query elements: ${(error as Error).message}`);
         }
       }
       
@@ -554,7 +598,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { resource } = params;
         logger.info('Getting resource', { resource });
         
-        let result;
+        let result: any;
         switch (resource) {
           case 'scene':
             result = {
@@ -571,12 +615,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               if (!response.ok) {
                 throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
               }
-              const data = await response.json();
+              const data = await response.json() as ApiResponse;
               result = {
                 elements: data.elements || []
               };
             } catch (error) {
-              throw new Error(`Failed to get elements: ${error.message}`);
+              throw new Error(`Failed to get elements: ${(error as Error).message}`);
             }
             break;
           case 'theme':
@@ -671,7 +715,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
           };
         } catch (error) {
-          throw new Error(`Failed to lock elements: ${error.message}`);
+          throw new Error(`Failed to lock elements: ${(error as Error).message}`);
         }
       }
       
@@ -697,7 +741,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
           };
         } catch (error) {
-          throw new Error(`Failed to unlock elements: ${error.message}`);
+          throw new Error(`Failed to unlock elements: ${(error as Error).message}`);
         }
       }
       
@@ -705,12 +749,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const params = z.object({ elements: z.array(ElementSchema) }).parse(args);
         logger.info('Batch creating elements via MCP', { count: params.elements.length });
 
-        const createdElements = [];
+        const createdElements: ServerElement[] = [];
         
         // Create each element with unique ID
         for (const elementData of params.elements) {
           const id = generateId();
-          const element = {
+          const element: ServerElement = {
             id,
             ...elementData,
             createdAt: new Date().toISOString(),
@@ -754,9 +798,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    logger.error(`Error handling tool call: ${error.message}`, { error });
+    logger.error(`Error handling tool call: ${(error as Error).message}`, { error });
     return {
-      content: [{ type: 'text', text: `Error: ${error.message}` }],
+      content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
       isError: true
     };
   }
@@ -765,234 +809,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // Set up request handler for listing available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   logger.info('Listing available tools');
-  
-  const tools = [
-    {
-      name: 'create_element',
-      description: 'Create a new Excalidraw element',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          type: { 
-            type: 'string', 
-            enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-          },
-          x: { type: 'number' },
-          y: { type: 'number' },
-          width: { type: 'number' },
-          height: { type: 'number' },
-          backgroundColor: { type: 'string' },
-          strokeColor: { type: 'string' },
-          strokeWidth: { type: 'number' },
-          roughness: { type: 'number' },
-          opacity: { type: 'number' },
-          text: { type: 'string' },
-          fontSize: { type: 'number' },
-          fontFamily: { type: 'string' }
-        },
-        required: ['type', 'x', 'y']
-      }
-    },
-    {
-      name: 'update_element',
-      description: 'Update an existing Excalidraw element',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          type: { 
-            type: 'string', 
-            enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-          },
-          x: { type: 'number' },
-          y: { type: 'number' },
-          width: { type: 'number' },
-          height: { type: 'number' },
-          backgroundColor: { type: 'string' },
-          strokeColor: { type: 'string' },
-          strokeWidth: { type: 'number' },
-          roughness: { type: 'number' },
-          opacity: { type: 'number' },
-          text: { type: 'string' },
-          fontSize: { type: 'number' },
-          fontFamily: { type: 'string' }
-        },
-        required: ['id']
-      }
-    },
-    {
-      name: 'delete_element',
-      description: 'Delete an Excalidraw element',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' }
-        },
-        required: ['id']
-      }
-    },
-    {
-      name: 'query_elements',
-      description: 'Query Excalidraw elements with optional filters',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          type: { 
-            type: 'string', 
-            enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-          },
-          filter: { 
-            type: 'object',
-            additionalProperties: true
-          }
-        }
-      }
-    },
-    {
-      name: 'get_resource',
-      description: 'Get an Excalidraw resource',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          resource: { 
-            type: 'string', 
-            enum: ['scene', 'library', 'theme', 'elements'] 
-          }
-        },
-        required: ['resource']
-      }
-    },
-    {
-      name: 'group_elements',
-      description: 'Group multiple elements together',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elementIds: { 
-            type: 'array',
-            items: { type: 'string' }
-          }
-        },
-        required: ['elementIds']
-      }
-    },
-    {
-      name: 'ungroup_elements',
-      description: 'Ungroup a group of elements',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          groupId: { type: 'string' }
-        },
-        required: ['groupId']
-      }
-    },
-    {
-      name: 'align_elements',
-      description: 'Align elements to a specific position',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elementIds: { 
-            type: 'array',
-            items: { type: 'string' }
-          },
-          alignment: { 
-            type: 'string', 
-            enum: ['left', 'center', 'right', 'top', 'middle', 'bottom'] 
-          }
-        },
-        required: ['elementIds', 'alignment']
-      }
-    },
-    {
-      name: 'distribute_elements',
-      description: 'Distribute elements evenly',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elementIds: { 
-            type: 'array',
-            items: { type: 'string' }
-          },
-          direction: { 
-            type: 'string', 
-            enum: ['horizontal', 'vertical'] 
-          }
-        },
-        required: ['elementIds', 'direction']
-      }
-    },
-    {
-      name: 'lock_elements',
-      description: 'Lock elements to prevent modification',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elementIds: { 
-            type: 'array',
-            items: { type: 'string' }
-          }
-        },
-        required: ['elementIds']
-      }
-    },
-    {
-      name: 'unlock_elements',
-      description: 'Unlock elements to allow modification',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elementIds: { 
-            type: 'array',
-            items: { type: 'string' }
-          }
-        },
-        required: ['elementIds']
-      }
-    },
-    {
-      name: 'batch_create_elements',
-      description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          elements: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                type: { 
-                  type: 'string', 
-                  enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
-                },
-                x: { type: 'number' },
-                y: { type: 'number' },
-                width: { type: 'number' },
-                height: { type: 'number' },
-                backgroundColor: { type: 'string' },
-                strokeColor: { type: 'string' },
-                strokeWidth: { type: 'number' },
-                roughness: { type: 'number' },
-                opacity: { type: 'number' },
-                text: { type: 'string' },
-                fontSize: { type: 'number' },
-                fontFamily: { type: 'string' }
-              },
-              required: ['type', 'x', 'y']
-            }
-          }
-        },
-        required: ['elements']
-      }
-    }
-  ];
-  
   return { tools };
 });
 
 // Start server with transport based on mode
-async function runServer() {
+async function runServer(): Promise<void> {
   try {
     logger.info('Starting Excalidraw MCP server...');
     
@@ -1022,19 +843,19 @@ async function runServer() {
     process.stdin.resume();
   } catch (error) {
     logger.error('Error starting server:', error);
-    process.stderr.write(`Failed to start MCP server: ${error.message}\n${error.stack}\n`);
+    process.stderr.write(`Failed to start MCP server: ${(error as Error).message}\n${(error as Error).stack}\n`);
     process.exit(1);
   }
 }
 
 // Add global error handlers
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', (error: Error) => {
   logger.error('Uncaught exception:', error);
   process.stderr.write(`UNCAUGHT EXCEPTION: ${error.message}\n${error.stack}\n`);
   setTimeout(() => process.exit(1), 1000);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   logger.error('Unhandled promise rejection:', reason);
   process.stderr.write(`UNHANDLED REJECTION: ${reason}\n`);
   setTimeout(() => process.exit(1), 1000);
@@ -1053,4 +874,4 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   });
 }
 
-export default runServer; 
+export default runServer;

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -9,9 +9,19 @@ import logger from './utils/logger.js';
 import { 
   elements,
   generateId, 
-  EXCALIDRAW_ELEMENT_TYPES 
+  EXCALIDRAW_ELEMENT_TYPES,
+  ServerElement,
+  ExcalidrawElementType,
+  WebSocketMessage,
+  ElementCreatedMessage,
+  ElementUpdatedMessage,
+  ElementDeletedMessage,
+  BatchCreatedMessage,
+  SyncStatusMessage,
+  InitialElementsMessage
 } from './types.js';
 import { z } from 'zod';
+import WebSocket from 'ws';
 
 // Load environment variables
 dotenv.config();
@@ -34,35 +44,37 @@ app.use(express.static(staticDir));
 app.use(express.static(path.join(__dirname, '../dist/frontend')));
 
 // WebSocket connections
-const clients = new Set();
+const clients = new Set<WebSocket>();
 
 // Broadcast to all connected clients
-function broadcast(message) {
+function broadcast(message: WebSocketMessage): void {
   const data = JSON.stringify(message);
   clients.forEach(client => {
-    if (client.readyState === client.OPEN) {
+    if (client.readyState === WebSocket.OPEN) {
       client.send(data);
     }
   });
 }
 
 // WebSocket connection handling
-wss.on('connection', (ws) => {
+wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
   logger.info('New WebSocket connection established');
   
   // Send current elements to new client
-  ws.send(JSON.stringify({
+  const initialMessage: InitialElementsMessage = {
     type: 'initial_elements',
     elements: Array.from(elements.values())
-  }));
+  };
+  ws.send(JSON.stringify(initialMessage));
   
   // Send sync status to new client
-  ws.send(JSON.stringify({
+  const syncMessage: SyncStatusMessage = {
     type: 'sync_status',
     elementCount: elements.size,
     timestamp: new Date().toISOString()
-  }));
+  };
+  ws.send(JSON.stringify(syncMessage));
   
   ws.on('close', () => {
     clients.delete(ws);
@@ -78,7 +90,7 @@ wss.on('connection', (ws) => {
 // Schema validation
 const CreateElementSchema = z.object({
   id: z.string().optional(), // Allow passing ID for MCP sync
-  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES)),
+  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]),
   x: z.number(),
   y: z.number(),
   width: z.number().optional(),
@@ -98,7 +110,7 @@ const CreateElementSchema = z.object({
 
 const UpdateElementSchema = z.object({
   id: z.string(),
-  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES)).optional(),
+  type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]).optional(),
   x: z.number().optional(),
   y: z.number().optional(),
   width: z.number().optional(),
@@ -119,7 +131,7 @@ const UpdateElementSchema = z.object({
 // API Routes
 
 // Get all elements
-app.get('/api/elements', (req, res) => {
+app.get('/api/elements', (req: Request, res: Response) => {
   try {
     const elementsArray = Array.from(elements.values());
     res.json({
@@ -131,20 +143,20 @@ app.get('/api/elements', (req, res) => {
     logger.error('Error fetching elements:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Create new element
-app.post('/api/elements', (req, res) => {
+app.post('/api/elements', (req: Request, res: Response) => {
   try {
     const params = CreateElementSchema.parse(req.body);
     logger.info('Creating element via API', { type: params.type });
 
     // Prioritize passed ID (for MCP sync), otherwise generate new ID
     const id = params.id || generateId();
-    const element = {
+    const element: ServerElement = {
       id,
       ...params,
       createdAt: new Date().toISOString(),
@@ -155,10 +167,11 @@ app.post('/api/elements', (req, res) => {
     elements.set(id, element);
     
     // Broadcast to all connected clients
-    broadcast({
+    const message: ElementCreatedMessage = {
       type: 'element_created',
       element: element
-    });
+    };
+    broadcast(message);
     
     res.json({
       success: true,
@@ -168,16 +181,23 @@ app.post('/api/elements', (req, res) => {
     logger.error('Error creating element:', error);
     res.status(400).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Update element
-app.put('/api/elements/:id', (req, res) => {
+app.put('/api/elements/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = UpdateElementSchema.parse({ id, ...req.body });
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Element ID is required'
+      });
+    }
     
     const existingElement = elements.get(id);
     if (!existingElement) {
@@ -187,20 +207,21 @@ app.put('/api/elements/:id', (req, res) => {
       });
     }
 
-    const updatedElement = {
+    const updatedElement: ServerElement = {
       ...existingElement,
       ...updates,
       updatedAt: new Date().toISOString(),
-      version: existingElement.version + 1
+      version: (existingElement.version || 0) + 1
     };
 
     elements.set(id, updatedElement);
     
     // Broadcast to all connected clients
-    broadcast({
+    const message: ElementUpdatedMessage = {
       type: 'element_updated',
       element: updatedElement
-    });
+    };
+    broadcast(message);
     
     res.json({
       success: true,
@@ -210,15 +231,22 @@ app.put('/api/elements/:id', (req, res) => {
     logger.error('Error updating element:', error);
     res.status(400).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Delete element
-app.delete('/api/elements/:id', (req, res) => {
+app.delete('/api/elements/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Element ID is required'
+      });
+    }
     
     if (!elements.has(id)) {
       return res.status(404).json({
@@ -230,10 +258,11 @@ app.delete('/api/elements/:id', (req, res) => {
     elements.delete(id);
     
     // Broadcast to all connected clients
-    broadcast({
+    const message: ElementDeletedMessage = {
       type: 'element_deleted',
-      elementId: id
-    });
+      elementId: id!
+    };
+    broadcast(message);
     
     res.json({
       success: true,
@@ -243,19 +272,19 @@ app.delete('/api/elements/:id', (req, res) => {
     logger.error('Error deleting element:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Query elements with filters
-app.get('/api/elements/search', (req, res) => {
+app.get('/api/elements/search', (req: Request, res: Response) => {
   try {
     const { type, ...filters } = req.query;
     let results = Array.from(elements.values());
     
     // Filter by type if specified
-    if (type) {
+    if (type && typeof type === 'string') {
       results = results.filter(element => element.type === type);
     }
     
@@ -263,7 +292,7 @@ app.get('/api/elements/search', (req, res) => {
     if (Object.keys(filters).length > 0) {
       results = results.filter(element => {
         return Object.entries(filters).every(([key, value]) => {
-          return element[key] === value;
+          return (element as any)[key] === value;
         });
       });
     }
@@ -277,15 +306,23 @@ app.get('/api/elements/search', (req, res) => {
     logger.error('Error querying elements:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Get element by ID
-app.get('/api/elements/:id', (req, res) => {
+app.get('/api/elements/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Element ID is required'
+      });
+    }
+    
     const element = elements.get(id);
     
     if (!element) {
@@ -303,13 +340,13 @@ app.get('/api/elements/:id', (req, res) => {
     logger.error('Error fetching element:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Batch create elements
-app.post('/api/elements/batch', (req, res) => {
+app.post('/api/elements/batch', (req: Request, res: Response) => {
   try {
     const { elements: elementsToCreate } = req.body;
     
@@ -320,12 +357,12 @@ app.post('/api/elements/batch', (req, res) => {
       });
     }
     
-    const createdElements = [];
+    const createdElements: ServerElement[] = [];
     
     elementsToCreate.forEach(elementData => {
       const params = CreateElementSchema.parse(elementData);
       const id = generateId();
-      const element = {
+      const element: ServerElement = {
         id,
         ...params,
         createdAt: new Date().toISOString(),
@@ -338,10 +375,11 @@ app.post('/api/elements/batch', (req, res) => {
     });
     
     // Broadcast to all connected clients
-    broadcast({
+    const message: BatchCreatedMessage = {
       type: 'elements_batch_created',
       elements: createdElements
-    });
+    };
+    broadcast(message);
     
     res.json({
       success: true,
@@ -352,13 +390,13 @@ app.post('/api/elements/batch', (req, res) => {
     logger.error('Error batch creating elements:', error);
     res.status(400).json({
       success: false,
-      error: error.message
+      error: (error as Error).message
     });
   }
 });
 
 // Sync elements from frontend (overwrite sync)
-app.post('/api/elements/sync', (req, res) => {
+app.post('/api/elements/sync', (req: Request, res: Response) => {
   try {
     const { elements: frontendElements, timestamp } = req.body;
     
@@ -384,15 +422,15 @@ app.post('/api/elements/sync', (req, res) => {
     
     // 2. Batch write new data
     let successCount = 0;
-    const processedElements = [];
+    const processedElements: ServerElement[] = [];
     
-    frontendElements.forEach((element, index) => {
+    frontendElements.forEach((element: any, index: number) => {
       try {
         // Ensure element has ID, generate one if missing
         const elementId = element.id || generateId();
         
         // Add server metadata
-        const processedElement = {
+        const processedElement: ServerElement = {
           ...element,
           id: elementId,
           syncedAt: new Date().toISOString(),
@@ -435,14 +473,14 @@ app.post('/api/elements/sync', (req, res) => {
     logger.error('Sync error:', error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      error: (error as Error).message,
       details: 'Internal server error during sync operation'
     });
   }
 });
 
 // Serve the frontend
-app.get('/', (req, res) => {
+app.get('/', (req: Request, res: Response) => {
   const htmlFile = path.join(__dirname, '../dist/frontend/index.html');
   res.sendFile(htmlFile, (err) => {
     if (err) {
@@ -453,7 +491,7 @@ app.get('/', (req, res) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -463,7 +501,7 @@ app.get('/health', (req, res) => {
 });
 
 // Sync status endpoint
-app.get('/api/sync/status', (req, res) => {
+app.get('/api/sync/status', (req: Request, res: Response) => {
   res.json({
     success: true,
     elementCount: elements.size,
@@ -477,7 +515,7 @@ app.get('/api/sync/status', (req, res) => {
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   logger.error('Unhandled error:', err);
   res.status(500).json({
     success: false,
@@ -486,7 +524,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || 'localhost';
 
 server.listen(PORT, HOST, () => {
@@ -494,4 +532,4 @@ server.listen(PORT, HOST, () => {
   logger.info(`WebSocket server running on ws://${HOST}:${PORT}`);
 });
 
-export default app; 
+export default app;

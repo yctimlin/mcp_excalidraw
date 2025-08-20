@@ -1,6 +1,6 @@
 # MCP Excalidraw Server: Advanced Live Visual Diagramming with AI Integration
 
-A comprehensive system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
+A comprehensive **TypeScript-based** system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
 
 ## 🚦 Current Status & Version Information
 
@@ -54,6 +54,12 @@ For the most stable experience, we recommend using the local development setup. 
 
 ## 🌟 Key Features
 
+### **Modern TypeScript Architecture**
+- **Full TypeScript Migration**: Complete type safety for backend and frontend
+- **Comprehensive Type Definitions**: Excalidraw elements, API responses, WebSocket messages
+- **Strict Type Checking**: Enhanced development experience and compile-time error detection
+- **Type-Safe React Components**: TSX components with proper props typing
+
 ### **Real-time Canvas Integration**
 - Elements created via MCP appear instantly on the live canvas
 - WebSocket-based real-time synchronization
@@ -71,8 +77,8 @@ For the most stable experience, we recommend using the local development setup. 
 - **Advanced Features**: grouping, alignment, distribution, locking
 
 ### **Robust Architecture**
-- Express.js backend with REST API + WebSocket
-- React frontend with official Excalidraw package
+- TypeScript-based Express.js backend with REST API + WebSocket
+- React frontend with official Excalidraw package and TypeScript
 - Dual-path element loading for reliability
 - Auto-reconnection and error handling
 
@@ -133,10 +139,13 @@ docker run -p 3000:3000 mcp-excalidraw-server
 
 | Script | Description |
 |--------|-------------|
-| `npm start` | Start MCP server (`src/index.js`) |
-| `npm run canvas` | Start canvas server (`src/server.js`) |
-| `npm run build` | Build frontend for production |
-| `npm run dev` | Start canvas + Vite dev server |
+| `npm start` | Build and start MCP server (`dist/index.js`) |
+| `npm run canvas` | Build and start canvas server (`dist/server.js`) |
+| `npm run build` | Build both frontend and TypeScript backend |
+| `npm run build:frontend` | Build React frontend only |
+| `npm run build:server` | Compile TypeScript backend to JavaScript |
+| `npm run dev` | Start TypeScript watch mode + Vite dev server |
+| `npm run type-check` | Run TypeScript type checking without compilation |
 | `npm run production` | Build + start in production mode |
 
 ## 🎯 Usage Guide
@@ -225,13 +234,13 @@ For the **local development version** (most stable), add this configuration to y
   "mcpServers": {
     "excalidraw": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
     }
   }
 }
 ```
 
-**Important**: Replace `/absolute/path/to/mcp_excalidraw` with the actual absolute path to your cloned repository.
+**Important**: Replace `/absolute/path/to/mcp_excalidraw` with the actual absolute path to your cloned repository. Note that the path now points to `dist/index.js` (the compiled TypeScript output).
 
 ### **🔧 Alternative Configurations (Beta)**
 
@@ -272,7 +281,7 @@ Add to your `.cursor/mcp.json`:
   "mcpServers": {
     "excalidraw": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
     }
   }
 }
@@ -288,7 +297,7 @@ For VS Code MCP extension, add to your settings:
     "servers": {
       "excalidraw": {
         "command": "node",
-        "args": ["/absolute/path/to/mcp_excalidraw/src/index.js"]
+        "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
       }
     }
   }
@@ -342,22 +351,29 @@ The canvas server provides these REST endpoints:
 ## 🏗️ Development Architecture
 
 ### **Frontend** (`frontend/src/`)
-- **React + Vite**: Modern build system
-- **Official Excalidraw**: `@excalidraw/excalidraw` package
-- **WebSocket Client**: Real-time element sync
-- **Clean UI**: Production-ready interface
+- **React + TypeScript**: Modern TSX components with full type safety
+- **Vite Build System**: Fast development and optimized production builds
+- **Official Excalidraw**: `@excalidraw/excalidraw` package with TypeScript types
+- **WebSocket Client**: Type-safe real-time element synchronization
+- **Clean UI**: Production-ready interface with proper TypeScript typing
 
-### **Canvas Server** (`src/server.js`)
-- **Express.js**: REST API + static file serving
-- **WebSocket**: Real-time client communication  
-- **Element Storage**: In-memory with persistence options
-- **CORS**: Cross-origin support
+### **Canvas Server** (`src/server.ts` → `dist/server.js`)
+- **TypeScript + Express.js**: Fully typed REST API + static file serving
+- **WebSocket**: Type-safe real-time client communication  
+- **Element Storage**: In-memory with comprehensive type definitions
+- **CORS**: Cross-origin support with proper typing
 
-### **MCP Server** (`src/index.js`)
-- **MCP Protocol**: Standard Model Context Protocol
-- **Canvas Sync**: HTTP requests to canvas server
-- **Element Management**: Full CRUD operations
-- **Batch Support**: Complex diagram creation
+### **MCP Server** (`src/index.ts` → `dist/index.js`)
+- **TypeScript MCP Protocol**: Type-safe Model Context Protocol implementation
+- **Canvas Sync**: Strongly typed HTTP requests to canvas server
+- **Element Management**: Full CRUD operations with comprehensive type checking
+- **Batch Support**: Type-safe complex diagram creation
+
+### **Type System** (`src/types.ts`)
+- **Excalidraw Element Types**: Complete type definitions for all element types
+- **API Response Types**: Strongly typed REST API interfaces
+- **WebSocket Message Types**: Type-safe real-time communication
+- **Server Element Types**: Enhanced element types with metadata
 
 ## 🐛 Troubleshooting
 
@@ -390,6 +406,8 @@ The canvas server provides these REST endpoints:
 - Delete `node_modules` and run `npm install`
 - Check Node.js version (requires 16+)
 - Ensure all dependencies are installed
+- Run `npm run type-check` to identify TypeScript issues
+- Verify `dist/` directory is created after `npm run build:server`
 
 ## 📋 Project Structure
 
@@ -397,16 +415,23 @@ The canvas server provides these REST endpoints:
 mcp_excalidraw/
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx          # Main React component
-│   │   └── main.jsx         # React entry point
+│   │   ├── App.tsx          # Main React component (TypeScript)
+│   │   └── main.tsx         # React entry point (TypeScript)
 │   └── index.html           # HTML template
-├── src/
-│   ├── index.js            # MCP server
-│   ├── server.js           # Canvas server (Express + WebSocket)
-│   ├── types.js            # Shared types and utilities
+├── src/ (TypeScript Source)
+│   ├── index.ts            # MCP server (TypeScript)
+│   ├── server.ts           # Canvas server (Express + WebSocket, TypeScript)
+│   ├── types.ts            # Comprehensive type definitions
 │   └── utils/
-│       └── logger.js       # Logging utility
-├── dist/                   # Built frontend (generated)
+│       └── logger.ts       # Logging utility (TypeScript)
+├── dist/ (Compiled Output)
+│   ├── index.js            # Compiled MCP server
+│   ├── server.js           # Compiled Canvas server
+│   ├── types.js            # Compiled type definitions
+│   ├── utils/
+│   │   └── logger.js       # Compiled logging utility
+│   └── frontend/           # Built React frontend
+├── tsconfig.json          # TypeScript configuration
 ├── vite.config.js         # Vite build configuration
 ├── package.json           # Dependencies and scripts
 └── README.md              # This file
@@ -414,10 +439,12 @@ mcp_excalidraw/
 
 ## 🔮 Development Roadmap
 
+- ✅ **TypeScript Migration**: Complete type safety for enhanced development experience
 - **NPM Package**: Resolving MCP tool registration issues
 - **Docker Deployment**: Improving canvas synchronization
 - **Enhanced Features**: Additional MCP tools and capabilities
 - **Performance Optimization**: Real-time sync improvements
+- **Advanced TypeScript Features**: Stricter type checking and advanced type utilities
 
 ## 🤝 Contributing
 
