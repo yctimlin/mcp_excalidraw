@@ -42,7 +42,7 @@ For the most stable experience, we recommend using the local development setup. 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   AI Agent      │───▶│   MCP Server     │───▶│  Canvas Server  │
-│   (Claude)      │    │  (src/index.js) │    │ (src/server.js) │
+│   (Claude)      │    │  (src/index.js)  │    │ (src/server.js) │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                                          │
                                                          ▼
