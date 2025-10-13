@@ -105,7 +105,9 @@ const CreateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional()
+  fontFamily: z.string().optional(),
+  groupIds: z.array(z.string()).optional(),
+  locked: z.boolean().optional()
 });
 
 const UpdateElementSchema = z.object({
@@ -125,7 +127,9 @@ const UpdateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional()
+  fontFamily: z.string().optional(),
+  groupIds: z.array(z.string()).optional(),
+  locked: z.boolean().optional()
 });
 
 // API Routes

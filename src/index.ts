@@ -167,7 +167,9 @@ const ElementSchema = z.object({
   opacity: z.number().optional(),
   text: z.string().optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional()
+  fontFamily: z.string().optional(),
+  groupIds: z.array(z.string()).optional(),
+  locked: z.boolean().optional()
 });
 
 const ElementIdSchema = z.object({
@@ -643,6 +645,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         
         const groupId = generateId();
         sceneState.groups.set(groupId, elementIds);
+
+        for (const id of elementIds) {
+          await updateElementOnCanvas({ id, groupIds: [groupId] });
+        }
+
+        logger.info('Grouping elements', { elementIds, groupId });
         
         const result = { groupId, elementIds };
         return {
@@ -660,7 +668,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         
         const elementIds = sceneState.groups.get(groupId);
         sceneState.groups.delete(groupId);
-        
+
+        for (const id of elementIds ?? []) {
+          await updateElementOnCanvas({ id, groupIds: [] });
+        }
+
+        logger.info('Ungrouping elements', { groupId, elementIds });
+
         const result = { groupId, ungrouped: true, elementIds };
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
