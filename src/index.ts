@@ -669,8 +669,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           sceneState.groups.set(groupId, elementIds);
 
           // Update elements on canvas with proper error handling
+          // Fetch existing groups and append new groupId to preserve multi-group membership
           const updatePromises = elementIds.map(async (id) => {
-            return await updateElementOnCanvas({ id, groupIds: [groupId] });
+            const element = await getElementFromCanvas(id);
+            const existingGroups = element?.groupIds || [];
+            const updatedGroupIds = [...existingGroups, groupId];
+            return await updateElementOnCanvas({ id, groupIds: updatedGroupIds });
           });
 
           const results = await Promise.all(updatePromises);
