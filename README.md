@@ -310,6 +310,7 @@ For VS Code MCP extension, add to your settings:
 |----------|---------|-------------|
 | `EXPRESS_SERVER_URL` | `http://localhost:3000` | Canvas server URL for MCP sync |
 | `ENABLE_CANVAS_SYNC` | `true` | Enable/disable canvas synchronization |
+| `LOG_FILE_PATH` | `excalidraw.log` | Path to the log file |
 | `DEBUG` | `false` | Enable debug logging |
 | `PORT` | `3000` | Canvas server port |
 | `HOST` | `localhost` | Canvas server host |
