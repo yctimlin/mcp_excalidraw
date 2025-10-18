@@ -137,6 +137,27 @@ async function batchCreateElementsOnCanvas(elementsData: ServerElement[]): Promi
   return result?.elements || elementsData;
 }
 
+// Helper to fetch element from canvas
+async function getElementFromCanvas(elementId: string): Promise<ServerElement | null> {
+  if (!ENABLE_CANVAS_SYNC) {
+    logger.debug('Canvas sync disabled, skipping fetch');
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/${elementId}`);
+    if (!response.ok) {
+      logger.warn(`Failed to fetch element ${elementId}: ${response.status}`);
+      return null;
+    }
+    const data = await response.json() as { element?: ServerElement };
+    return data.element || null;
+  } catch (error) {
+    logger.error('Error fetching element from canvas:', error);
+    return null;
+  }
+}
+
 // In-memory storage for scene state
 interface SceneState {
   theme: string;
@@ -642,43 +663,77 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'group_elements': {
         const params = ElementIdsSchema.parse(args);
         const { elementIds } = params;
-        
-        const groupId = generateId();
-        sceneState.groups.set(groupId, elementIds);
 
-        for (const id of elementIds) {
-          await updateElementOnCanvas({ id, groupIds: [groupId] });
+        try {
+          const groupId = generateId();
+          sceneState.groups.set(groupId, elementIds);
+
+          // Update elements on canvas with proper error handling
+          const updatePromises = elementIds.map(async (id) => {
+            return await updateElementOnCanvas({ id, groupIds: [groupId] });
+          });
+
+          const results = await Promise.all(updatePromises);
+          const successCount = results.filter(result => result).length;
+
+          if (successCount === 0) {
+            sceneState.groups.delete(groupId); // Rollback local state
+            throw new Error('Failed to group any elements: HTTP server unavailable');
+          }
+
+          logger.info('Grouping elements', { elementIds, groupId, successCount });
+
+          const result = { groupId, elementIds, successCount };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to group elements: ${(error as Error).message}`);
         }
-
-        logger.info('Grouping elements', { elementIds, groupId });
-        
-        const result = { groupId, elementIds };
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-        };
       }
       
       case 'ungroup_elements': {
         const params = GroupIdSchema.parse(args);
         const { groupId } = params;
-        
+
         if (!sceneState.groups.has(groupId)) {
           throw new Error(`Group ${groupId} not found`);
         }
-        
-        const elementIds = sceneState.groups.get(groupId);
-        sceneState.groups.delete(groupId);
 
-        for (const id of elementIds ?? []) {
-          await updateElementOnCanvas({ id, groupIds: [] });
+        try {
+          const elementIds = sceneState.groups.get(groupId);
+          sceneState.groups.delete(groupId);
+
+          // Update elements on canvas, removing only this specific groupId
+          const updatePromises = (elementIds ?? []).map(async (id) => {
+            // Fetch current element to get existing groupIds
+            const element = await getElementFromCanvas(id);
+            if (!element) {
+              logger.warn(`Element ${id} not found on canvas, skipping ungroup`);
+              return null;
+            }
+
+            // Remove only the specific groupId, preserve others
+            const updatedGroupIds = (element.groupIds || []).filter(gid => gid !== groupId);
+            return await updateElementOnCanvas({ id, groupIds: updatedGroupIds });
+          });
+
+          const results = await Promise.all(updatePromises);
+          const successCount = results.filter(result => result !== null).length;
+
+          if (successCount === 0) {
+            logger.warn('Failed to ungroup any elements: HTTP server unavailable or elements not found');
+          }
+
+          logger.info('Ungrouping elements', { groupId, elementIds, successCount });
+
+          const result = { groupId, ungrouped: true, elementIds, successCount };
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to ungroup elements: ${(error as Error).message}`);
         }
-
-        logger.info('Ungrouping elements', { groupId, elementIds });
-
-        const result = { groupId, ungrouped: true, elementIds };
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
-        };
       }
       
       case 'align_elements': {

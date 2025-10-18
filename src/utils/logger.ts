@@ -11,7 +11,7 @@ const logger: winston.Logger = winston.createLogger({
       const extra = info.metadata && Object.keys(info.metadata).length
         ? ` ${JSON.stringify(info.metadata)}`
         : '';
-      return `${info.timestamp} [${info.level}] ${info.message} ${extra}`
+      return `${info.timestamp} [${info.level}] ${info.message}${extra}`
     })
   ),
 
