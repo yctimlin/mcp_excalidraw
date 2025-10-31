@@ -38,6 +38,7 @@ interface ApiResponse {
   element?: ServerElement;
   elements?: ServerElement[];
   message?: string;
+  error?: string;
   count?: number;
 }
 
@@ -97,12 +98,15 @@ async function syncToCanvas(operation: string, data: any): Promise<SyncResponse 
 
     logger.debug(`Syncing to canvas: ${operation}`, { url, data });
     const response = await fetch(url, options);
-    
-    if (!response.ok) {
-      throw new Error(`Canvas sync failed: ${response.status} ${response.statusText}`);
-    }
-    
+
+    // Parse JSON response regardless of HTTP status
     const result = await response.json() as ApiResponse;
+
+    if (!response.ok) {
+      logger.warn(`Canvas sync returned error status: ${response.status}`, result);
+      throw new Error(result.error || `Canvas sync failed: ${response.status} ${response.statusText}`);
+    }
+
     logger.debug(`Canvas sync successful: ${operation}`, result);
     return result as SyncResponse;
     
@@ -564,21 +568,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'delete_element': {
         const params = ElementIdSchema.parse(args);
         const { id } = params;
-        
+
         // Delete element directly on HTTP server (no local storage)
         const canvasResult = await deleteElementOnCanvas(id);
-        
-        if (!canvasResult) {
+
+        if (!canvasResult || !(canvasResult as ApiResponse).success) {
           throw new Error('Failed to delete element: HTTP server unavailable or element not found');
         }
-        
+
         const result = { id, deleted: true, syncedToCanvas: true };
         logger.info('Element deleted via MCP and synced to canvas', result);
-        
+
         return {
-          content: [{ 
-            type: 'text', 
-            text: `Element deleted successfully!\n\n${JSON.stringify(result, null, 2)}\n\n✅ Synced to canvas` 
+          content: [{
+            type: 'text',
+            text: `Element deleted successfully!\n\n${JSON.stringify(result, null, 2)}\n\n✅ Synced to canvas`
           }]
         };
       }
