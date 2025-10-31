@@ -1,5 +1,10 @@
 # MCP Excalidraw Server: Advanced Live Visual Diagramming with AI Integration
 
+[![CI](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml)
+[![Docker Build & Push](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml)
+[![NPM Version](https://img.shields.io/npm/v/mcp-excalidraw-server)](https://www.npmjs.com/package/mcp-excalidraw-server)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A comprehensive **TypeScript-based** system that combines **Excalidraw's powerful drawing capabilities** with **Model Context Protocol (MCP)** integration, enabling AI agents to create and manipulate diagrams in real-time on a live canvas.
 
 ## 🚦 Current Status & Version Information
@@ -149,15 +154,17 @@ http://localhost:3000
 
 #### **Option B: Docker Canvas Server**
 
-1. **Build Docker Image**
+**Option B1: Use Pre-built Image from GHCR** (Recommended)
+```bash
+docker pull ghcr.io/yctimlin/mcp_excalidraw-canvas:latest
+docker run -d -p 3000:3000 --name mcp-excalidraw-canvas ghcr.io/yctimlin/mcp_excalidraw-canvas:latest
+```
+
+**Option B2: Build Locally**
 ```bash
 git clone https://github.com/yctimlin/mcp_excalidraw.git
 cd mcp_excalidraw
 docker build -f Dockerfile.canvas -t mcp-excalidraw-canvas .
-```
-
-2. **Run Canvas Container**
-```bash
 docker run -d -p 3000:3000 --name mcp-excalidraw-canvas mcp-excalidraw-canvas
 ```
 
@@ -324,13 +331,7 @@ Edit your `claude_desktop_config.json` file:
 
 ### **Format 2: Docker MCP Server** ✅ Fully Working
 
-First, build the MCP Docker image:
-```bash
-cd mcp_excalidraw
-docker build -f Dockerfile -t mcp-excalidraw .
-```
-
-Then configure:
+**Using Pre-built Image from GHCR** (Recommended):
 ```json
 {
   "mcpServers": {
@@ -343,12 +344,20 @@ Then configure:
         "--network", "host",
         "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
         "-e", "ENABLE_CANVAS_SYNC=true",
-        "mcp-excalidraw"
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
       ]
     }
   }
 }
 ```
+
+**OR Build Locally**:
+```bash
+cd mcp_excalidraw
+docker build -f Dockerfile -t mcp-excalidraw .
+```
+
+Then use `mcp-excalidraw` as the image name in the configuration above.
 
 ---
 
@@ -377,13 +386,7 @@ Create or edit `.mcp.json` in your project root:
 
 ### **Format 2: Docker MCP Server** ✅ Fully Working
 
-First, build the MCP Docker image:
-```bash
-cd mcp_excalidraw
-docker build -f Dockerfile -t mcp-excalidraw .
-```
-
-Then configure:
+**Using Pre-built Image from GHCR** (Recommended):
 ```json
 {
   "mcpServers": {
@@ -396,12 +399,20 @@ Then configure:
         "--network", "host",
         "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
         "-e", "ENABLE_CANVAS_SYNC=true",
-        "mcp-excalidraw"
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
       ]
     }
   }
 }
 ```
+
+**OR Build Locally**:
+```bash
+cd mcp_excalidraw
+docker build -f Dockerfile -t mcp-excalidraw .
+```
+
+Then use `mcp-excalidraw` as the image name in the configuration above.
 
 ### **Alternative: Using Claude CLI**
 
@@ -446,6 +457,7 @@ Edit `.cursor/mcp.json`:
 
 ### **Format 2: Docker MCP Server** ✅ Fully Working
 
+**Using Pre-built Image from GHCR** (Recommended):
 ```json
 {
   "mcpServers": {
@@ -458,12 +470,20 @@ Edit `.cursor/mcp.json`:
         "--network", "host",
         "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
         "-e", "ENABLE_CANVAS_SYNC=true",
-        "mcp-excalidraw"
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
       ]
     }
   }
 }
 ```
+
+**OR Build Locally**:
+```bash
+cd mcp_excalidraw
+docker build -f Dockerfile -t mcp-excalidraw .
+```
+
+Then use `mcp-excalidraw` as the image name in the configuration above.
 
 ---
 
