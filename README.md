@@ -223,56 +223,150 @@ The MCP server provides these tools for creating visual diagrams:
 }
 ```
 
-## 🔌 Integration with Claude Desktop
+## 🔌 Integration with Claude Desktop & Claude Code
 
-### **✅ Recommended: Using Local Installation**
+### **Prerequisites**
+Before integrating with Claude, ensure the **canvas server is running** (if you want visualization):
 
-For the **local development version** (most stable), add this configuration to your `claude_desktop_config.json`:
+```bash
+# Option 1: Using local npm
+npm run canvas
 
+# Option 2: Using Docker
+docker-compose up canvas -d
+
+# Option 3: Using Docker directly
+docker run -d -p 3000:3000 --name mcp-excalidraw-canvas mcp-excalidraw-canvas:latest
+```
+
+Canvas will be available at http://localhost:3000
+
+---
+
+### **For Claude Desktop**
+
+Add to your `claude_desktop_config.json`:
+
+#### **✅ Option 1: Local Node (Recommended)**
 ```json
 {
   "mcpServers": {
     "excalidraw": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
+      }
     }
   }
 }
 ```
+*Replace `/absolute/path/to/mcp_excalidraw` with your actual path.*
 
-**Important**: Replace `/absolute/path/to/mcp_excalidraw` with the actual absolute path to your cloned repository. Note that the path now points to `dist/index.js` (the compiled TypeScript output).
-
-### **🔧 Alternative Configurations (Beta)**
-
-#### **NPM Package (Beta Testing)**
-```json
-{
-  "mcpServers": {
-    "excalidraw": {
-      "command": "npx",
-      "args": ["-y", "mcp-excalidraw-server"]
-    }
-  }
-}
-```
-*Currently debugging tool registration - let us know if you encounter issues!*
-
-#### **Docker Version (Coming Soon)**
+#### **Option 2: Docker**
 ```json
 {
   "mcpServers": {
     "excalidraw": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "mcp-excalidraw-server"]
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--network", "host",
+        "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "mcp-excalidraw:latest"
+      ]
     }
   }
 }
 ```
-*Canvas sync improvements in progress.*
 
-## 🔧 Integration with Other Tools
+#### **Option 3: Docker from GHCR (Available Soon)**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--network", "host",
+        "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
+      ]
+    }
+  }
+}
+```
 
-### **Cursor IDE**
+---
+
+### **For Claude Code**
+
+Create or edit `.mcp.json` in your project root:
+
+#### **✅ Option 1: Local Node (Recommended)**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": ["/home/ec2-user/workspace/yuanching/mcp_excalidraw/dist/index.js"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
+      }
+    }
+  }
+}
+```
+*Replace with your actual absolute path.*
+
+#### **Option 2: Docker**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--network", "host",
+        "-e", "EXPRESS_SERVER_URL=http://localhost:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "mcp-excalidraw:latest"
+      ]
+    }
+  }
+}
+```
+
+#### **Using CLI (Alternative)**
+```bash
+# For project-scoped (recommended)
+claude mcp add --scope project --transport stdio excalidraw \
+  -- docker run -i --rm --network host \
+  -e EXPRESS_SERVER_URL=http://localhost:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  mcp-excalidraw:latest
+
+# For user-scoped (available across all projects)
+claude mcp add --scope user --transport stdio excalidraw \
+  -- docker run -i --rm --network host \
+  -e EXPRESS_SERVER_URL=http://localhost:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  mcp-excalidraw:latest
+```
+
+---
+
+### **For Cursor IDE**
 
 Add to your `.cursor/mcp.json`:
 
@@ -281,28 +375,24 @@ Add to your `.cursor/mcp.json`:
   "mcpServers": {
     "excalidraw": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
-    }
-  }
-}
-```
-
-### **VS Code MCP Extension**
-
-For VS Code MCP extension, add to your settings:
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "excalidraw": {
-        "command": "node",
-        "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"]
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
       }
     }
   }
 }
 ```
+
+---
+
+### **Important Notes**
+
+1. **Canvas is optional**: The MCP server works without the canvas (API-only mode)
+2. **Network mode**: Docker requires `--network host` to access localhost canvas
+3. **Interactive mode**: Docker requires `-i` flag for MCP stdin/stdout protocol
+4. **Port 3000**: Ensure canvas server is running on port 3000 before using MCP tools
 
 ## 🛠️ Environment Variables
 
