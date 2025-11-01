@@ -208,6 +208,30 @@ export interface SyncStatusMessage extends WebSocketMessage {
   timestamp: string;
 }
 
+// Mermaid conversion types
+export interface MermaidConfig {
+  startOnLoad?: boolean;
+  flowchart?: {
+    curve?: 'linear' | 'basis';
+  };
+  themeVariables?: {
+    fontSize?: string;
+  };
+  maxEdges?: number;
+  maxTextSize?: number;
+}
+
+export interface MermaidConversionRequest {
+  mermaidDiagram: string;
+  config?: MermaidConfig;
+}
+
+export interface MermaidConversionResponse extends ApiResponse {
+  elements: ServerElement[];
+  files?: any;
+  count: number;
+}
+
 // In-memory storage for Excalidraw elements
 export const elements = new Map<string, ServerElement>();
 
