@@ -415,6 +415,41 @@ const tools: Tool[] = [
     }
   },
   {
+    name: 'create_from_mermaid',
+    description: 'Convert a Mermaid diagram to Excalidraw elements and render them on the canvas',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        mermaidDiagram: {
+          type: 'string',
+          description: 'The Mermaid diagram definition (e.g., "graph TD; A-->B; B-->C;")'
+        },
+        config: {
+          type: 'object',
+          description: 'Optional Mermaid configuration',
+          properties: {
+            startOnLoad: { type: 'boolean' },
+            flowchart: {
+              type: 'object',
+              properties: {
+                curve: { type: 'string', enum: ['linear', 'basis'] }
+              }
+            },
+            themeVariables: {
+              type: 'object',
+              properties: {
+                fontSize: { type: 'string' }
+              }
+            },
+            maxEdges: { type: 'number' },
+            maxTextSize: { type: 'number' }
+          }
+        }
+      },
+      required: ['mermaidDiagram']
+    }
+  },
+  {
     name: 'batch_create_elements',
     description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
     inputSchema: {
@@ -819,6 +854,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           };
         } catch (error) {
           throw new Error(`Failed to unlock elements: ${(error as Error).message}`);
+        }
+      }
+      
+      case 'create_from_mermaid': {
+        const params = z.object({
+          mermaidDiagram: z.string(),
+          config: z.object({
+            startOnLoad: z.boolean().optional(),
+            flowchart: z.object({
+              curve: z.enum(['linear', 'basis']).optional()
+            }).optional(),
+            themeVariables: z.object({
+              fontSize: z.string().optional()
+            }).optional(),
+            maxEdges: z.number().optional(),
+            maxTextSize: z.number().optional()
+          }).optional()
+        }).parse(args);
+        
+        logger.info('Creating Excalidraw elements from Mermaid diagram via MCP', {
+          diagramLength: params.mermaidDiagram.length,
+          hasConfig: !!params.config
+        });
+
+        try {
+          // Send the Mermaid diagram to the frontend via the API
+          // The frontend will use mermaid-to-excalidraw to convert it
+          const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/from-mermaid`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mermaidDiagram: params.mermaidDiagram,
+              config: params.config
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
+          }
+
+          const result = await response.json() as ApiResponse;
+          
+          logger.info('Mermaid diagram sent to frontend for conversion', {
+            success: result.success
+          });
+
+          return {
+            content: [{
+              type: 'text',
+              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.`
+            }]
+          };
+        } catch (error) {
+          throw new Error(`Failed to process Mermaid diagram: ${(error as Error).message}`);
         }
       }
       

@@ -7,6 +7,7 @@ import {
   ExcalidrawElement
 } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
+import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 
 // Type definitions
 interface ServerElement {
@@ -399,6 +400,42 @@ function App(): JSX.Element {
     }
   }
 
+  const handleMermaidTest = async (): Promise<void> => {
+    if (!excalidrawAPI) return
+    
+    const testMermaid = `graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Do Something]
+    B -->|No| D[Do Something Else]
+    C --> E[End]
+    D --> E`
+    
+    try {
+      const result = await convertMermaidToExcalidraw(testMermaid, DEFAULT_MERMAID_CONFIG)
+      
+      if (result.error) {
+        console.error('Mermaid conversion error:', result.error)
+        return
+      }
+      
+      if (result.elements && result.elements.length > 0) {
+        const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: false })
+        excalidrawAPI.updateScene({ 
+          elements: convertedElements,
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY
+        })
+        
+        if (result.files) {
+          excalidrawAPI.addFiles(Object.values(result.files))
+        }
+        
+        console.log('Mermaid diagram converted successfully:', result.elements.length, 'elements')
+      }
+    } catch (error) {
+      console.error('Error converting Mermaid diagram:', error)
+    }
+  }
+
   return (
     <div className="app">
       {/* Header */}
@@ -437,6 +474,7 @@ function App(): JSX.Element {
             </div>
           </div>
           
+          <button className="btn-secondary" onClick={handleMermaidTest}>Test Mermaid</button>
           <button className="btn-secondary" onClick={clearCanvas}>Clear Canvas</button>
         </div>
       </div>
