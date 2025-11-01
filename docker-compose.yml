@@ -1,0 +1,62 @@
+version: '3.8'
+
+# Docker Compose for MCP Excalidraw
+#
+# Usage scenarios:
+# 1. Canvas only:       docker-compose up canvas
+# 2. MCP only:          docker-compose up mcp (requires canvas running elsewhere)
+# 3. Both:              docker-compose --profile full up
+#
+# Most common: Run canvas locally, MCP via Claude Desktop config
+
+services:
+  # Canvas server (optional) - Visual UI and REST API
+  canvas:
+    build:
+      context: .
+      dockerfile: Dockerfile.canvas
+    image: mcp-excalidraw-canvas:latest
+    container_name: mcp-excalidraw-canvas
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DEBUG=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mcp-network
+
+  # MCP server - Core product (typically run via Claude Desktop, not docker-compose)
+  # This is here for testing or special deployment scenarios
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-excalidraw:latest
+    container_name: mcp-excalidraw-mcp
+    stdin_open: true
+    tty: true
+    environment:
+      - NODE_ENV=production
+      - EXPRESS_SERVER_URL=http://canvas:3000
+      - ENABLE_CANVAS_SYNC=true
+      - DEBUG=false
+    depends_on:
+      canvas:
+        condition: service_healthy
+    networks:
+      - mcp-network
+    profiles:
+      - full
+
+networks:
+  mcp-network:
+    driver: bridge

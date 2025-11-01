@@ -1,0 +1,106 @@
+name: Publish to NPM
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g., latest, beta, next)'
+        required: true
+        default: 'latest'
+
+jobs:
+  publish:
+    name: Publish to NPM Registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Build project
+        run: npm run build
+
+      - name: Verify build artifacts
+        run: |
+          echo "Verifying build artifacts..."
+          test -f dist/index.js || (echo "ERROR: dist/index.js not found" && exit 1)
+          test -f dist/server.js || (echo "ERROR: dist/server.js not found" && exit 1)
+          test -d dist/frontend || (echo "ERROR: dist/frontend not found" && exit 1)
+          echo "All required artifacts present!"
+
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Check if version exists on NPM
+        id: check-version
+        run: |
+          if npm view mcp-excalidraw-server@${{ steps.package-version.outputs.version }} version 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.package-version.outputs.version }} already exists on NPM"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.package-version.outputs.version }} does not exist on NPM"
+          fi
+
+      - name: Publish to NPM (Release)
+        if: github.event_name == 'release' && steps.check-version.outputs.exists == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to NPM (Manual)
+        if: github.event_name == 'workflow_dispatch' && steps.check-version.outputs.exists == 'false'
+        run: npm publish --tag ${{ github.event.inputs.tag }} --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip publishing (version exists)
+        if: steps.check-version.outputs.exists == 'true'
+        run: |
+          echo "⚠️  Skipping publish - version ${{ steps.package-version.outputs.version }} already exists on NPM"
+          echo "Please bump the version in package.json before publishing"
+
+      - name: Create GitHub Release Assets
+        if: github.event_name == 'release'
+        run: |
+          tar -czf mcp-excalidraw-server-${{ steps.package-version.outputs.version }}.tar.gz dist/
+
+      - name: Upload Release Assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            mcp-excalidraw-server-${{ steps.package-version.outputs.version }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Publish Notification
+    needs: publish
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Success notification
+        run: |
+          echo "✅ Package successfully published to NPM!"
+          echo "View at: https://www.npmjs.com/package/mcp-excalidraw-server"
