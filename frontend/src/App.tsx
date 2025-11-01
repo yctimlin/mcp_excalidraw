@@ -2,14 +2,14 @@ import React, { useState, useEffect, useRef } from 'react'
 import { 
   Excalidraw, 
   convertToExcalidrawElements, 
-  CaptureUpdateAction,
-  ExcalidrawAPIRefValue,
-  ExcalidrawElement
+  CaptureUpdateAction
 } from '@excalidraw/excalidraw'
-import '@excalidraw/excalidraw/index.css'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 
 // Type definitions
+type ExcalidrawAPIRefValue = any;
+type ExcalidrawElement = any;
+
 interface ServerElement {
   id: string;
   type: string;
@@ -165,7 +165,7 @@ function App(): JSX.Element {
       
       if (result.success && result.elements && result.elements.length > 0) {
         const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
+        const convertedElements = convertToExcalidrawElements(cleanedElements as any, { regenerateIds: false })
         excalidrawAPI?.updateScene({ elements: convertedElements })
       }
     } catch (error) {
@@ -229,7 +229,7 @@ function App(): JSX.Element {
           if (data.elements && data.elements.length > 0) {
             const cleanedElements = data.elements.map(cleanElementForExcalidraw)
             const validatedElements = validateAndFixBindings(cleanedElements)
-            const convertedElements = convertToExcalidrawElements(validatedElements)
+            const convertedElements = convertToExcalidrawElements(validatedElements as any)
             excalidrawAPI.updateScene({ 
               elements: convertedElements,
               captureUpdate: CaptureUpdateAction.NEVER
@@ -240,7 +240,7 @@ function App(): JSX.Element {
         case 'element_created':
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
-            const newElement = convertToExcalidrawElements([cleanedNewElement])
+            const newElement = convertToExcalidrawElements([cleanedNewElement] as any)
             const updatedElementsAfterCreate = [...currentElements, ...newElement]
             excalidrawAPI.updateScene({ 
               elements: updatedElementsAfterCreate,
@@ -252,8 +252,8 @@ function App(): JSX.Element {
         case 'element_updated':
           if (data.element) {
             const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
-            const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement])[0]
-            const updatedElements = currentElements.map(el => 
+            const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement] as any)[0]
+            const updatedElements = currentElements.map((el: any) => 
               el.id === data.element!.id ? convertedUpdatedElement : el
             )
             excalidrawAPI.updateScene({ 
@@ -265,7 +265,7 @@ function App(): JSX.Element {
           
         case 'element_deleted':
           if (data.elementId) {
-            const filteredElements = currentElements.filter(el => el.id !== data.elementId)
+            const filteredElements = currentElements.filter((el: any) => el.id !== data.elementId)
             excalidrawAPI.updateScene({ 
               elements: filteredElements,
               captureUpdate: CaptureUpdateAction.NEVER
@@ -276,7 +276,7 @@ function App(): JSX.Element {
         case 'elements_batch_created':
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
-            const batchElements = convertToExcalidrawElements(cleanedBatchElements)
+            const batchElements = convertToExcalidrawElements(cleanedBatchElements as any)
             const updatedElementsAfterBatch = [...currentElements, ...batchElements]
             excalidrawAPI.updateScene({ 
               elements: updatedElementsAfterBatch,
@@ -333,8 +333,8 @@ function App(): JSX.Element {
       const currentElements = excalidrawAPI.getSceneElements()
       console.log(`Syncing ${currentElements.length} elements to backend`)
       
-      // 2. Filter out deleted elements
-      const activeElements = currentElements.filter(el => !el.isDeleted)
+      // Filter out deleted elements
+      const activeElements = currentElements.filter((el: any) => !el.isDeleted)
       
       // 3. Convert to backend format
       const backendElements = activeElements.map(convertToBackendFormat)
@@ -419,7 +419,7 @@ function App(): JSX.Element {
       }
       
       if (result.elements && result.elements.length > 0) {
-        const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: false })
+        const convertedElements = convertToExcalidrawElements(result.elements as any, { regenerateIds: false })
         excalidrawAPI.updateScene({ 
           elements: convertedElements,
           captureUpdate: CaptureUpdateAction.IMMEDIATELY
