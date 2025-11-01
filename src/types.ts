@@ -175,7 +175,8 @@ export type WebSocketMessageType =
   | 'element_deleted'
   | 'elements_batch_created'
   | 'elements_synced'
-  | 'sync_status';
+  | 'sync_status'
+  | 'mermaid_convert';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
@@ -205,6 +206,13 @@ export interface BatchCreatedMessage extends WebSocketMessage {
 export interface SyncStatusMessage extends WebSocketMessage {
   type: 'sync_status';
   elementCount: number;
+  timestamp: string;
+}
+
+export interface MermaidConvertMessage extends WebSocketMessage {
+  type: 'mermaid_convert';
+  mermaidDiagram: string;
+  config?: MermaidConfig;
   timestamp: string;
 }
 

@@ -416,13 +416,20 @@ app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
       hasConfig: !!config 
     });
     
+    // Broadcast to all WebSocket clients to process the Mermaid diagram
+    broadcast({
+      type: 'mermaid_convert',
+      mermaidDiagram,
+      config: config || {},
+      timestamp: new Date().toISOString()
+    });
+    
     // Return the diagram for frontend processing
-    // The frontend will handle the actual conversion using mermaid-to-excalidraw
     res.json({
       success: true,
       mermaidDiagram,
       config: config || {},
-      message: 'Mermaid diagram received. Process on frontend with DOM access.'
+      message: 'Mermaid diagram sent to frontend for conversion.'
     });
   } catch (error) {
     logger.error('Error processing Mermaid diagram:', error);
