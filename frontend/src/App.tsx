@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { 
-  Excalidraw, 
-  convertToExcalidrawElements, 
-  CaptureUpdateAction
+import {
+  Excalidraw,
+  convertToExcalidrawElements,
+  CaptureUpdateAction,
+  ExcalidrawImperativeAPI
 } from '@excalidraw/excalidraw'
+import type { ExcalidrawElement, NonDeleted, NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/types/element/types'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
+import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 
 // Type definitions
-type ExcalidrawAPIRefValue = any;
-type ExcalidrawElement = any;
+type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
 
 interface ServerElement {
   id: string;
@@ -47,6 +49,8 @@ interface WebSocketMessage {
   count?: number;
   timestamp?: string;
   source?: string;
+  mermaidDiagram?: string;
+  config?: MermaidConfig;
 }
 
 interface ApiResponse {
@@ -56,11 +60,6 @@ interface ApiResponse {
   count?: number;
   error?: string;
   message?: string;
-}
-
-interface ElementBinding {
-  id: string;
-  type: 'text' | 'arrow';
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
@@ -165,7 +164,7 @@ function App(): JSX.Element {
       
       if (result.success && result.elements && result.elements.length > 0) {
         const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertToExcalidrawElements(cleanedElements as any, { regenerateIds: false })
+        const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
         excalidrawAPI?.updateScene({ elements: convertedElements })
       }
     } catch (error) {
@@ -229,18 +228,18 @@ function App(): JSX.Element {
           if (data.elements && data.elements.length > 0) {
             const cleanedElements = data.elements.map(cleanElementForExcalidraw)
             const validatedElements = validateAndFixBindings(cleanedElements)
-            const convertedElements = convertToExcalidrawElements(validatedElements as any)
-            excalidrawAPI.updateScene({ 
+            const convertedElements = convertToExcalidrawElements(validatedElements)
+            excalidrawAPI.updateScene({
               elements: convertedElements,
               captureUpdate: CaptureUpdateAction.NEVER
             })
           }
           break
-          
+
         case 'element_created':
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
-            const newElement = convertToExcalidrawElements([cleanedNewElement] as any)
+            const newElement = convertToExcalidrawElements([cleanedNewElement])
             const updatedElementsAfterCreate = [...currentElements, ...newElement]
             excalidrawAPI.updateScene({ 
               elements: updatedElementsAfterCreate,
@@ -252,31 +251,31 @@ function App(): JSX.Element {
         case 'element_updated':
           if (data.element) {
             const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
-            const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement] as any)[0]
-            const updatedElements = currentElements.map((el: any) => 
+            const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement])[0]
+            const updatedElements = currentElements.map(el =>
               el.id === data.element!.id ? convertedUpdatedElement : el
             )
-            excalidrawAPI.updateScene({ 
+            excalidrawAPI.updateScene({
               elements: updatedElements,
               captureUpdate: CaptureUpdateAction.NEVER
             })
           }
           break
-          
+
         case 'element_deleted':
           if (data.elementId) {
-            const filteredElements = currentElements.filter((el: any) => el.id !== data.elementId)
-            excalidrawAPI.updateScene({ 
+            const filteredElements = currentElements.filter(el => el.id !== data.elementId)
+            excalidrawAPI.updateScene({
               elements: filteredElements,
               captureUpdate: CaptureUpdateAction.NEVER
             })
           }
           break
-          
+
         case 'elements_batch_created':
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
-            const batchElements = convertToExcalidrawElements(cleanedBatchElements as any)
+            const batchElements = convertToExcalidrawElements(cleanedBatchElements)
             const updatedElementsAfterBatch = [...currentElements, ...batchElements]
             excalidrawAPI.updateScene({ 
               elements: updatedElementsAfterBatch,
@@ -296,28 +295,28 @@ function App(): JSX.Element {
           
         case 'mermaid_convert':
           console.log('Received Mermaid conversion request from MCP')
-          if ((data as any).mermaidDiagram) {
+          if (data.mermaidDiagram) {
             try {
-              const result = await convertMermaidToExcalidraw((data as any).mermaidDiagram, (data as any).config || DEFAULT_MERMAID_CONFIG)
-              
+              const result = await convertMermaidToExcalidraw(data.mermaidDiagram, data.config || DEFAULT_MERMAID_CONFIG)
+
               if (result.error) {
                 console.error('Mermaid conversion error:', result.error)
                 return
               }
-              
+
               if (result.elements && result.elements.length > 0) {
-                const convertedElements = convertToExcalidrawElements(result.elements as any, { regenerateIds: false })
-                excalidrawAPI.updateScene({ 
+                const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: false })
+                excalidrawAPI.updateScene({
                   elements: convertedElements,
                   captureUpdate: CaptureUpdateAction.IMMEDIATELY
                 })
-                
+
                 if (result.files) {
                   excalidrawAPI.addFiles(Object.values(result.files))
                 }
-                
+
                 console.log('Mermaid diagram converted successfully:', result.elements.length, 'elements')
-                
+
                 // Sync to backend automatically after creating elements
                 await syncToBackend()
               }
@@ -367,7 +366,7 @@ function App(): JSX.Element {
       console.log(`Syncing ${currentElements.length} elements to backend`)
       
       // Filter out deleted elements
-      const activeElements = currentElements.filter((el: any) => !el.isDeleted)
+      const activeElements = currentElements.filter(el => !el.isDeleted)
       
       // 3. Convert to backend format
       const backendElements = activeElements.map(convertToBackendFormat)
