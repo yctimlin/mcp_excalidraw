@@ -175,7 +175,8 @@ export type WebSocketMessageType =
   | 'element_deleted'
   | 'elements_batch_created'
   | 'elements_synced'
-  | 'sync_status';
+  | 'sync_status'
+  | 'mermaid_convert';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
@@ -206,6 +207,37 @@ export interface SyncStatusMessage extends WebSocketMessage {
   type: 'sync_status';
   elementCount: number;
   timestamp: string;
+}
+
+export interface MermaidConvertMessage extends WebSocketMessage {
+  type: 'mermaid_convert';
+  mermaidDiagram: string;
+  config?: MermaidConfig;
+  timestamp: string;
+}
+
+// Mermaid conversion types
+export interface MermaidConfig {
+  startOnLoad?: boolean;
+  flowchart?: {
+    curve?: 'linear' | 'basis';
+  };
+  themeVariables?: {
+    fontSize?: string;
+  };
+  maxEdges?: number;
+  maxTextSize?: number;
+}
+
+export interface MermaidConversionRequest {
+  mermaidDiagram: string;
+  config?: MermaidConfig;
+}
+
+export interface MermaidConversionResponse extends ApiResponse {
+  elements: ServerElement[];
+  files?: any;
+  count: number;
 }
 
 // In-memory storage for Excalidraw elements

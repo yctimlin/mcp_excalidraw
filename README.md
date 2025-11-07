@@ -99,6 +99,13 @@ Both local and Docker setups are **fully working** and production-ready!
 - **Strict Type Checking**: Enhanced development experience and compile-time error detection
 - **Type-Safe React Components**: TSX components with proper props typing
 
+### **🎨 Mermaid Diagram Support (NEW!)**
+- **Mermaid to Excalidraw**: Convert Mermaid diagrams directly to Excalidraw elements
+- **MCP Tool Integration**: Use `create_from_mermaid` tool from Claude
+- **Browser-based Conversion**: Leverages DOM access in the frontend for accurate rendering
+- **Multiple Diagram Types**: Supports flowcharts, sequence diagrams, class diagrams, and more
+- **Test Button**: Quick test functionality directly from the canvas UI
+
 ### **Real-time Canvas Integration**
 - Elements created via MCP appear instantly on the live canvas
 - WebSocket-based real-time synchronization

@@ -399,6 +399,47 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
   }
 });
 
+// Convert Mermaid diagram to Excalidraw elements
+app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
+  try {
+    const { mermaidDiagram, config } = req.body;
+    
+    if (!mermaidDiagram || typeof mermaidDiagram !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Mermaid diagram definition is required'
+      });
+    }
+    
+    logger.info('Received Mermaid conversion request', { 
+      diagramLength: mermaidDiagram.length,
+      hasConfig: !!config 
+    });
+    
+    // Broadcast to all WebSocket clients to process the Mermaid diagram
+    broadcast({
+      type: 'mermaid_convert',
+      mermaidDiagram,
+      config: config || {},
+      timestamp: new Date().toISOString()
+    });
+    
+    // Return the diagram for frontend processing
+    res.json({
+      success: true,
+      mermaidDiagram,
+      config: config || {},
+      message: 'Mermaid diagram sent to frontend for conversion.'
+    });
+  } catch (error) {
+    logger.error('Error processing Mermaid diagram:', error);
+    res.status(400).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
 // Sync elements from frontend (overwrite sync)
 app.post('/api/elements/sync', (req: Request, res: Response) => {
   try {
