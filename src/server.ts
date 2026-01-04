@@ -365,7 +365,8 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
     
     elementsToCreate.forEach(elementData => {
       const params = CreateElementSchema.parse(elementData);
-      const id = generateId();
+      // Prioritize passed ID (for MCP sync), otherwise generate new ID
+      const id = params.id || generateId();
       const element: ServerElement = {
         id,
         ...params,
@@ -373,7 +374,7 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
         updatedAt: new Date().toISOString(),
         version: 1
       };
-      
+
       elements.set(id, element);
       createdElements.push(element);
     });
