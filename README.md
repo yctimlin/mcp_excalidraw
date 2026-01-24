@@ -290,6 +290,15 @@ The MCP server provides these tools for creating visual diagrams:
 }
 ```
 
+## 🧩 Skill Integration (Optional)
+
+This repo includes an agent skill at `skills/excalidraw-mcp/` (workflows + helper scripts for export/import/clear/health).
+
+Package it into a `.skill` file:
+```bash
+python3 .github/skills/skill-creator/scripts/package_skill.py skills/excalidraw-mcp ./dist
+```
+
 ## 🔌 MCP Server Configuration for IDEs
 
 ### **Prerequisites**
