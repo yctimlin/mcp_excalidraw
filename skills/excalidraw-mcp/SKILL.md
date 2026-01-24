@@ -50,6 +50,17 @@ Notes:
 - `--mode sync` clears the canvas and then writes the provided elements (good for “make canvas match this file”).
 - If you want stable ids across updates, keep ids in the exported JSON; if you want fresh ids, regenerate before importing.
 
+## Workflow: CRUD Smoke Test (Create → Update → Delete)
+
+1. Clear:
+   - `node scripts/clear-canvas.cjs`
+2. Create a large visible rectangle + label:
+   - Use `node scripts/create-element.cjs` twice (rectangle + text).
+3. Update:
+   - Move the rectangle with `node scripts/update-element.cjs`.
+4. Delete:
+   - Remove both with `node scripts/delete-element.cjs`.
+
 ## References
 
 - `references/cheatsheet.md`: MCP tool list + REST API endpoints + payload shapes
