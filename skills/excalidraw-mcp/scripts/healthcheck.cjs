@@ -18,7 +18,7 @@ async function main() {
   }
 
   const { url } = parseArgs(process.argv.slice(2));
-  const res = await fetch(`${url.replace(/\\/$/, "")}/health`);
+  const res = await fetch(`${url.replace(/\/$/, "")}/health`);
   const text = await res.text();
 
   if (!res.ok) {
@@ -33,4 +33,3 @@ main().catch((err) => {
   console.error(err?.stack || String(err));
   process.exit(1);
 });
-

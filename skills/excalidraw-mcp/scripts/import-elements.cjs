@@ -48,7 +48,7 @@ async function main() {
   if (mode !== "batch" && mode !== "sync") usage();
 
   const elements = readElementsFromFile(inFile);
-  const baseUrl = url.replace(/\\/$/, "");
+  const baseUrl = url.replace(/\/$/, "");
 
   let endpoint;
   let body;
@@ -79,4 +79,3 @@ main().catch((err) => {
   console.error(err?.stack || String(err));
   process.exit(1);
 });
-

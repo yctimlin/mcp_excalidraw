@@ -23,7 +23,7 @@ async function main() {
   }
 
   const { url, outFile } = parseArgs(process.argv.slice(2));
-  const res = await fetch(`${url.replace(/\\/$/, "")}/api/elements`);
+  const res = await fetch(`${url.replace(/\/$/, "")}/api/elements`);
   const json = await res.json();
 
   if (!res.ok || !json || json.success !== true) {
@@ -51,4 +51,3 @@ main().catch((err) => {
   console.error(err?.stack || String(err));
   process.exit(1);
 });
-

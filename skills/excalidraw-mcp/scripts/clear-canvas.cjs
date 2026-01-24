@@ -18,7 +18,7 @@ async function main() {
   }
 
   const { url } = parseArgs(process.argv.slice(2));
-  const baseUrl = url.replace(/\\/$/, "");
+  const baseUrl = url.replace(/\/$/, "");
 
   // Use the sync endpoint as a fast "clear" primitive (clears server storage).
   const res = await fetch(`${baseUrl}/api/elements/sync`, {
@@ -39,4 +39,3 @@ main().catch((err) => {
   console.error(err?.stack || String(err));
   process.exit(1);
 });
-
