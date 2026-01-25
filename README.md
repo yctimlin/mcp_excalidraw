@@ -112,33 +112,30 @@ If your agent tool has a concept of "tools", use MCP for the interactive diagram
 
 ### Install The Skill (Codex CLI example)
 
-Copy:
 ```bash
 mkdir -p ~/.codex/skills
-rm -rf ~/.codex/skills/excalidraw-mcp
 cp -R skills/excalidraw-mcp ~/.codex/skills/excalidraw-mcp
 ```
 
-Or symlink for development:
-```bash
-mkdir -p ~/.codex/skills
-rm -rf ~/.codex/skills/excalidraw-mcp
-ln -s "$(pwd)/skills/excalidraw-mcp" ~/.codex/skills/excalidraw-mcp
-```
+To update an existing installation, remove the old folder first (`rm -rf ~/.codex/skills/excalidraw-mcp`) then re-copy.
 
 ### Install The Skill (Claude Code)
 
-Claude Code doesn't have a universal "skills folder" convention, but it does support repo instructions. The simplest way to apply this skill is to reference it from a `CLAUDE.md` file in your repo.
-
-Create `CLAUDE.md` (or append to it) in the project root:
-
-```md
-## Excalidraw MCP Skill
-
-When working with Excalidraw diagrams or the canvas server, follow: skills/excalidraw-mcp/SKILL.md
+**User-level** (available across all your projects):
+```bash
+mkdir -p ~/.claude/skills
+cp -R skills/excalidraw-mcp ~/.claude/skills/excalidraw-mcp
 ```
 
-Then use Claude Code normally. When you ask it to draw/refine/export diagrams, it will have a stable, file-backed workflow to follow.
+**Project-level** (scoped to a specific project, can be committed to the repo):
+```bash
+mkdir -p /path/to/your/project/.claude/skills
+cp -R skills/excalidraw-mcp /path/to/your/project/.claude/skills/excalidraw-mcp
+```
+
+Then invoke the skill in Claude Code with `/excalidraw-mcp`.
+
+To update an existing installation, remove the old folder first then re-copy.
 
 ### Use The Skill Scripts
 
@@ -166,7 +163,9 @@ The MCP server exposes tools such as:
 - `create_element`, `update_element`, `delete_element`
 - `query_elements`, `get_resource`
 - `batch_create_elements`
-- `align_elements`, `distribute_elements`, `group_elements`, `lock_elements`
+- `align_elements`, `distribute_elements`
+- `group_elements`, `ungroup_elements`
+- `lock_elements`, `unlock_elements`
 - `create_from_mermaid` (frontend converts Mermaid to Excalidraw elements)
 
 The full tool list and schemas are discoverable via MCP Inspector (`tools/list`) or by reading `src/index.ts`.
