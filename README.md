@@ -9,6 +9,26 @@ Run a live Excalidraw canvas and control it from AI agents via MCP (Model Contex
 
 Keywords: Excalidraw MCP server, AI diagramming, Claude Desktop MCP, Claude Code MCP, Cursor MCP, MCP Inspector, Mermaid to Excalidraw.
 
+## Table of Contents
+
+- [What It Is](#what-it-is)
+- [What's New](#whats-new)
+- [Quick Start (Local)](#quick-start-local)
+- [Quick Start (Docker)](#quick-start-docker)
+- [Configure MCP Clients](#configure-mcp-clients)
+  - [Claude Desktop](#claude-desktop)
+  - [Claude Code](#claude-code)
+  - [Cursor](#cursor)
+  - [Codex CLI](#codex-cli)
+  - [OpenCode](#opencode)
+  - [Antigravity (Google)](#antigravity-google)
+- [Agent Skill (Optional)](#agent-skill-optional)
+- [MCP Tools (High Level)](#mcp-tools-high-level)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Known Issues / TODO](#known-issues--todo)
+- [Development](#development)
+
 ## What It Is
 
 This repo contains two separate processes:
@@ -52,10 +72,27 @@ docker run -d -p 3000:3000 --name mcp-excalidraw-canvas ghcr.io/yctimlin/mcp_exc
 
 MCP server (stdio) is typically launched by your MCP client (Claude Desktop/Cursor/etc.). If you want a local container for it, use the image `ghcr.io/yctimlin/mcp_excalidraw:latest` and set `EXPRESS_SERVER_URL` to point at the canvas.
 
-## Configure MCP Clients (stdio)
+## Configure MCP Clients
 
-You can point any MCP client at `dist/index.js` (stdio). Example:
+The MCP server runs over stdio and can be configured with any MCP-compatible client. Below are configurations for both **local** (requires cloning and building) and **Docker** (pull-and-run) setups.
 
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXPRESS_SERVER_URL` | URL of the canvas server | `http://localhost:3000` |
+| `ENABLE_CANVAS_SYNC` | Enable real-time canvas sync | `true` |
+
+---
+
+### Claude Desktop
+
+Config location:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- Linux: `~/.config/Claude/claude_desktop_config.json`
+
+**Local (node)**
 ```json
 {
   "mcpServers": {
@@ -71,11 +108,213 @@ You can point any MCP client at `dist/index.js` (stdio). Example:
 }
 ```
 
-Common config locations by client:
+**Docker**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "EXPRESS_SERVER_URL=http://host.docker.internal:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
+      ]
+    }
+  }
+}
+```
 
-- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-- Claude Code: `.mcp.json` in your project root
-- Cursor: `.cursor/mcp.json` in your project root
+---
+
+### Claude Code
+
+Use the `claude mcp add` command to register the MCP server.
+
+**Local (node)** - User-level (available across all projects):
+```bash
+claude mcp add excalidraw --scope user \
+  -e EXPRESS_SERVER_URL=http://localhost:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  -- node /absolute/path/to/mcp_excalidraw/dist/index.js
+```
+
+**Local (node)** - Project-level (shared via `.mcp.json`):
+```bash
+claude mcp add excalidraw --scope project \
+  -e EXPRESS_SERVER_URL=http://localhost:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  -- node /absolute/path/to/mcp_excalidraw/dist/index.js
+```
+
+**Docker**
+```bash
+claude mcp add excalidraw --scope user \
+  -- docker run -i --rm \
+  -e EXPRESS_SERVER_URL=http://host.docker.internal:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  ghcr.io/yctimlin/mcp_excalidraw:latest
+```
+
+**Manage servers:**
+```bash
+claude mcp list              # List configured servers
+claude mcp remove excalidraw # Remove a server
+```
+
+---
+
+### Cursor
+
+Config location: `.cursor/mcp.json` in your project root (or `~/.cursor/mcp.json` for global config)
+
+**Local (node)**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
+      }
+    }
+  }
+}
+```
+
+**Docker**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "EXPRESS_SERVER_URL=http://host.docker.internal:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
+      ]
+    }
+  }
+}
+```
+
+---
+
+### Codex CLI
+
+Use the `codex mcp add` command to register the MCP server.
+
+**Local (node)**
+```bash
+codex mcp add excalidraw \
+  --env EXPRESS_SERVER_URL=http://localhost:3000 \
+  --env ENABLE_CANVAS_SYNC=true \
+  -- node /absolute/path/to/mcp_excalidraw/dist/index.js
+```
+
+**Docker**
+```bash
+codex mcp add excalidraw \
+  -- docker run -i --rm \
+  -e EXPRESS_SERVER_URL=http://host.docker.internal:3000 \
+  -e ENABLE_CANVAS_SYNC=true \
+  ghcr.io/yctimlin/mcp_excalidraw:latest
+```
+
+**Manage servers:**
+```bash
+codex mcp list              # List configured servers
+codex mcp remove excalidraw # Remove a server
+```
+
+---
+
+### OpenCode
+
+Config location: `~/.config/opencode/opencode.json` or project-level `opencode.json`
+
+**Local (node)**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "excalidraw": {
+      "type": "local",
+      "command": ["node", "/absolute/path/to/mcp_excalidraw/dist/index.js"],
+      "enabled": true,
+      "environment": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
+      }
+    }
+  }
+}
+```
+
+**Docker**
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "excalidraw": {
+      "type": "local",
+      "command": ["docker", "run", "-i", "--rm", "-e", "EXPRESS_SERVER_URL=http://host.docker.internal:3000", "-e", "ENABLE_CANVAS_SYNC=true", "ghcr.io/yctimlin/mcp_excalidraw:latest"],
+      "enabled": true
+    }
+  }
+}
+```
+
+---
+
+### Antigravity (Google)
+
+Config location: `~/.gemini/antigravity/mcp_config.json`
+
+**Local (node)**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_excalidraw/dist/index.js"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://localhost:3000",
+        "ENABLE_CANVAS_SYNC": "true"
+      }
+    }
+  }
+}
+```
+
+**Docker**
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "EXPRESS_SERVER_URL=http://host.docker.internal:3000",
+        "-e", "ENABLE_CANVAS_SYNC=true",
+        "ghcr.io/yctimlin/mcp_excalidraw:latest"
+      ]
+    }
+  }
+}
+```
+
+---
+
+### Notes
+
+- **Docker networking**: Use `host.docker.internal` to reach the canvas server running on your host machine. On Linux, you may need `--add-host=host.docker.internal:host-gateway` or use `172.17.0.1`.
+- **Canvas server**: Must be running before the MCP server connects. Start it with `npm run canvas` (local) or `docker run -d -p 3000:3000 ghcr.io/yctimlin/mcp_excalidraw-canvas:latest` (Docker).
+- **Absolute paths**: When using local node setup, replace `/absolute/path/to/mcp_excalidraw` with the actual path where you cloned and built the repo.
+- **In-memory storage**: The canvas server stores elements in memory. Restarting the server will clear all elements. Use the export/import scripts if you need persistence.
 
 ## Agent Skill (Optional)
 
@@ -189,6 +428,18 @@ agent-browser screenshot /tmp/canvas.png
 
 - Canvas not updating: confirm `EXPRESS_SERVER_URL` points at the running canvas server.
 - Updates/deletes fail after batch creation: ensure you are on a build that includes the batch id preservation fix (merged via PR #34).
+
+## Known Issues / TODO
+
+The following issues are known and tracked for future improvement:
+
+- [ ] **`align_elements` / `distribute_elements` are stubs**: These tools log and return success but do not actually move elements. Implementation needed in `src/index.ts:782-806`.
+- [ ] **`points` type mismatch**: The Zod schema expects `[{x, y}]` objects but Excalidraw expects `[[x, y]]` tuples. This may cause issues when creating arrows/lines via MCP. See `src/index.ts:187` vs `src/types.ts:64`.
+- [ ] **`label` element type incomplete**: The `label` type is defined in `EXCALIDRAW_ELEMENT_TYPES` but has no corresponding interface in the type union. See `src/types.ts:109,118`.
+- [ ] **HTTP transport mode placeholder**: `MCP_TRANSPORT_MODE=http` is accepted but falls back to stdio. See `src/index.ts:989-996`.
+- [ ] **`ungroup_elements` silent success**: Returns success even when no elements are ungrouped (e.g., elements not found). See `src/index.ts:765-769`.
+
+Contributions welcome!
 
 ## Development
 
