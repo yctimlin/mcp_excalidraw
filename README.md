@@ -126,6 +126,20 @@ rm -rf ~/.codex/skills/excalidraw-mcp
 ln -s "$(pwd)/skills/excalidraw-mcp" ~/.codex/skills/excalidraw-mcp
 ```
 
+### Install The Skill (Claude Code)
+
+Claude Code doesn't have a universal "skills folder" convention, but it does support repo instructions. The simplest way to apply this skill is to reference it from a `CLAUDE.md` file in your repo.
+
+Create `CLAUDE.md` (or append to it) in the project root:
+
+```md
+## Excalidraw MCP Skill
+
+When working with Excalidraw diagrams or the canvas server, follow: skills/excalidraw-mcp/SKILL.md
+```
+
+Then use Claude Code normally. When you ask it to draw/refine/export diagrams, it will have a stable, file-backed workflow to follow.
+
 ### Use The Skill Scripts
 
 All scripts respect `EXPRESS_SERVER_URL` (default `http://localhost:3000`) or accept `--url`.
