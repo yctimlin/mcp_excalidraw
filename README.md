@@ -12,8 +12,15 @@ Run a live Excalidraw canvas and control it from AI agents. This repo provides:
 
 Keywords: Excalidraw agent skill, Excalidraw MCP server, AI diagramming, Claude Code skill, Codex CLI skill, Claude Desktop MCP, Cursor MCP, Mermaid to Excalidraw.
 
+## Demo
+
+[![MCP Excalidraw Demo](https://img.youtube.com/vi/RRN7AF7QIew/maxresdefault.jpg)](https://youtu.be/RRN7AF7QIew)
+
+*Watch AI agents create and manipulate diagrams in real-time on the live canvas*
+
 ## Table of Contents
 
+- [Demo](#demo)
 - [What It Is](#what-it-is)
 - [What's New](#whats-new)
 - [Quick Start (Local)](#quick-start-local)
