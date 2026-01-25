@@ -1,4 +1,4 @@
-# MCP Excalidraw Server
+# MCP Excalidraw Server (Excalidraw + MCP)
 
 [![CI](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml)
 [![Docker Build & Push](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml)
@@ -7,10 +7,20 @@
 
 Run a live Excalidraw canvas and control it from AI agents via MCP (Model Context Protocol).
 
+Keywords: Excalidraw MCP server, AI diagramming, Claude Desktop MCP, Claude Code MCP, Cursor MCP, MCP Inspector, Mermaid to Excalidraw.
+
+## What It Is
+
 This repo contains two separate processes:
 
 - Canvas server: web UI + REST API + WebSocket updates (default `http://localhost:3000`)
 - MCP server: exposes MCP tools over stdio; syncs to the canvas via `EXPRESS_SERVER_URL`
+
+## What's New
+
+- Agent skill: `skills/excalidraw-mcp/` (portable instructions + helper scripts for export/import and repeatable CRUD)
+- Better testing loop: MCP Inspector CLI examples + browser screenshot checks (`agent-browser`)
+- Bugfixes: batch create now preserves element ids (fixes update/delete after batch); frontend entrypoint fixed (`main.tsx`)
 
 ## Quick Start (Local)
 
@@ -42,7 +52,7 @@ docker run -d -p 3000:3000 --name mcp-excalidraw-canvas ghcr.io/yctimlin/mcp_exc
 
 MCP server (stdio) is typically launched by your MCP client (Claude Desktop/Cursor/etc.). If you want a local container for it, use the image `ghcr.io/yctimlin/mcp_excalidraw:latest` and set `EXPRESS_SERVER_URL` to point at the canvas.
 
-## Configure MCP Clients
+## Configure MCP Clients (stdio)
 
 You can point any MCP client at `dist/index.js` (stdio). Example:
 
@@ -67,9 +77,15 @@ This repo includes sample configs:
 - `.mcp.json` (Claude Code)
 - `.cursor/mcp.json` (Cursor)
 
-## Skill Integration (Optional)
+## Agent Skill (Optional, Recommended)
 
 This repo ships an agent skill at `skills/excalidraw-mcp/`.
+
+Skills are not Codex-specific. This one is a lightweight, portable bundle:
+
+- `skills/excalidraw-mcp/SKILL.md`: the workflow playbook (what to do first/next)
+- `skills/excalidraw-mcp/references/cheatsheet.md`: tool + REST endpoint reference
+- `skills/excalidraw-mcp/scripts/*.cjs`: helper scripts (export/import/clear/CRUD)
 
 What the skill adds:
 
@@ -81,7 +97,20 @@ What the skill is not:
 - It does not replace the MCP server; the MCP server is still what exposes tools to an agent.
 - It is not required to run the canvas.
 
-### Install The Skill (Codex CLI)
+### Use The Skill In Any Agent Tool
+
+Most agent tools support one (or more) of these patterns:
+
+1) **Custom instructions / rules / system prompt**
+   - Paste the contents of `skills/excalidraw-mcp/SKILL.md` into your agent's custom instructions.
+2) **File-backed instructions**
+   - Point your agent at the file `skills/excalidraw-mcp/SKILL.md` and tell it to follow it.
+3) **"Skill package"**
+   - If your agent supports importing a skill bundle, use the `skills/excalidraw-mcp/` folder as the bundle source.
+
+If your agent tool has a concept of "tools", use MCP for the interactive diagram edits and the skill scripts for export/import workflows.
+
+### Install The Skill (Codex CLI example)
 
 Copy:
 ```bash
@@ -160,6 +189,7 @@ npx @modelcontextprotocol/inspector --cli \
 
 If you use `agent-browser` for UI checks:
 ```bash
+agent-browser install
 agent-browser open http://127.0.0.1:3000
 agent-browser wait --load networkidle
 agent-browser screenshot /tmp/canvas.png
@@ -176,4 +206,3 @@ agent-browser screenshot /tmp/canvas.png
 npm run type-check
 npm run build
 ```
-
