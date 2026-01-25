@@ -1,13 +1,16 @@
-# MCP Excalidraw Server (Excalidraw + MCP)
+# Excalidraw MCP Server & Agent Skill
 
 [![CI](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml)
 [![Docker Build & Push](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml)
 [![NPM Version](https://img.shields.io/npm/v/mcp-excalidraw-server)](https://www.npmjs.com/package/mcp-excalidraw-server)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Run a live Excalidraw canvas and control it from AI agents via MCP (Model Context Protocol).
+Run a live Excalidraw canvas and control it from AI agents. This repo provides:
 
-Keywords: Excalidraw MCP server, AI diagramming, Claude Desktop MCP, Claude Code MCP, Cursor MCP, MCP Inspector, Mermaid to Excalidraw.
+- **MCP Server**: Connect via Model Context Protocol (Claude Desktop, Cursor, Codex CLI, etc.)
+- **Agent Skill**: Portable skill for Claude Code, Codex CLI, and other skill-enabled agents
+
+Keywords: Excalidraw agent skill, Excalidraw MCP server, AI diagramming, Claude Code skill, Codex CLI skill, Claude Desktop MCP, Cursor MCP, Mermaid to Excalidraw.
 
 ## Table of Contents
 
