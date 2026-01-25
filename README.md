@@ -71,44 +71,21 @@ You can point any MCP client at `dist/index.js` (stdio). Example:
 }
 ```
 
-This repo includes sample configs:
+Common config locations by client:
 
-- `claude_desktop_config.json`
-- `.mcp.json` (Claude Code)
-- `.cursor/mcp.json` (Cursor)
+- Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+- Claude Code: `.mcp.json` in your project root
+- Cursor: `.cursor/mcp.json` in your project root
 
-## Agent Skill (Optional, Recommended)
+## Agent Skill (Optional)
 
-This repo ships an agent skill at `skills/excalidraw-mcp/`.
+This repo includes a skill at `skills/excalidraw-mcp/` that provides:
 
-Skills are not Codex-specific. This one is a lightweight, portable bundle:
+- **Workflow playbook** (`SKILL.md`): step-by-step guidance for drawing, refining, and exporting diagrams
+- **Cheatsheet** (`references/cheatsheet.md`): MCP tool and REST API reference
+- **Helper scripts** (`scripts/*.cjs`): export, import, clear, healthcheck, CRUD operations
 
-- `skills/excalidraw-mcp/SKILL.md`: the workflow playbook (what to do first/next)
-- `skills/excalidraw-mcp/references/cheatsheet.md`: tool + REST endpoint reference
-- `skills/excalidraw-mcp/scripts/*.cjs`: helper scripts (export/import/clear/CRUD)
-
-What the skill adds:
-
-- A workflow playbook for drawing/refining diagrams (what to do first, what to do last)
-- Helper scripts for export/import and repeatable operations (healthcheck, clear, CRUD)
-
-What the skill is not:
-
-- It does not replace the MCP server; the MCP server is still what exposes tools to an agent.
-- It is not required to run the canvas.
-
-### Use The Skill In Any Agent Tool
-
-Most agent tools support one (or more) of these patterns:
-
-1) **Custom instructions / rules / system prompt**
-   - Paste the contents of `skills/excalidraw-mcp/SKILL.md` into your agent's custom instructions.
-2) **File-backed instructions**
-   - Point your agent at the file `skills/excalidraw-mcp/SKILL.md` and tell it to follow it.
-3) **"Skill package"**
-   - If your agent supports importing a skill bundle, use the `skills/excalidraw-mcp/` folder as the bundle source.
-
-If your agent tool has a concept of "tools", use MCP for the interactive diagram edits and the skill scripts for export/import workflows.
+The skill complements the MCP server by giving your AI agent structured workflows to follow.
 
 ### Install The Skill (Codex CLI example)
 
