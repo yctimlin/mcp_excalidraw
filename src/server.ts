@@ -6,9 +6,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
-import { 
+import {
   elements,
-  generateId, 
+  snapshots,
+  generateId,
   EXCALIDRAW_ELEMENT_TYPES,
   ServerElement,
   ExcalidrawElementType,
@@ -18,7 +19,8 @@ import {
   ElementDeletedMessage,
   BatchCreatedMessage,
   SyncStatusMessage,
-  InitialElementsMessage
+  InitialElementsMessage,
+  Snapshot
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
@@ -234,6 +236,33 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error updating element:', error);
     res.status(400).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Clear all elements (must be before /:id route)
+app.delete('/api/elements/clear', (req: Request, res: Response) => {
+  try {
+    const count = elements.size;
+    elements.clear();
+
+    broadcast({
+      type: 'canvas_cleared',
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Canvas cleared: ${count} elements removed`);
+
+    res.json({
+      success: true,
+      message: `Cleared ${count} elements`,
+      count
+    });
+  } catch (error) {
+    logger.error('Error clearing canvas:', error);
+    res.status(500).json({
       success: false,
       error: (error as Error).message
     });
@@ -521,6 +550,197 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       success: false,
       error: (error as Error).message,
       details: 'Internal server error during sync operation'
+    });
+  }
+});
+
+// Image export: request (MCP -> Express -> WebSocket -> Frontend)
+interface PendingExport {
+  resolve: (data: { format: string; data: string }) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+const pendingExports = new Map<string, PendingExport>();
+
+app.post('/api/export/image', (req: Request, res: Response) => {
+  try {
+    const { format, background } = req.body;
+
+    if (!format || !['png', 'svg'].includes(format)) {
+      return res.status(400).json({
+        success: false,
+        error: 'format must be "png" or "svg"'
+      });
+    }
+
+    if (clients.size === 0) {
+      return res.status(503).json({
+        success: false,
+        error: 'No frontend client connected. Open the canvas in a browser first.'
+      });
+    }
+
+    const requestId = generateId();
+
+    const exportPromise = new Promise<{ format: string; data: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingExports.delete(requestId);
+        reject(new Error('Export timed out after 30 seconds'));
+      }, 30000);
+
+      pendingExports.set(requestId, { resolve, reject, timeout });
+    });
+
+    broadcast({
+      type: 'export_image_request',
+      requestId,
+      format,
+      background: background ?? true
+    });
+
+    exportPromise
+      .then(result => {
+        res.json({
+          success: true,
+          format: result.format,
+          data: result.data
+        });
+      })
+      .catch(error => {
+        res.status(500).json({
+          success: false,
+          error: (error as Error).message
+        });
+      });
+  } catch (error) {
+    logger.error('Error initiating image export:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Image export: result (Frontend -> Express -> MCP)
+app.post('/api/export/image/result', (req: Request, res: Response) => {
+  try {
+    const { requestId, format, data, error } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        success: false,
+        error: 'requestId is required'
+      });
+    }
+
+    const pending = pendingExports.get(requestId);
+    if (!pending) {
+      return res.status(404).json({
+        success: false,
+        error: 'No pending export with this requestId'
+      });
+    }
+
+    clearTimeout(pending.timeout);
+    pendingExports.delete(requestId);
+
+    if (error) {
+      pending.reject(new Error(error));
+    } else {
+      pending.resolve({ format, data });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Error processing export result:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: save
+app.post('/api/snapshots', (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Snapshot name is required'
+      });
+    }
+
+    const snapshot: Snapshot = {
+      name,
+      elements: Array.from(elements.values()),
+      createdAt: new Date().toISOString()
+    };
+
+    snapshots.set(name, snapshot);
+    logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
+
+    res.json({
+      success: true,
+      name,
+      elementCount: snapshot.elements.length,
+      createdAt: snapshot.createdAt
+    });
+  } catch (error) {
+    logger.error('Error saving snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: list
+app.get('/api/snapshots', (req: Request, res: Response) => {
+  try {
+    const list = Array.from(snapshots.values()).map(s => ({
+      name: s.name,
+      elementCount: s.elements.length,
+      createdAt: s.createdAt
+    }));
+
+    res.json({
+      success: true,
+      snapshots: list,
+      count: list.length
+    });
+  } catch (error) {
+    logger.error('Error listing snapshots:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: get by name
+app.get('/api/snapshots/:name', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const snapshot = snapshots.get(name!);
+
+    if (!snapshot) {
+      return res.status(404).json({
+        success: false,
+        error: `Snapshot "${name}" not found`
+      });
+    }
+
+    res.json({
+      success: true,
+      snapshot
+    });
+  } catch (error) {
+    logger.error('Error fetching snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
     });
   }
 });

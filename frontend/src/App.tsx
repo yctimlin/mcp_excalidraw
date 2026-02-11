@@ -297,6 +297,81 @@ function App(): JSX.Element {
           console.log(`Server sync status: ${data.count} elements`)
           break
           
+        case 'canvas_cleared':
+          console.log('Canvas cleared by server')
+          excalidrawAPI.updateScene({
+            elements: [],
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
+          break
+
+        case 'export_image_request':
+          console.log('Received image export request', data)
+          if (data.requestId) {
+            try {
+              const elements = excalidrawAPI.getSceneElements()
+              const appState = excalidrawAPI.getAppState()
+              const files = excalidrawAPI.getFiles()
+
+              if (data.format === 'svg') {
+                const svg = await (excalidrawAPI as any).exportToSvg({
+                  elements,
+                  appState: {
+                    ...appState,
+                    exportBackground: data.background !== false
+                  },
+                  files
+                })
+                const svgString = new XMLSerializer().serializeToString(svg)
+                await fetch('/api/export/image/result', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    requestId: data.requestId,
+                    format: 'svg',
+                    data: svgString
+                  })
+                })
+              } else {
+                const blob = await (excalidrawAPI as any).exportToBlob({
+                  elements,
+                  appState: {
+                    ...appState,
+                    exportBackground: data.background !== false
+                  },
+                  files,
+                  mimeType: 'image/png'
+                })
+                const reader = new FileReader()
+                reader.onloadend = async () => {
+                  const base64 = (reader.result as string).split(',')[1]
+                  await fetch('/api/export/image/result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      requestId: data.requestId,
+                      format: 'png',
+                      data: base64
+                    })
+                  })
+                }
+                reader.readAsDataURL(blob)
+              }
+              console.log('Image export completed for request', data.requestId)
+            } catch (exportError) {
+              console.error('Image export failed:', exportError)
+              await fetch('/api/export/image/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  error: (exportError as Error).message
+                })
+              })
+            }
+          }
+          break
+
         case 'mermaid_convert':
           console.log('Received Mermaid conversion request from MCP')
           if (data.mermaidDiagram) {

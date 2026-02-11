@@ -48,7 +48,7 @@ This repo contains two separate processes:
 
 ## What's New
 
-- Agent skill: `skills/excalidraw-mcp/` (portable instructions + helper scripts for export/import and repeatable CRUD)
+- Agent skill: `skills/excalidraw-skill/` (portable instructions + helper scripts for export/import and repeatable CRUD)
 - Better testing loop: MCP Inspector CLI examples + browser screenshot checks (`agent-browser`)
 - Bugfixes: batch create now preserves element ids (fixes update/delete after batch); frontend entrypoint fixed (`main.tsx`)
 
@@ -328,7 +328,7 @@ Config location: `~/.gemini/antigravity/mcp_config.json`
 
 ## Agent Skill (Optional)
 
-This repo includes a skill at `skills/excalidraw-mcp/` that provides:
+This repo includes a skill at `skills/excalidraw-skill/` that provides:
 
 - **Workflow playbook** (`SKILL.md`): step-by-step guidance for drawing, refining, and exporting diagrams
 - **Cheatsheet** (`references/cheatsheet.md`): MCP tool and REST API reference
@@ -340,26 +340,26 @@ The skill complements the MCP server by giving your AI agent structured workflow
 
 ```bash
 mkdir -p ~/.codex/skills
-cp -R skills/excalidraw-mcp ~/.codex/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill ~/.codex/skills/excalidraw-skill
 ```
 
-To update an existing installation, remove the old folder first (`rm -rf ~/.codex/skills/excalidraw-mcp`) then re-copy.
+To update an existing installation, remove the old folder first (`rm -rf ~/.codex/skills/excalidraw-skill`) then re-copy.
 
 ### Install The Skill (Claude Code)
 
 **User-level** (available across all your projects):
 ```bash
 mkdir -p ~/.claude/skills
-cp -R skills/excalidraw-mcp ~/.claude/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill ~/.claude/skills/excalidraw-skill
 ```
 
 **Project-level** (scoped to a specific project, can be committed to the repo):
 ```bash
 mkdir -p /path/to/your/project/.claude/skills
-cp -R skills/excalidraw-mcp /path/to/your/project/.claude/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill /path/to/your/project/.claude/skills/excalidraw-skill
 ```
 
-Then invoke the skill in Claude Code with `/excalidraw-mcp`.
+Then invoke the skill in Claude Code with `/excalidraw-skill`.
 
 To update an existing installation, remove the old folder first then re-copy.
 
@@ -368,9 +368,9 @@ To update an existing installation, remove the old folder first then re-copy.
 All scripts respect `EXPRESS_SERVER_URL` (default `http://localhost:3000`) or accept `--url`.
 
 ```bash
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/healthcheck.cjs
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/export-elements.cjs --out diagram.elements.json
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/import-elements.cjs --in diagram.elements.json --mode batch
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/healthcheck.cjs
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/export-elements.cjs --out diagram.elements.json
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/import-elements.cjs --in diagram.elements.json --mode batch
 ```
 
 ### When The Skill Is Useful
@@ -380,7 +380,7 @@ EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/impo
 - Automated smoke tests: create/update/delete a known element to validate a deployment.
 - Repeatable diagrams: keep a library of element JSON snippets and import them.
 
-See `skills/excalidraw-mcp/SKILL.md` and `skills/excalidraw-mcp/references/cheatsheet.md`.
+See `skills/excalidraw-skill/SKILL.md` and `skills/excalidraw-skill/references/cheatsheet.md`.
 
 ## MCP Tools (High Level)
 
