@@ -16,10 +16,23 @@ description: Programmatic canvas toolkit for creating, editing, and refining Exc
 
 1. Confirm canvas: `node scripts/healthcheck.cjs` or `GET /health`.
 2. Optional: `clear_canvas` to start fresh.
-3. Create shapes first (`create_element` with type rectangle/diamond/ellipse). Set `text` field to label shapes.
-4. Create arrows/lines after endpoints exist.
-5. `align_elements` / `distribute_elements` after rough placement.
-6. `describe_scene` to verify layout. `get_canvas_screenshot` to visually check.
+3. Use `batch_create_elements` with all shapes AND arrows in one call.
+4. **Assign custom `id` to shapes** (e.g. `"id": "auth-svc"`). Set `text` field to label shapes.
+5. **Bind arrows to shapes** using `startElementId` / `endElementId` — arrows auto-route to element edges.
+6. `align_elements` / `distribute_elements` after rough placement.
+7. `describe_scene` to verify layout. `get_canvas_screenshot` to visually check.
+
+### Arrow Binding (Recommended)
+
+Use `startElementId` and `endElementId` on arrows to bind them to shapes. The server automatically calculates edge-to-edge routing with proper gaps. Example:
+```json
+{"elements": [
+  {"id": "svc-a", "type": "rectangle", "x": 0, "y": 0, "width": 120, "height": 60, "text": "Service A"},
+  {"id": "svc-b", "type": "rectangle", "x": 0, "y": 200, "width": 120, "height": 60, "text": "Service B"},
+  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-a", "endElementId": "svc-b", "text": "calls"}
+]}
+```
+Arrows without `startElementId`/`endElementId` use manual `x`, `y`, `points` coordinates.
 
 ## Workflow: Iterative Refinement (Key Differentiator)
 

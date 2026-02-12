@@ -3,7 +3,9 @@ import {
   Excalidraw,
   convertToExcalidrawElements,
   CaptureUpdateAction,
-  ExcalidrawImperativeAPI
+  ExcalidrawImperativeAPI,
+  exportToBlob,
+  exportToSvg
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement, NonDeleted, NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/types/element/types'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
@@ -39,6 +41,12 @@ interface ServerElement {
   boundElements?: any[] | null;
   containerId?: string | null;
   locked?: boolean;
+  // Arrow element binding
+  start?: { id: string };
+  end?: { id: string };
+  strokeStyle?: string;
+  endArrowhead?: string;
+  startArrowhead?: string;
 }
 
 interface WebSocketMessage {
@@ -240,13 +248,24 @@ function App(): JSX.Element {
         case 'element_created':
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
-            // Preserve server IDs so later update/delete websocket events can match by id.
-            const newElement = convertToExcalidrawElements([cleanedNewElement], { regenerateIds: false })
-            const updatedElementsAfterCreate = [...currentElements, ...newElement]
-            excalidrawAPI.updateScene({ 
-              elements: updatedElementsAfterCreate,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
+            const hasBindings = (cleanedNewElement as any).start || (cleanedNewElement as any).end
+            if (hasBindings) {
+              // Bound arrow: re-convert all elements together so bindings resolve
+              const allElements = [...currentElements, cleanedNewElement] as any[]
+              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              excalidrawAPI.updateScene({
+                elements: convertedAll,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            } else {
+              // Preserve server IDs so later update/delete websocket events can match by id.
+              const newElement = convertToExcalidrawElements([cleanedNewElement], { regenerateIds: false })
+              const updatedElementsAfterCreate = [...currentElements, ...newElement]
+              excalidrawAPI.updateScene({
+                elements: updatedElementsAfterCreate,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            }
           }
           break
           
@@ -278,13 +297,24 @@ function App(): JSX.Element {
         case 'elements_batch_created':
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
-            // Preserve server IDs so later update/delete websocket events can match by id.
-            const batchElements = convertToExcalidrawElements(cleanedBatchElements, { regenerateIds: false })
-            const updatedElementsAfterBatch = [...currentElements, ...batchElements]
-            excalidrawAPI.updateScene({ 
-              elements: updatedElementsAfterBatch,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
+            const hasBoundArrows = cleanedBatchElements.some((el: any) => el.start || el.end)
+            if (hasBoundArrows) {
+              // Convert ALL elements together so arrow bindings resolve to target shapes
+              const allElements = [...currentElements, ...cleanedBatchElements] as any[]
+              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              excalidrawAPI.updateScene({
+                elements: convertedAll,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            } else {
+              // Preserve server IDs so later update/delete websocket events can match by id.
+              const batchElements = convertToExcalidrawElements(cleanedBatchElements, { regenerateIds: false })
+              const updatedElementsAfterBatch = [...currentElements, ...batchElements]
+              excalidrawAPI.updateScene({
+                elements: updatedElementsAfterBatch,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            }
           }
           break
           
@@ -314,7 +344,7 @@ function App(): JSX.Element {
               const files = excalidrawAPI.getFiles()
 
               if (data.format === 'svg') {
-                const svg = await (excalidrawAPI as any).exportToSvg({
+                const svg = await exportToSvg({
                   elements,
                   appState: {
                     ...appState,
@@ -333,7 +363,7 @@ function App(): JSX.Element {
                   })
                 })
               } else {
-                const blob = await (excalidrawAPI as any).exportToBlob({
+                const blob = await exportToBlob({
                   elements,
                   appState: {
                     ...appState,

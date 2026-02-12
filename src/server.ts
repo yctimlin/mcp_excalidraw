@@ -37,7 +37,7 @@ const wss = new WebSocketServer({ server });
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Serve static files from the build directory
 const staticDir = path.join(__dirname, '../dist');
@@ -100,6 +100,7 @@ const CreateElementSchema = z.object({
   backgroundColor: z.string().optional(),
   strokeColor: z.string().optional(),
   strokeWidth: z.number().optional(),
+  strokeStyle: z.string().optional(),
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
@@ -109,7 +110,13 @@ const CreateElementSchema = z.object({
   fontSize: z.number().optional(),
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
-  locked: z.boolean().optional()
+  locked: z.boolean().optional(),
+  // Arrow-specific properties
+  points: z.any().optional(),
+  start: z.object({ id: z.string() }).optional(),
+  end: z.object({ id: z.string() }).optional(),
+  startArrowhead: z.string().nullable().optional(),
+  endArrowhead: z.string().nullable().optional(),
 });
 
 const UpdateElementSchema = z.object({
@@ -122,6 +129,7 @@ const UpdateElementSchema = z.object({
   backgroundColor: z.string().optional(),
   strokeColor: z.string().optional(),
   strokeWidth: z.number().optional(),
+  strokeStyle: z.string().optional(),
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
@@ -131,7 +139,15 @@ const UpdateElementSchema = z.object({
   fontSize: z.number().optional(),
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
-  locked: z.boolean().optional()
+  locked: z.boolean().optional(),
+  points: z.array(z.union([
+    z.tuple([z.number(), z.number()]),
+    z.object({ x: z.number(), y: z.number() })
+  ])).optional(),
+  start: z.object({ id: z.string() }).optional(),
+  end: z.object({ id: z.string() }).optional(),
+  startArrowhead: z.string().nullable().optional(),
+  endArrowhead: z.string().nullable().optional(),
 });
 
 // API Routes
@@ -378,20 +394,152 @@ app.get('/api/elements/:id', (req: Request, res: Response) => {
   }
 });
 
+// Helper: compute edge point for an element given a direction toward a target
+function computeEdgePoint(
+  el: ServerElement,
+  targetCenterX: number,
+  targetCenterY: number
+): { x: number; y: number } {
+  const cx = el.x + (el.width || 0) / 2;
+  const cy = el.y + (el.height || 0) / 2;
+  const dx = targetCenterX - cx;
+  const dy = targetCenterY - cy;
+
+  if (el.type === 'diamond') {
+    // Diamond edge: use diamond geometry (rotated square)
+    const hw = (el.width || 0) / 2;
+    const hh = (el.height || 0) / 2;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy + hh };
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    // Scale factor to reach diamond edge
+    const scale = (absDx / hw + absDy / hh) > 0
+      ? 1 / (absDx / hw + absDy / hh)
+      : 1;
+    return { x: cx + dx * scale, y: cy + dy * scale };
+  }
+
+  if (el.type === 'ellipse') {
+    // Ellipse edge: parametric intersection
+    const a = (el.width || 0) / 2;
+    const b = (el.height || 0) / 2;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy + b };
+    const angle = Math.atan2(dy, dx);
+    return { x: cx + a * Math.cos(angle), y: cy + b * Math.sin(angle) };
+  }
+
+  // Rectangle: find intersection with edges
+  const hw = (el.width || 0) / 2;
+  const hh = (el.height || 0) / 2;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy + hh };
+  const angle = Math.atan2(dy, dx);
+  const tanA = Math.tan(angle);
+  // Check if ray intersects top/bottom edge or left/right edge
+  if (Math.abs(tanA * hw) <= hh) {
+    // Intersects left or right edge
+    const signX = dx >= 0 ? 1 : -1;
+    return { x: cx + signX * hw, y: cy + signX * hw * tanA };
+  } else {
+    // Intersects top or bottom edge
+    const signY = dy >= 0 ? 1 : -1;
+    return { x: cx + signY * hh / tanA, y: cy + signY * hh };
+  }
+}
+
+// Helper: resolve arrow bindings in a batch
+function resolveArrowBindings(batchElements: ServerElement[]): void {
+  const elementMap = new Map<string, ServerElement>();
+  batchElements.forEach(el => elementMap.set(el.id, el));
+
+  // Also check existing elements for cross-batch references
+  elements.forEach((el, id) => {
+    if (!elementMap.has(id)) elementMap.set(id, el);
+  });
+
+  for (const el of batchElements) {
+    if (el.type !== 'arrow' && el.type !== 'line') continue;
+    const startRef = (el as any).start as { id: string } | undefined;
+    const endRef = (el as any).end as { id: string } | undefined;
+
+    if (!startRef && !endRef) continue;
+
+    const startEl = startRef ? elementMap.get(startRef.id) : undefined;
+    const endEl = endRef ? elementMap.get(endRef.id) : undefined;
+
+    // Calculate arrow path from edge to edge
+    const startCenter = startEl
+      ? { x: startEl.x + (startEl.width || 0) / 2, y: startEl.y + (startEl.height || 0) / 2 }
+      : { x: el.x, y: el.y };
+    const endCenter = endEl
+      ? { x: endEl.x + (endEl.width || 0) / 2, y: endEl.y + (endEl.height || 0) / 2 }
+      : { x: el.x + 100, y: el.y };
+
+    const GAP = 8;
+    const startPt = startEl
+      ? computeEdgePoint(startEl, endCenter.x, endCenter.y)
+      : startCenter;
+    const endPt = endEl
+      ? computeEdgePoint(endEl, startCenter.x, startCenter.y)
+      : endCenter;
+
+    // Apply gap: move start point slightly away from source, end point slightly away from target
+    const startDx = endPt.x - startPt.x;
+    const startDy = endPt.y - startPt.y;
+    const startDist = Math.sqrt(startDx * startDx + startDy * startDy) || 1;
+    const endDx = startPt.x - endPt.x;
+    const endDy = startPt.y - endPt.y;
+    const endDist = Math.sqrt(endDx * endDx + endDy * endDy) || 1;
+
+    const finalStart = {
+      x: startPt.x + (startDx / startDist) * GAP,
+      y: startPt.y + (startDy / startDist) * GAP
+    };
+    const finalEnd = {
+      x: endPt.x + (endDx / endDist) * GAP,
+      y: endPt.y + (endDy / endDist) * GAP
+    };
+
+    // Set arrow position and points
+    el.x = finalStart.x;
+    el.y = finalStart.y;
+    el.points = [[0, 0], [finalEnd.x - finalStart.x, finalEnd.y - finalStart.y]];
+
+    // Remove start/end refs (they were used for computation only)
+    delete (el as any).start;
+    delete (el as any).end;
+
+    // Set binding metadata for Excalidraw
+    if (startEl) {
+      (el as any).startBinding = {
+        elementId: startEl.id,
+        focus: 0,
+        gap: GAP
+      };
+    }
+    if (endEl) {
+      (el as any).endBinding = {
+        elementId: endEl.id,
+        focus: 0,
+        gap: GAP
+      };
+    }
+  }
+}
+
 // Batch create elements
 app.post('/api/elements/batch', (req: Request, res: Response) => {
   try {
     const { elements: elementsToCreate } = req.body;
-    
+
     if (!Array.isArray(elementsToCreate)) {
       return res.status(400).json({
         success: false,
         error: 'Expected an array of elements'
       });
     }
-    
+
     const createdElements: ServerElement[] = [];
-    
+
     elementsToCreate.forEach(elementData => {
       const params = CreateElementSchema.parse(elementData);
       // Prioritize passed ID (for MCP sync), otherwise generate new ID
@@ -404,17 +552,22 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
         version: 1
       };
 
-      elements.set(id, element);
       createdElements.push(element);
     });
-    
+
+    // Resolve arrow bindings (computes positions, startBinding, endBinding, boundElements)
+    resolveArrowBindings(createdElements);
+
+    // Store all elements after binding resolution
+    createdElements.forEach(el => elements.set(el.id, el));
+
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
       type: 'elements_batch_created',
       elements: createdElements
     };
     broadcast(message);
-    
+
     res.json({
       success: true,
       elements: createdElements,
@@ -635,20 +788,20 @@ app.post('/api/export/image/result', (req: Request, res: Response) => {
 
     const pending = pendingExports.get(requestId);
     if (!pending) {
-      return res.status(404).json({
-        success: false,
-        error: 'No pending export with this requestId'
-      });
+      // Already resolved by another client, or expired — ignore silently
+      return res.json({ success: true });
+    }
+
+    if (error) {
+      // Don't reject on error — another WebSocket client may still succeed.
+      // The timeout will handle the case where ALL clients fail.
+      logger.warn(`Export error from one client (requestId=${requestId}): ${error}`);
+      return res.json({ success: true });
     }
 
     clearTimeout(pending.timeout);
     pendingExports.delete(requestId);
-
-    if (error) {
-      pending.reject(new Error(error));
-    } else {
-      pending.resolve({ format, data });
-    }
+    pending.resolve({ format, data });
 
     res.json({ success: true });
   } catch (error) {

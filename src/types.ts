@@ -135,7 +135,10 @@ export interface ServerElement extends Omit<ExcalidrawElementBase, 'id'> {
   label?: {
     text: string;
   };
-  points?: readonly [number, number][];
+  points?: any;
+  // Arrow element binding: connect arrows to shapes by element ID
+  start?: { id: string };
+  end?: { id: string };
 }
 
 // API Response types

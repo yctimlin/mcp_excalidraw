@@ -193,6 +193,7 @@ function normalizePoints(points: Array<{ x: number; y: number } | [number, numbe
 
 // Schema definitions using zod
 const ElementSchema = z.object({
+  id: z.string().optional(),
   type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]),
   x: z.number(),
   y: z.number(),
@@ -208,7 +209,12 @@ const ElementSchema = z.object({
   fontSize: z.number().optional(),
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
-  locked: z.boolean().optional()
+  locked: z.boolean().optional(),
+  strokeStyle: z.string().optional(),
+  startElementId: z.string().optional(),
+  endElementId: z.string().optional(),
+  endArrowhead: z.string().optional(),
+  startArrowhead: z.string().optional(),
 });
 
 const ElementIdSchema = z.object({
@@ -246,13 +252,14 @@ const ResourceSchema = z.object({
 const tools: Tool[] = [
   {
     name: 'create_element',
-    description: 'Create a new Excalidraw element',
+    description: 'Create a new Excalidraw element. For arrows, use startElementId/endElementId to bind to shapes (auto-routes to edges).',
     inputSchema: {
       type: 'object',
       properties: {
-        type: { 
-          type: 'string', 
-          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        id: { type: 'string', description: 'Custom element ID (optional, auto-generated if omitted). Use with startElementId/endElementId in batch_create_elements.' },
+        type: {
+          type: 'string',
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES)
         },
         x: { type: 'number' },
         y: { type: 'number' },
@@ -261,11 +268,16 @@ const tools: Tool[] = [
         backgroundColor: { type: 'string' },
         strokeColor: { type: 'string' },
         strokeWidth: { type: 'number' },
+        strokeStyle: { type: 'string', description: 'Stroke style: solid, dashed, dotted' },
         roughness: { type: 'number' },
         opacity: { type: 'number' },
         text: { type: 'string' },
         fontSize: { type: 'number' },
-        fontFamily: { type: 'string' }
+        fontFamily: { type: 'string' },
+        startElementId: { type: 'string', description: 'For arrows: ID of the element to bind the arrow start to. Arrow auto-routes to element edge.' },
+        endElementId: { type: 'string', description: 'For arrows: ID of the element to bind the arrow end to. Arrow auto-routes to element edge.' },
+        endArrowhead: { type: 'string', description: 'Arrowhead style at end: arrow, bar, dot, triangle, or null' },
+        startArrowhead: { type: 'string', description: 'Arrowhead style at start: arrow, bar, dot, triangle, or null' }
       },
       required: ['type', 'x', 'y']
     }
@@ -277,9 +289,9 @@ const tools: Tool[] = [
       type: 'object',
       properties: {
         id: { type: 'string' },
-        type: { 
-          type: 'string', 
-          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        type: {
+          type: 'string',
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES)
         },
         x: { type: 'number' },
         y: { type: 'number' },
@@ -288,6 +300,7 @@ const tools: Tool[] = [
         backgroundColor: { type: 'string' },
         strokeColor: { type: 'string' },
         strokeWidth: { type: 'number' },
+        strokeStyle: { type: 'string' },
         roughness: { type: 'number' },
         opacity: { type: 'number' },
         text: { type: 'string' },
@@ -465,7 +478,7 @@ const tools: Tool[] = [
   },
   {
     name: 'batch_create_elements',
-    description: 'Create multiple Excalidraw elements at once - ideal for complex diagrams',
+    description: 'Create multiple Excalidraw elements at once. For arrows, use startElementId/endElementId to bind arrows to shapes — Excalidraw auto-routes to element edges. Assign custom id to shapes so arrows can reference them.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -474,6 +487,7 @@ const tools: Tool[] = [
           items: {
             type: 'object',
             properties: {
+              id: { type: 'string', description: 'Custom element ID. Arrows can reference this via startElementId/endElementId.' },
               type: {
                 type: 'string',
                 enum: Object.values(EXCALIDRAW_ELEMENT_TYPES)
@@ -485,11 +499,16 @@ const tools: Tool[] = [
               backgroundColor: { type: 'string' },
               strokeColor: { type: 'string' },
               strokeWidth: { type: 'number' },
+              strokeStyle: { type: 'string', description: 'Stroke style: solid, dashed, dotted' },
               roughness: { type: 'number' },
               opacity: { type: 'number' },
               text: { type: 'string' },
               fontSize: { type: 'number' },
-              fontFamily: { type: 'string' }
+              fontFamily: { type: 'string' },
+              startElementId: { type: 'string', description: 'For arrows: ID of element to bind arrow start to' },
+              endElementId: { type: 'string', description: 'For arrows: ID of element to bind arrow end to' },
+              endArrowhead: { type: 'string', description: 'Arrowhead style at end: arrow, bar, dot, triangle, or null' },
+              startArrowhead: { type: 'string', description: 'Arrowhead style at start: arrow, bar, dot, triangle, or null' }
             },
             required: ['type', 'x', 'y']
           }
@@ -689,19 +708,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const params = ElementSchema.parse(args);
         logger.info('Creating element via MCP', { type: params.type });
 
-        const id = generateId();
+        const { startElementId, endElementId, id: customId, ...elementProps } = params;
+        const id = customId || generateId();
         const element: ServerElement = {
           id,
-          ...params,
-          points: params.points ? normalizePoints(params.points) : undefined,
+          ...elementProps,
+          points: elementProps.points ? normalizePoints(elementProps.points) : undefined,
+          // Convert binding IDs to Excalidraw's start/end format
+          ...(startElementId ? { start: { id: startElementId } } : {}),
+          ...(endElementId ? { end: { id: endElementId } } : {}),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           version: 1
         };
 
+        // For bound arrows without explicit points, set a default
+        if ((startElementId || endElementId) && !elementProps.points) {
+          (element as any).points = [[0, 0], [100, 0]];
+        }
+
         // Convert text to label format for Excalidraw
         const excalidrawElement = convertTextToLabel(element);
-        
+
         // Create element directly on HTTP server (no local storage)
         const canvasElement = await createElementOnCanvas(excalidrawElement);
         
@@ -1175,15 +1203,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const createdElements: ServerElement[] = [];
 
         for (const elementData of params.elements) {
-          const id = generateId();
+          const { startElementId, endElementId, id: customId, ...elementProps } = elementData;
+          const id = customId || generateId();
           const element: ServerElement = {
             id,
-            ...elementData,
-            points: elementData.points ? normalizePoints(elementData.points) : undefined,
+            ...elementProps,
+            points: elementProps.points ? normalizePoints(elementProps.points) : undefined,
+            // Convert binding IDs to Excalidraw's start/end format
+            ...(startElementId ? { start: { id: startElementId } } : {}),
+            ...(endElementId ? { end: { id: endElementId } } : {}),
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             version: 1
           };
+
+          // For bound arrows without explicit points, set a default
+          if ((startElementId || endElementId) && !elementProps.points) {
+            (element as any).points = [[0, 0], [100, 0]];
+          }
 
           const excalidrawElement = convertTextToLabel(element);
           createdElements.push(excalidrawElement);
