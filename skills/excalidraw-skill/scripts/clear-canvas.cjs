@@ -20,11 +20,8 @@ async function main() {
   const { url } = parseArgs(process.argv.slice(2));
   const baseUrl = url.replace(/\/$/, "");
 
-  // Use the sync endpoint as a fast "clear" primitive (clears server storage).
-  const res = await fetch(`${baseUrl}/api/elements/sync`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ elements: [], timestamp: new Date().toISOString() }),
+  const res = await fetch(`${baseUrl}/api/elements/clear`, {
+    method: "DELETE",
   });
 
   const json = await res.json().catch(() => null);
@@ -32,7 +29,7 @@ async function main() {
     throw new Error(`Failed to clear canvas: ${res.status} ${res.statusText} ${json?.error ? `- ${json.error}` : ""}`);
   }
 
-  console.log("Cleared canvas");
+  console.log(`Cleared canvas (${json.count} elements removed)`);
 }
 
 main().catch((err) => {

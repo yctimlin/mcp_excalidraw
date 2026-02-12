@@ -22,6 +22,7 @@ Keywords: Excalidraw agent skill, Excalidraw MCP server, AI diagramming, Claude 
 
 - [Demo](#demo)
 - [What It Is](#what-it-is)
+- [How We Differ from the Official Excalidraw MCP](#how-we-differ-from-the-official-excalidraw-mcp)
 - [What's New](#whats-new)
 - [Quick Start (Local)](#quick-start-local)
 - [Quick Start (Docker)](#quick-start-docker)
@@ -33,7 +34,7 @@ Keywords: Excalidraw agent skill, Excalidraw MCP server, AI diagramming, Claude 
   - [OpenCode](#opencode)
   - [Antigravity (Google)](#antigravity-google)
 - [Agent Skill (Optional)](#agent-skill-optional)
-- [MCP Tools (High Level)](#mcp-tools-high-level)
+- [MCP Tools (23 Total)](#mcp-tools-23-total)
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 - [Known Issues / TODO](#known-issues--todo)
@@ -46,9 +47,39 @@ This repo contains two separate processes:
 - Canvas server: web UI + REST API + WebSocket updates (default `http://localhost:3000`)
 - MCP server: exposes MCP tools over stdio; syncs to the canvas via `EXPRESS_SERVER_URL`
 
+## How We Differ from the Official Excalidraw MCP
+
+Excalidraw now has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) — it's great for quick, prompt-to-diagram generation rendered inline in chat. We solve a different problem.
+
+| | Official Excalidraw MCP | This Project |
+|---|---|---|
+| **Approach** | Prompt in, diagram out (one-shot) | Programmatic element-level control (23 tools) |
+| **State** | Stateless — each call is independent | Persistent live canvas with real-time sync |
+| **Element CRUD** | No | Full create / read / update / delete per element |
+| **AI sees the canvas** | No | `describe_scene` (structured text) + `get_canvas_screenshot` (image) |
+| **Iterative refinement** | No — regenerate the whole diagram | Draw → look → adjust → look again, element by element |
+| **Layout tools** | No | `align_elements`, `distribute_elements`, `group / ungroup` |
+| **File I/O** | No | `export_scene` / `import_scene` (.excalidraw JSON) |
+| **Snapshot & rollback** | No | `snapshot_scene` / `restore_snapshot` |
+| **Mermaid conversion** | No | `create_from_mermaid` |
+| **Live canvas UI** | Rendered inline in chat | Standalone Excalidraw app synced via WebSocket |
+| **Multi-agent** | Single user | Multiple agents can draw on the same canvas concurrently |
+
+**TL;DR** — The official MCP generates diagrams. We give AI agents a full canvas toolkit to build, inspect, and iteratively refine diagrams — including the ability to see what they drew.
+
 ## What's New
 
-- Agent skill: `skills/excalidraw-mcp/` (portable instructions + helper scripts for export/import and repeatable CRUD)
+### v2.0 — Canvas Toolkit
+
+- 10 new MCP tools: `get_element`, `clear_canvas`, `export_scene`, `import_scene`, `export_to_image`, `duplicate_elements`, `snapshot_scene`, `restore_snapshot`, `describe_scene`, `get_canvas_screenshot` (23 tools total)
+- **Closed feedback loop**: AI can now inspect the canvas (`describe_scene`) and see it (`get_canvas_screenshot` returns an image) — enabling iterative refinement
+- **File I/O**: export/import full `.excalidraw` JSON files
+- **Snapshots**: save and restore named canvas states
+- Fixed all previously known issues: `align_elements` / `distribute_elements` fully implemented, points type normalization, removed invalid `label` type, removed HTTP transport dead code, `ungroup_elements` now errors on failure
+
+### v1.x
+
+- Agent skill: `skills/excalidraw-skill/` (portable instructions + helper scripts for export/import and repeatable CRUD)
 - Better testing loop: MCP Inspector CLI examples + browser screenshot checks (`agent-browser`)
 - Bugfixes: batch create now preserves element ids (fixes update/delete after batch); frontend entrypoint fixed (`main.tsx`)
 
@@ -328,7 +359,7 @@ Config location: `~/.gemini/antigravity/mcp_config.json`
 
 ## Agent Skill (Optional)
 
-This repo includes a skill at `skills/excalidraw-mcp/` that provides:
+This repo includes a skill at `skills/excalidraw-skill/` that provides:
 
 - **Workflow playbook** (`SKILL.md`): step-by-step guidance for drawing, refining, and exporting diagrams
 - **Cheatsheet** (`references/cheatsheet.md`): MCP tool and REST API reference
@@ -340,26 +371,26 @@ The skill complements the MCP server by giving your AI agent structured workflow
 
 ```bash
 mkdir -p ~/.codex/skills
-cp -R skills/excalidraw-mcp ~/.codex/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill ~/.codex/skills/excalidraw-skill
 ```
 
-To update an existing installation, remove the old folder first (`rm -rf ~/.codex/skills/excalidraw-mcp`) then re-copy.
+To update an existing installation, remove the old folder first (`rm -rf ~/.codex/skills/excalidraw-skill`) then re-copy.
 
 ### Install The Skill (Claude Code)
 
 **User-level** (available across all your projects):
 ```bash
 mkdir -p ~/.claude/skills
-cp -R skills/excalidraw-mcp ~/.claude/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill ~/.claude/skills/excalidraw-skill
 ```
 
 **Project-level** (scoped to a specific project, can be committed to the repo):
 ```bash
 mkdir -p /path/to/your/project/.claude/skills
-cp -R skills/excalidraw-mcp /path/to/your/project/.claude/skills/excalidraw-mcp
+cp -R skills/excalidraw-skill /path/to/your/project/.claude/skills/excalidraw-skill
 ```
 
-Then invoke the skill in Claude Code with `/excalidraw-mcp`.
+Then invoke the skill in Claude Code with `/excalidraw-skill`.
 
 To update an existing installation, remove the old folder first then re-copy.
 
@@ -368,9 +399,9 @@ To update an existing installation, remove the old folder first then re-copy.
 All scripts respect `EXPRESS_SERVER_URL` (default `http://localhost:3000`) or accept `--url`.
 
 ```bash
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/healthcheck.cjs
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/export-elements.cjs --out diagram.elements.json
-EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/import-elements.cjs --in diagram.elements.json --mode batch
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/healthcheck.cjs
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/export-elements.cjs --out diagram.elements.json
+EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-skill/scripts/import-elements.cjs --in diagram.elements.json --mode batch
 ```
 
 ### When The Skill Is Useful
@@ -380,21 +411,20 @@ EXPRESS_SERVER_URL=http://127.0.0.1:3000 node skills/excalidraw-mcp/scripts/impo
 - Automated smoke tests: create/update/delete a known element to validate a deployment.
 - Repeatable diagrams: keep a library of element JSON snippets and import them.
 
-See `skills/excalidraw-mcp/SKILL.md` and `skills/excalidraw-mcp/references/cheatsheet.md`.
+See `skills/excalidraw-skill/SKILL.md` and `skills/excalidraw-skill/references/cheatsheet.md`.
 
-## MCP Tools (High Level)
+## MCP Tools (23 Total)
 
-The MCP server exposes tools such as:
+| Category | Tools |
+|---|---|
+| **Element CRUD** | `create_element`, `get_element`, `update_element`, `delete_element`, `query_elements`, `batch_create_elements`, `duplicate_elements` |
+| **Layout** | `align_elements`, `distribute_elements`, `group_elements`, `ungroup_elements`, `lock_elements`, `unlock_elements` |
+| **Scene Awareness** | `describe_scene`, `get_canvas_screenshot` |
+| **File I/O** | `export_scene`, `import_scene`, `export_to_image`, `create_from_mermaid` |
+| **State Management** | `clear_canvas`, `snapshot_scene`, `restore_snapshot` |
+| **Resources** | `get_resource` |
 
-- `create_element`, `update_element`, `delete_element`
-- `query_elements`, `get_resource`
-- `batch_create_elements`
-- `align_elements`, `distribute_elements`
-- `group_elements`, `ungroup_elements`
-- `lock_elements`, `unlock_elements`
-- `create_from_mermaid` (frontend converts Mermaid to Excalidraw elements)
-
-The full tool list and schemas are discoverable via MCP Inspector (`tools/list`) or by reading `src/index.ts`.
+Full schemas are discoverable via `tools/list` or in `skills/excalidraw-skill/references/cheatsheet.md`.
 
 ## Testing
 
@@ -441,13 +471,10 @@ agent-browser screenshot /tmp/canvas.png
 
 ## Known Issues / TODO
 
-The following issues are known and tracked for future improvement:
+All previously listed bugs have been fixed in v2.0. Remaining items:
 
-- [ ] **`align_elements` / `distribute_elements` are stubs**: These tools log and return success but do not actually move elements. Implementation needed in `src/index.ts:782-806`.
-- [ ] **`points` type mismatch**: The Zod schema expects `[{x, y}]` objects but Excalidraw expects `[[x, y]]` tuples. This may cause issues when creating arrows/lines via MCP. See `src/index.ts:187` vs `src/types.ts:64`.
-- [ ] **`label` element type incomplete**: The `label` type is defined in `EXCALIDRAW_ELEMENT_TYPES` but has no corresponding interface in the type union. See `src/types.ts:109,118`.
-- [ ] **HTTP transport mode placeholder**: `MCP_TRANSPORT_MODE=http` is accepted but falls back to stdio. See `src/index.ts:989-996`.
-- [ ] **`ungroup_elements` silent success**: Returns success even when no elements are ungrouped (e.g., elements not found). See `src/index.ts:765-769`.
+- [ ] **Persistent storage**: Elements are stored in-memory — restarting the server clears everything. Use `export_scene` / snapshots as a workaround.
+- [ ] **Image export requires a browser**: `export_to_image` and `get_canvas_screenshot` rely on the frontend doing the actual rendering. The canvas UI must be open in a browser.
 
 Contributions welcome!
 

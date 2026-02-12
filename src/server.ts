@@ -6,9 +6,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
-import { 
+import {
   elements,
-  generateId, 
+  snapshots,
+  generateId,
   EXCALIDRAW_ELEMENT_TYPES,
   ServerElement,
   ExcalidrawElementType,
@@ -18,7 +19,8 @@ import {
   ElementDeletedMessage,
   BatchCreatedMessage,
   SyncStatusMessage,
-  InitialElementsMessage
+  InitialElementsMessage,
+  Snapshot
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
@@ -35,7 +37,7 @@ const wss = new WebSocketServer({ server });
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Serve static files from the build directory
 const staticDir = path.join(__dirname, '../dist');
@@ -98,6 +100,7 @@ const CreateElementSchema = z.object({
   backgroundColor: z.string().optional(),
   strokeColor: z.string().optional(),
   strokeWidth: z.number().optional(),
+  strokeStyle: z.string().optional(),
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
@@ -107,7 +110,13 @@ const CreateElementSchema = z.object({
   fontSize: z.number().optional(),
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
-  locked: z.boolean().optional()
+  locked: z.boolean().optional(),
+  // Arrow-specific properties
+  points: z.any().optional(),
+  start: z.object({ id: z.string() }).optional(),
+  end: z.object({ id: z.string() }).optional(),
+  startArrowhead: z.string().nullable().optional(),
+  endArrowhead: z.string().nullable().optional(),
 });
 
 const UpdateElementSchema = z.object({
@@ -120,6 +129,7 @@ const UpdateElementSchema = z.object({
   backgroundColor: z.string().optional(),
   strokeColor: z.string().optional(),
   strokeWidth: z.number().optional(),
+  strokeStyle: z.string().optional(),
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
@@ -129,7 +139,15 @@ const UpdateElementSchema = z.object({
   fontSize: z.number().optional(),
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
-  locked: z.boolean().optional()
+  locked: z.boolean().optional(),
+  points: z.array(z.union([
+    z.tuple([z.number(), z.number()]),
+    z.object({ x: z.number(), y: z.number() })
+  ])).optional(),
+  start: z.object({ id: z.string() }).optional(),
+  end: z.object({ id: z.string() }).optional(),
+  startArrowhead: z.string().nullable().optional(),
+  endArrowhead: z.string().nullable().optional(),
 });
 
 // API Routes
@@ -234,6 +252,33 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error updating element:', error);
     res.status(400).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Clear all elements (must be before /:id route)
+app.delete('/api/elements/clear', (req: Request, res: Response) => {
+  try {
+    const count = elements.size;
+    elements.clear();
+
+    broadcast({
+      type: 'canvas_cleared',
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Canvas cleared: ${count} elements removed`);
+
+    res.json({
+      success: true,
+      message: `Cleared ${count} elements`,
+      count
+    });
+  } catch (error) {
+    logger.error('Error clearing canvas:', error);
+    res.status(500).json({
       success: false,
       error: (error as Error).message
     });
@@ -349,20 +394,152 @@ app.get('/api/elements/:id', (req: Request, res: Response) => {
   }
 });
 
+// Helper: compute edge point for an element given a direction toward a target
+function computeEdgePoint(
+  el: ServerElement,
+  targetCenterX: number,
+  targetCenterY: number
+): { x: number; y: number } {
+  const cx = el.x + (el.width || 0) / 2;
+  const cy = el.y + (el.height || 0) / 2;
+  const dx = targetCenterX - cx;
+  const dy = targetCenterY - cy;
+
+  if (el.type === 'diamond') {
+    // Diamond edge: use diamond geometry (rotated square)
+    const hw = (el.width || 0) / 2;
+    const hh = (el.height || 0) / 2;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy + hh };
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    // Scale factor to reach diamond edge
+    const scale = (absDx / hw + absDy / hh) > 0
+      ? 1 / (absDx / hw + absDy / hh)
+      : 1;
+    return { x: cx + dx * scale, y: cy + dy * scale };
+  }
+
+  if (el.type === 'ellipse') {
+    // Ellipse edge: parametric intersection
+    const a = (el.width || 0) / 2;
+    const b = (el.height || 0) / 2;
+    if (dx === 0 && dy === 0) return { x: cx, y: cy + b };
+    const angle = Math.atan2(dy, dx);
+    return { x: cx + a * Math.cos(angle), y: cy + b * Math.sin(angle) };
+  }
+
+  // Rectangle: find intersection with edges
+  const hw = (el.width || 0) / 2;
+  const hh = (el.height || 0) / 2;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy + hh };
+  const angle = Math.atan2(dy, dx);
+  const tanA = Math.tan(angle);
+  // Check if ray intersects top/bottom edge or left/right edge
+  if (Math.abs(tanA * hw) <= hh) {
+    // Intersects left or right edge
+    const signX = dx >= 0 ? 1 : -1;
+    return { x: cx + signX * hw, y: cy + signX * hw * tanA };
+  } else {
+    // Intersects top or bottom edge
+    const signY = dy >= 0 ? 1 : -1;
+    return { x: cx + signY * hh / tanA, y: cy + signY * hh };
+  }
+}
+
+// Helper: resolve arrow bindings in a batch
+function resolveArrowBindings(batchElements: ServerElement[]): void {
+  const elementMap = new Map<string, ServerElement>();
+  batchElements.forEach(el => elementMap.set(el.id, el));
+
+  // Also check existing elements for cross-batch references
+  elements.forEach((el, id) => {
+    if (!elementMap.has(id)) elementMap.set(id, el);
+  });
+
+  for (const el of batchElements) {
+    if (el.type !== 'arrow' && el.type !== 'line') continue;
+    const startRef = (el as any).start as { id: string } | undefined;
+    const endRef = (el as any).end as { id: string } | undefined;
+
+    if (!startRef && !endRef) continue;
+
+    const startEl = startRef ? elementMap.get(startRef.id) : undefined;
+    const endEl = endRef ? elementMap.get(endRef.id) : undefined;
+
+    // Calculate arrow path from edge to edge
+    const startCenter = startEl
+      ? { x: startEl.x + (startEl.width || 0) / 2, y: startEl.y + (startEl.height || 0) / 2 }
+      : { x: el.x, y: el.y };
+    const endCenter = endEl
+      ? { x: endEl.x + (endEl.width || 0) / 2, y: endEl.y + (endEl.height || 0) / 2 }
+      : { x: el.x + 100, y: el.y };
+
+    const GAP = 8;
+    const startPt = startEl
+      ? computeEdgePoint(startEl, endCenter.x, endCenter.y)
+      : startCenter;
+    const endPt = endEl
+      ? computeEdgePoint(endEl, startCenter.x, startCenter.y)
+      : endCenter;
+
+    // Apply gap: move start point slightly away from source, end point slightly away from target
+    const startDx = endPt.x - startPt.x;
+    const startDy = endPt.y - startPt.y;
+    const startDist = Math.sqrt(startDx * startDx + startDy * startDy) || 1;
+    const endDx = startPt.x - endPt.x;
+    const endDy = startPt.y - endPt.y;
+    const endDist = Math.sqrt(endDx * endDx + endDy * endDy) || 1;
+
+    const finalStart = {
+      x: startPt.x + (startDx / startDist) * GAP,
+      y: startPt.y + (startDy / startDist) * GAP
+    };
+    const finalEnd = {
+      x: endPt.x + (endDx / endDist) * GAP,
+      y: endPt.y + (endDy / endDist) * GAP
+    };
+
+    // Set arrow position and points
+    el.x = finalStart.x;
+    el.y = finalStart.y;
+    el.points = [[0, 0], [finalEnd.x - finalStart.x, finalEnd.y - finalStart.y]];
+
+    // Remove start/end refs (they were used for computation only)
+    delete (el as any).start;
+    delete (el as any).end;
+
+    // Set binding metadata for Excalidraw
+    if (startEl) {
+      (el as any).startBinding = {
+        elementId: startEl.id,
+        focus: 0,
+        gap: GAP
+      };
+    }
+    if (endEl) {
+      (el as any).endBinding = {
+        elementId: endEl.id,
+        focus: 0,
+        gap: GAP
+      };
+    }
+  }
+}
+
 // Batch create elements
 app.post('/api/elements/batch', (req: Request, res: Response) => {
   try {
     const { elements: elementsToCreate } = req.body;
-    
+
     if (!Array.isArray(elementsToCreate)) {
       return res.status(400).json({
         success: false,
         error: 'Expected an array of elements'
       });
     }
-    
+
     const createdElements: ServerElement[] = [];
-    
+
     elementsToCreate.forEach(elementData => {
       const params = CreateElementSchema.parse(elementData);
       // Prioritize passed ID (for MCP sync), otherwise generate new ID
@@ -375,17 +552,22 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
         version: 1
       };
 
-      elements.set(id, element);
       createdElements.push(element);
     });
-    
+
+    // Resolve arrow bindings (computes positions, startBinding, endBinding, boundElements)
+    resolveArrowBindings(createdElements);
+
+    // Store all elements after binding resolution
+    createdElements.forEach(el => elements.set(el.id, el));
+
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
       type: 'elements_batch_created',
       elements: createdElements
     };
     broadcast(message);
-    
+
     res.json({
       success: true,
       elements: createdElements,
@@ -521,6 +703,294 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       success: false,
       error: (error as Error).message,
       details: 'Internal server error during sync operation'
+    });
+  }
+});
+
+// Image export: request (MCP -> Express -> WebSocket -> Frontend)
+interface PendingExport {
+  resolve: (data: { format: string; data: string }) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+const pendingExports = new Map<string, PendingExport>();
+
+app.post('/api/export/image', (req: Request, res: Response) => {
+  try {
+    const { format, background } = req.body;
+
+    if (!format || !['png', 'svg'].includes(format)) {
+      return res.status(400).json({
+        success: false,
+        error: 'format must be "png" or "svg"'
+      });
+    }
+
+    if (clients.size === 0) {
+      return res.status(503).json({
+        success: false,
+        error: 'No frontend client connected. Open the canvas in a browser first.'
+      });
+    }
+
+    const requestId = generateId();
+
+    const exportPromise = new Promise<{ format: string; data: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingExports.delete(requestId);
+        reject(new Error('Export timed out after 30 seconds'));
+      }, 30000);
+
+      pendingExports.set(requestId, { resolve, reject, timeout });
+    });
+
+    broadcast({
+      type: 'export_image_request',
+      requestId,
+      format,
+      background: background ?? true
+    });
+
+    exportPromise
+      .then(result => {
+        res.json({
+          success: true,
+          format: result.format,
+          data: result.data
+        });
+      })
+      .catch(error => {
+        res.status(500).json({
+          success: false,
+          error: (error as Error).message
+        });
+      });
+  } catch (error) {
+    logger.error('Error initiating image export:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Image export: result (Frontend -> Express -> MCP)
+app.post('/api/export/image/result', (req: Request, res: Response) => {
+  try {
+    const { requestId, format, data, error } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        success: false,
+        error: 'requestId is required'
+      });
+    }
+
+    const pending = pendingExports.get(requestId);
+    if (!pending) {
+      // Already resolved by another client, or expired — ignore silently
+      return res.json({ success: true });
+    }
+
+    if (error) {
+      // Don't reject on error — another WebSocket client may still succeed.
+      // The timeout will handle the case where ALL clients fail.
+      logger.warn(`Export error from one client (requestId=${requestId}): ${error}`);
+      return res.json({ success: true });
+    }
+
+    clearTimeout(pending.timeout);
+    pendingExports.delete(requestId);
+    pending.resolve({ format, data });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Error processing export result:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Viewport control: request (MCP -> Express -> WebSocket -> Frontend)
+interface PendingViewport {
+  resolve: (data: { success: boolean; message: string }) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+const pendingViewports = new Map<string, PendingViewport>();
+
+app.post('/api/viewport', (req: Request, res: Response) => {
+  try {
+    const { scrollToContent, scrollToElementId, zoom, offsetX, offsetY } = req.body;
+
+    if (clients.size === 0) {
+      return res.status(503).json({
+        success: false,
+        error: 'No frontend client connected. Open the canvas in a browser first.'
+      });
+    }
+
+    const requestId = generateId();
+
+    const viewportPromise = new Promise<{ success: boolean; message: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingViewports.delete(requestId);
+        reject(new Error('Viewport request timed out after 10 seconds'));
+      }, 10000);
+
+      pendingViewports.set(requestId, { resolve, reject, timeout });
+    });
+
+    broadcast({
+      type: 'set_viewport',
+      requestId,
+      scrollToContent,
+      scrollToElementId,
+      zoom,
+      offsetX,
+      offsetY
+    });
+
+    viewportPromise
+      .then(result => {
+        res.json(result);
+      })
+      .catch(error => {
+        res.status(500).json({
+          success: false,
+          error: (error as Error).message
+        });
+      });
+  } catch (error) {
+    logger.error('Error initiating viewport change:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Viewport control: result (Frontend -> Express -> MCP)
+app.post('/api/viewport/result', (req: Request, res: Response) => {
+  try {
+    const { requestId, success, message, error } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        success: false,
+        error: 'requestId is required'
+      });
+    }
+
+    const pending = pendingViewports.get(requestId);
+    if (!pending) {
+      return res.json({ success: true });
+    }
+
+    if (error) {
+      clearTimeout(pending.timeout);
+      pendingViewports.delete(requestId);
+      pending.resolve({ success: false, message: error });
+      return res.json({ success: true });
+    }
+
+    clearTimeout(pending.timeout);
+    pendingViewports.delete(requestId);
+    pending.resolve({ success: true, message: message || 'Viewport updated' });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Error processing viewport result:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: save
+app.post('/api/snapshots', (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Snapshot name is required'
+      });
+    }
+
+    const snapshot: Snapshot = {
+      name,
+      elements: Array.from(elements.values()),
+      createdAt: new Date().toISOString()
+    };
+
+    snapshots.set(name, snapshot);
+    logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
+
+    res.json({
+      success: true,
+      name,
+      elementCount: snapshot.elements.length,
+      createdAt: snapshot.createdAt
+    });
+  } catch (error) {
+    logger.error('Error saving snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: list
+app.get('/api/snapshots', (req: Request, res: Response) => {
+  try {
+    const list = Array.from(snapshots.values()).map(s => ({
+      name: s.name,
+      elementCount: s.elements.length,
+      createdAt: s.createdAt
+    }));
+
+    res.json({
+      success: true,
+      snapshots: list,
+      count: list.length
+    });
+  } catch (error) {
+    logger.error('Error listing snapshots:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Snapshots: get by name
+app.get('/api/snapshots/:name', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const snapshot = snapshots.get(name!);
+
+    if (!snapshot) {
+      return res.status(404).json({
+        success: false,
+        error: `Snapshot "${name}" not found`
+      });
+    }
+
+    res.json({
+      success: true,
+      snapshot
+    });
+  } catch (error) {
+    logger.error('Error fetching snapshot:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
     });
   }
 });

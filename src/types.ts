@@ -106,7 +106,7 @@ export interface ExcalidrawBinding {
   fixedPoint?: readonly [number, number] | null;
 }
 
-export type ExcalidrawElementType = 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text' | 'line' | 'freedraw' | 'label';
+export type ExcalidrawElementType = 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text' | 'line' | 'freedraw';
 
 // Excalidraw element types
 export const EXCALIDRAW_ELEMENT_TYPES: Record<string, ExcalidrawElementType> = {
@@ -115,7 +115,6 @@ export const EXCALIDRAW_ELEMENT_TYPES: Record<string, ExcalidrawElementType> = {
   DIAMOND: 'diamond',
   ARROW: 'arrow',
   TEXT: 'text',
-  LABEL: 'label',
   FREEDRAW: 'freedraw',
   LINE: 'line'
 } as const;
@@ -136,6 +135,10 @@ export interface ServerElement extends Omit<ExcalidrawElementBase, 'id'> {
   label?: {
     text: string;
   };
+  points?: any;
+  // Arrow element binding: connect arrows to shapes by element ID
+  start?: { id: string };
+  end?: { id: string };
 }
 
 // API Response types
@@ -168,7 +171,7 @@ export interface WebSocketMessage {
   [key: string]: any;
 }
 
-export type WebSocketMessageType = 
+export type WebSocketMessageType =
   | 'initial_elements'
   | 'element_created'
   | 'element_updated'
@@ -176,7 +179,10 @@ export type WebSocketMessageType =
   | 'elements_batch_created'
   | 'elements_synced'
   | 'sync_status'
-  | 'mermaid_convert';
+  | 'mermaid_convert'
+  | 'canvas_cleared'
+  | 'export_image_request'
+  | 'set_viewport';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
@@ -240,8 +246,43 @@ export interface MermaidConversionResponse extends ApiResponse {
   count: number;
 }
 
+// Canvas cleared message
+export interface CanvasClearedMessage extends WebSocketMessage {
+  type: 'canvas_cleared';
+  timestamp: string;
+}
+
+// Image export types
+export interface ExportImageRequestMessage extends WebSocketMessage {
+  type: 'export_image_request';
+  requestId: string;
+  format: 'png' | 'svg';
+  background?: boolean;
+}
+
+// Viewport control types
+export interface SetViewportMessage extends WebSocketMessage {
+  type: 'set_viewport';
+  requestId: string;
+  scrollToContent?: boolean;
+  scrollToElementId?: string;
+  zoom?: number;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+// Snapshot types
+export interface Snapshot {
+  name: string;
+  elements: ServerElement[];
+  createdAt: string;
+}
+
 // In-memory storage for Excalidraw elements
 export const elements = new Map<string, ServerElement>();
+
+// In-memory storage for snapshots
+export const snapshots = new Map<string, Snapshot>();
 
 // Validation function for Excalidraw elements
 export function validateElement(element: Partial<ServerElement>): element is ServerElement {

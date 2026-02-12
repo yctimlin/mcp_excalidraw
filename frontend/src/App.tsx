@@ -3,7 +3,9 @@ import {
   Excalidraw,
   convertToExcalidrawElements,
   CaptureUpdateAction,
-  ExcalidrawImperativeAPI
+  ExcalidrawImperativeAPI,
+  exportToBlob,
+  exportToSvg
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement, NonDeleted, NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/types/element/types'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
@@ -39,6 +41,12 @@ interface ServerElement {
   boundElements?: any[] | null;
   containerId?: string | null;
   locked?: boolean;
+  // Arrow element binding
+  start?: { id: string };
+  end?: { id: string };
+  strokeStyle?: string;
+  endArrowhead?: string;
+  startArrowhead?: string;
 }
 
 interface WebSocketMessage {
@@ -240,13 +248,24 @@ function App(): JSX.Element {
         case 'element_created':
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
-            // Preserve server IDs so later update/delete websocket events can match by id.
-            const newElement = convertToExcalidrawElements([cleanedNewElement], { regenerateIds: false })
-            const updatedElementsAfterCreate = [...currentElements, ...newElement]
-            excalidrawAPI.updateScene({ 
-              elements: updatedElementsAfterCreate,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
+            const hasBindings = (cleanedNewElement as any).start || (cleanedNewElement as any).end
+            if (hasBindings) {
+              // Bound arrow: re-convert all elements together so bindings resolve
+              const allElements = [...currentElements, cleanedNewElement] as any[]
+              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              excalidrawAPI.updateScene({
+                elements: convertedAll,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            } else {
+              // Preserve server IDs so later update/delete websocket events can match by id.
+              const newElement = convertToExcalidrawElements([cleanedNewElement], { regenerateIds: false })
+              const updatedElementsAfterCreate = [...currentElements, ...newElement]
+              excalidrawAPI.updateScene({
+                elements: updatedElementsAfterCreate,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            }
           }
           break
           
@@ -278,13 +297,24 @@ function App(): JSX.Element {
         case 'elements_batch_created':
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
-            // Preserve server IDs so later update/delete websocket events can match by id.
-            const batchElements = convertToExcalidrawElements(cleanedBatchElements, { regenerateIds: false })
-            const updatedElementsAfterBatch = [...currentElements, ...batchElements]
-            excalidrawAPI.updateScene({ 
-              elements: updatedElementsAfterBatch,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
+            const hasBoundArrows = cleanedBatchElements.some((el: any) => el.start || el.end)
+            if (hasBoundArrows) {
+              // Convert ALL elements together so arrow bindings resolve to target shapes
+              const allElements = [...currentElements, ...cleanedBatchElements] as any[]
+              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              excalidrawAPI.updateScene({
+                elements: convertedAll,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            } else {
+              // Preserve server IDs so later update/delete websocket events can match by id.
+              const batchElements = convertToExcalidrawElements(cleanedBatchElements, { regenerateIds: false })
+              const updatedElementsAfterBatch = [...currentElements, ...batchElements]
+              excalidrawAPI.updateScene({
+                elements: updatedElementsAfterBatch,
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+            }
           }
           break
           
@@ -297,6 +327,165 @@ function App(): JSX.Element {
           console.log(`Server sync status: ${data.count} elements`)
           break
           
+        case 'canvas_cleared':
+          console.log('Canvas cleared by server')
+          excalidrawAPI.updateScene({
+            elements: [],
+            captureUpdate: CaptureUpdateAction.NEVER
+          })
+          break
+
+        case 'export_image_request':
+          console.log('Received image export request', data)
+          if (data.requestId) {
+            try {
+              const elements = excalidrawAPI.getSceneElements()
+              const appState = excalidrawAPI.getAppState()
+              const files = excalidrawAPI.getFiles()
+
+              if (data.format === 'svg') {
+                const svg = await exportToSvg({
+                  elements,
+                  appState: {
+                    ...appState,
+                    exportBackground: data.background !== false
+                  },
+                  files
+                })
+                const svgString = new XMLSerializer().serializeToString(svg)
+                await fetch('/api/export/image/result', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    requestId: data.requestId,
+                    format: 'svg',
+                    data: svgString
+                  })
+                })
+              } else {
+                const blob = await exportToBlob({
+                  elements,
+                  appState: {
+                    ...appState,
+                    exportBackground: data.background !== false
+                  },
+                  files,
+                  mimeType: 'image/png'
+                })
+                const reader = new FileReader()
+                reader.onload = async () => {
+                  try {
+                    const resultString = reader.result as string
+                    const base64 = resultString?.split(',')[1]
+                    if (!base64) {
+                      throw new Error('Could not extract base64 data from result')
+                    }
+                    await fetch('/api/export/image/result', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        requestId: data.requestId,
+                        format: 'png',
+                        data: base64
+                      })
+                    })
+                  } catch (readerError) {
+                    console.error('Image export (FileReader) failed:', readerError)
+                    await fetch('/api/export/image/result', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        requestId: data.requestId,
+                        error: (readerError as Error).message
+                      })
+                    }).catch(() => {})
+                  }
+                }
+                reader.onerror = async () => {
+                  console.error('FileReader error:', reader.error)
+                  await fetch('/api/export/image/result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      requestId: data.requestId,
+                      error: reader.error?.message || 'FileReader failed'
+                    })
+                  }).catch(() => {})
+                }
+                reader.readAsDataURL(blob)
+              }
+              console.log('Image export completed for request', data.requestId)
+            } catch (exportError) {
+              console.error('Image export failed:', exportError)
+              await fetch('/api/export/image/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  error: (exportError as Error).message
+                })
+              })
+            }
+          }
+          break
+
+        case 'set_viewport':
+          console.log('Received viewport control request', data)
+          if (data.requestId) {
+            try {
+              if (data.scrollToContent) {
+                const allElements = excalidrawAPI.getSceneElements()
+                if (allElements.length > 0) {
+                  excalidrawAPI.scrollToContent(allElements, { fitToViewport: true, animate: true })
+                }
+              } else if (data.scrollToElementId) {
+                const allElements = excalidrawAPI.getSceneElements()
+                const targetElement = allElements.find(el => el.id === data.scrollToElementId)
+                if (targetElement) {
+                  excalidrawAPI.scrollToContent([targetElement], { fitToViewport: false, animate: true })
+                } else {
+                  throw new Error(`Element ${data.scrollToElementId} not found`)
+                }
+              } else {
+                // Direct zoom/scroll control
+                const appState: any = {}
+                if (data.zoom !== undefined) {
+                  appState.zoom = { value: data.zoom }
+                }
+                if (data.offsetX !== undefined) {
+                  appState.scrollX = data.offsetX
+                }
+                if (data.offsetY !== undefined) {
+                  appState.scrollY = data.offsetY
+                }
+                if (Object.keys(appState).length > 0) {
+                  excalidrawAPI.updateScene({ appState })
+                }
+              }
+
+              await fetch('/api/viewport/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  success: true,
+                  message: 'Viewport updated'
+                })
+              })
+            } catch (viewportError) {
+              console.error('Viewport control failed:', viewportError)
+              await fetch('/api/viewport/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  error: (viewportError as Error).message
+                })
+              }).catch(() => {})
+            }
+          }
+          break
+
         case 'mermaid_convert':
           console.log('Received Mermaid conversion request from MCP')
           if (data.mermaidDiagram) {
