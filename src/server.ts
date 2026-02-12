@@ -111,12 +111,15 @@ const CreateElementSchema = z.object({
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
+  roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
+  fillStyle: z.string().optional(),
   // Arrow-specific properties
   points: z.any().optional(),
   start: z.object({ id: z.string() }).optional(),
   end: z.object({ id: z.string() }).optional(),
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
+  elbowed: z.boolean().optional(),
 });
 
 const UpdateElementSchema = z.object({
@@ -140,6 +143,8 @@ const UpdateElementSchema = z.object({
   fontFamily: z.string().optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
+  roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
+  fillStyle: z.string().optional(),
   points: z.array(z.union([
     z.tuple([z.number(), z.number()]),
     z.object({ x: z.number(), y: z.number() })
@@ -148,6 +153,7 @@ const UpdateElementSchema = z.object({
   end: z.object({ id: z.string() }).optional(),
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
+  elbowed: z.boolean().optional(),
 });
 
 // API Routes

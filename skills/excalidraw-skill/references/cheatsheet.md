@@ -74,8 +74,11 @@
 | `create_from_mermaid` | Mermaid diagram to Excalidraw | `mermaidDiagram` |
 
 Notes:
-- For shapes, set `text` field to place text inside (backend converts to `label.text`).
+- **MCP tools**: Set `text` field on shapes to label them (auto-converts to `label.text`). Use `startElementId`/`endElementId` on arrows.
+- **REST API**: Use `"label": {"text": "..."}` for shape labels. Use `"start": {"id": "..."}` / `"end": {"id": "..."}` for arrow binding. (Different format from MCP!)
+- `fontFamily` must be a string (e.g. `"1"`) or omit it entirely — do NOT pass a number.
 - `points` accepts both `[[x,y]]` tuples and `[{x,y}]` objects.
+- **Curved arrows**: Use `"roundness": {"type": 2}` with 3+ points for smooth curves. Use `"elbowed": true` for right-angle routing.
 - Prefer creating shapes first, then arrows, then alignment/grouping.
 
 ## Canvas REST API (HTTP)
