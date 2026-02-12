@@ -16,6 +16,7 @@ import {
 import { z } from 'zod';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
 import logger from './utils/logger.js';
 import {
   generateId,
@@ -28,6 +29,21 @@ import fetch from 'node-fetch';
 
 // Load environment variables
 dotenv.config();
+
+// Safe file path validation to prevent path traversal attacks
+const ALLOWED_EXPORT_DIR = process.env.EXCALIDRAW_EXPORT_DIR || process.cwd();
+
+function sanitizeFilePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  const allowedDir = path.resolve(ALLOWED_EXPORT_DIR);
+  if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) {
+    throw new Error(
+      `Path traversal blocked: "${filePath}" resolves outside the allowed directory "${allowedDir}". ` +
+      `Set EXCALIDRAW_EXPORT_DIR to change the allowed base directory.`
+    );
+  }
+  return resolved;
+}
 
 // Express server configuration
 const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || 'http://localhost:3000';
@@ -1316,11 +1332,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const jsonString = JSON.stringify(excalidrawScene, null, 2);
 
         if (params.filePath) {
-          fs.writeFileSync(params.filePath, jsonString, 'utf-8');
+          const safePath = sanitizeFilePath(params.filePath);
+          fs.writeFileSync(safePath, jsonString, 'utf-8');
           return {
             content: [{
               type: 'text',
-              text: `Scene exported to ${params.filePath} (${sceneElements.length} elements)`
+              text: `Scene exported to ${safePath} (${sceneElements.length} elements)`
             }]
           };
         }
@@ -1344,7 +1361,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         let sceneData: any;
         if (params.filePath) {
-          const fileContent = fs.readFileSync(params.filePath, 'utf-8');
+          const safeImportPath = sanitizeFilePath(params.filePath);
+          const fileContent = fs.readFileSync(safeImportPath, 'utf-8');
           sceneData = JSON.parse(fileContent);
         } else if (params.data) {
           sceneData = JSON.parse(params.data);
@@ -1411,15 +1429,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const result = await response.json() as { success: boolean; format: string; data: string };
 
         if (params.filePath) {
+          const safeImagePath = sanitizeFilePath(params.filePath);
           if (params.format === 'svg') {
-            fs.writeFileSync(params.filePath, result.data, 'utf-8');
+            fs.writeFileSync(safeImagePath, result.data, 'utf-8');
           } else {
-            fs.writeFileSync(params.filePath, Buffer.from(result.data, 'base64'));
+            fs.writeFileSync(safeImagePath, Buffer.from(result.data, 'base64'));
           }
           return {
             content: [{
               type: 'text',
-              text: `Image exported to ${params.filePath} (format: ${params.format})`
+              text: `Image exported to ${safeImagePath} (format: ${params.format})`
             }]
           };
         }

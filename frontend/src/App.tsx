@@ -373,17 +373,44 @@ function App(): JSX.Element {
                   mimeType: 'image/png'
                 })
                 const reader = new FileReader()
-                reader.onloadend = async () => {
-                  const base64 = (reader.result as string).split(',')[1]
+                reader.onload = async () => {
+                  try {
+                    const resultString = reader.result as string
+                    const base64 = resultString?.split(',')[1]
+                    if (!base64) {
+                      throw new Error('Could not extract base64 data from result')
+                    }
+                    await fetch('/api/export/image/result', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        requestId: data.requestId,
+                        format: 'png',
+                        data: base64
+                      })
+                    })
+                  } catch (readerError) {
+                    console.error('Image export (FileReader) failed:', readerError)
+                    await fetch('/api/export/image/result', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        requestId: data.requestId,
+                        error: (readerError as Error).message
+                      })
+                    }).catch(() => {})
+                  }
+                }
+                reader.onerror = async () => {
+                  console.error('FileReader error:', reader.error)
                   await fetch('/api/export/image/result', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       requestId: data.requestId,
-                      format: 'png',
-                      data: base64
+                      error: reader.error?.message || 'FileReader failed'
                     })
-                  })
+                  }).catch(() => {})
                 }
                 reader.readAsDataURL(blob)
               }
