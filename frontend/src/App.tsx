@@ -429,6 +429,63 @@ function App(): JSX.Element {
           }
           break
 
+        case 'set_viewport':
+          console.log('Received viewport control request', data)
+          if (data.requestId) {
+            try {
+              if (data.scrollToContent) {
+                const allElements = excalidrawAPI.getSceneElements()
+                if (allElements.length > 0) {
+                  excalidrawAPI.scrollToContent(allElements, { fitToViewport: true, animate: true })
+                }
+              } else if (data.scrollToElementId) {
+                const allElements = excalidrawAPI.getSceneElements()
+                const targetElement = allElements.find(el => el.id === data.scrollToElementId)
+                if (targetElement) {
+                  excalidrawAPI.scrollToContent([targetElement], { fitToViewport: false, animate: true })
+                } else {
+                  throw new Error(`Element ${data.scrollToElementId} not found`)
+                }
+              } else {
+                // Direct zoom/scroll control
+                const appState: any = {}
+                if (data.zoom !== undefined) {
+                  appState.zoom = { value: data.zoom }
+                }
+                if (data.offsetX !== undefined) {
+                  appState.scrollX = data.offsetX
+                }
+                if (data.offsetY !== undefined) {
+                  appState.scrollY = data.offsetY
+                }
+                if (Object.keys(appState).length > 0) {
+                  excalidrawAPI.updateScene({ appState })
+                }
+              }
+
+              await fetch('/api/viewport/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  success: true,
+                  message: 'Viewport updated'
+                })
+              })
+            } catch (viewportError) {
+              console.error('Viewport control failed:', viewportError)
+              await fetch('/api/viewport/result', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  requestId: data.requestId,
+                  error: (viewportError as Error).message
+                })
+              }).catch(() => {})
+            }
+          }
+          break
+
         case 'mermaid_convert':
           console.log('Received Mermaid conversion request from MCP')
           if (data.mermaidDiagram) {

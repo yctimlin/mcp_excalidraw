@@ -813,6 +813,103 @@ app.post('/api/export/image/result', (req: Request, res: Response) => {
   }
 });
 
+// Viewport control: request (MCP -> Express -> WebSocket -> Frontend)
+interface PendingViewport {
+  resolve: (data: { success: boolean; message: string }) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+const pendingViewports = new Map<string, PendingViewport>();
+
+app.post('/api/viewport', (req: Request, res: Response) => {
+  try {
+    const { scrollToContent, scrollToElementId, zoom, offsetX, offsetY } = req.body;
+
+    if (clients.size === 0) {
+      return res.status(503).json({
+        success: false,
+        error: 'No frontend client connected. Open the canvas in a browser first.'
+      });
+    }
+
+    const requestId = generateId();
+
+    const viewportPromise = new Promise<{ success: boolean; message: string }>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pendingViewports.delete(requestId);
+        reject(new Error('Viewport request timed out after 10 seconds'));
+      }, 10000);
+
+      pendingViewports.set(requestId, { resolve, reject, timeout });
+    });
+
+    broadcast({
+      type: 'set_viewport',
+      requestId,
+      scrollToContent,
+      scrollToElementId,
+      zoom,
+      offsetX,
+      offsetY
+    });
+
+    viewportPromise
+      .then(result => {
+        res.json(result);
+      })
+      .catch(error => {
+        res.status(500).json({
+          success: false,
+          error: (error as Error).message
+        });
+      });
+  } catch (error) {
+    logger.error('Error initiating viewport change:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
+// Viewport control: result (Frontend -> Express -> MCP)
+app.post('/api/viewport/result', (req: Request, res: Response) => {
+  try {
+    const { requestId, success, message, error } = req.body;
+
+    if (!requestId) {
+      return res.status(400).json({
+        success: false,
+        error: 'requestId is required'
+      });
+    }
+
+    const pending = pendingViewports.get(requestId);
+    if (!pending) {
+      return res.json({ success: true });
+    }
+
+    if (error) {
+      clearTimeout(pending.timeout);
+      pendingViewports.delete(requestId);
+      pending.resolve({ success: false, message: error });
+      return res.json({ success: true });
+    }
+
+    clearTimeout(pending.timeout);
+    pendingViewports.delete(requestId);
+    pending.resolve({ success: true, message: message || 'Viewport updated' });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('Error processing viewport result:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
 // Snapshots: save
 app.post('/api/snapshots', (req: Request, res: Response) => {
   try {

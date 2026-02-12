@@ -5,6 +5,8 @@ process.env.NODE_DISABLE_COLORS = '1';
 process.env.NO_COLOR = '1';
 
 import { fileURLToPath } from "url";
+import { deflateSync } from 'zlib';
+import { webcrypto } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { 
@@ -263,6 +265,99 @@ const QuerySchema = z.object({
 const ResourceSchema = z.object({
   resource: z.enum(['scene', 'library', 'theme', 'elements'])
 });
+
+// Diagram design guide — injected into LLM context via read_diagram_guide tool
+const DIAGRAM_DESIGN_GUIDE = `# Excalidraw Diagram Design Guide
+
+## Color Palette
+
+### Stroke Colors (use for borders & text)
+| Name    | Hex       | Use for                     |
+|---------|-----------|-----------------------------|
+| Black   | #1e1e1e   | Default text & borders      |
+| Red     | #e03131   | Errors, warnings, critical  |
+| Green   | #2f9e44   | Success, approved, healthy  |
+| Blue    | #1971c2   | Primary actions, links      |
+| Purple  | #9c36b5   | Services, middleware        |
+| Orange  | #e8590c   | Async, queues, events       |
+| Cyan    | #0c8599   | Data stores, databases      |
+| Gray    | #868e96   | Annotations, secondary      |
+
+### Fill Colors (use for backgroundColor — pastel fills)
+| Name         | Hex       | Pairs with stroke |
+|--------------|-----------|-------------------|
+| Light Red    | #ffc9c9   | #e03131           |
+| Light Green  | #b2f2bb   | #2f9e44           |
+| Light Blue   | #a5d8ff   | #1971c2           |
+| Light Purple | #eebefa   | #9c36b5           |
+| Light Orange | #ffd8a8   | #e8590c           |
+| Light Cyan   | #99e9f2   | #0c8599           |
+| Light Gray   | #e9ecef   | #868e96           |
+| White        | #ffffff   | #1e1e1e           |
+
+## Sizing Rules
+
+- **Minimum shape size**: width >= 120px, height >= 60px
+- **Font sizes**: body text >= 16, titles/headers >= 20, small labels >= 14
+- **Padding**: leave at least 20px inside shapes for text breathing room
+- **Arrow length**: minimum 80px between connected shapes
+- **Consistent sizing**: keep same-role shapes identical dimensions
+
+## Layout Patterns
+
+- **Grid snap**: align to 20px grid for clean layouts
+- **Spacing**: 40–80px gap between adjacent shapes
+- **Flow direction**: top-to-bottom (vertical) or left-to-right (horizontal)
+- **Hierarchy**: important nodes larger or higher; left-to-right = temporal order
+- **Grouping**: cluster related elements visually; use background rectangles as zones
+
+## Arrow Binding Best Practices
+
+- **Always bind**: use \`startElementId\` / \`endElementId\` to connect arrows to shapes
+- **Dashed arrows**: use \`strokeStyle: "dashed"\` for async, optional, or event flows
+- **Dotted arrows**: use \`strokeStyle: "dotted"\` for weak dependencies or annotations
+- **Arrowheads**: default "arrow" for directed flow; "dot" for data stores; null for lines
+- **Label arrows**: set \`text\` on arrows to describe the relationship (e.g., "HTTP", "publishes")
+
+## Diagram Type Templates
+
+### Architecture Diagram
+- Shapes: 160×80 rectangles for services, 120×60 for small components
+- Colors: different fill per layer (frontend=blue, backend=purple, data=cyan)
+- Arrows: solid for sync calls, dashed for async/events
+- Zones: large light-gray background rectangles with 20px fontSize labels
+
+### Flowchart
+- Shapes: 140×70 rectangles for steps, 100×100 diamonds for decisions
+- Flow: top-to-bottom, 60px vertical spacing
+- Colors: green start, red end, blue for process steps
+- Arrows: solid, with "Yes"/"No" labels from diamonds
+
+### ER Diagram
+- Shapes: 180×40 per entity (wider for attribute lists)
+- Layout: 80px between entities
+- Arrows: use start/end arrowheads to show cardinality
+- Colors: light-blue fill for entities, no fill for junction tables
+
+## Anti-Patterns to Avoid
+
+1. **Overlapping elements** — always leave gaps; use distribute_elements
+2. **Cramped spacing** — minimum 40px between shapes
+3. **Tiny fonts** — never below 14px; prefer 16+
+4. **Manual arrow coordinates** — always use startElementId/endElementId binding
+5. **Too many colors** — limit to 3–4 fill colors per diagram
+6. **Inconsistent sizes** — same-role shapes should be same width/height
+7. **No labels** — every shape and meaningful arrow should have text
+8. **Flat layouts** — use zones/groups to create visual hierarchy
+
+## Drawing Order (Recommended)
+
+1. **Background zones** — large rectangles with light fill, low opacity
+2. **Primary shapes** — services, entities, steps (with labels via \`text\`)
+3. **Arrows** — connect shapes using binding IDs
+4. **Annotations** — standalone text elements for notes, titles
+5. **Refinement** — align, distribute, adjust spacing, screenshot to verify
+`;
 
 // Tool definitions
 const tools: Tool[] = [
@@ -673,6 +768,51 @@ const tools: Tool[] = [
         background: {
           type: 'boolean',
           description: 'Include background in screenshot (default: true)'
+        }
+      }
+    }
+  },
+  {
+    name: 'read_diagram_guide',
+    description: 'Returns a comprehensive design guide for creating beautiful Excalidraw diagrams: color palette, sizing rules, layout patterns, arrow binding best practices, diagram templates, and anti-patterns. Call this before creating diagrams to produce professional results.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'export_to_excalidraw_url',
+    description: 'Export the current canvas to a shareable excalidraw.com URL. The diagram is encrypted and uploaded; anyone with the URL can view it. Returns the shareable link.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'set_viewport',
+    description: 'Control the canvas viewport (camera). Auto-fit all elements, center on a specific element, or set zoom/scroll directly. Requires the canvas frontend open in a browser.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scrollToContent: {
+          type: 'boolean',
+          description: 'Auto-fit all elements in view (zoom-to-fit)'
+        },
+        scrollToElementId: {
+          type: 'string',
+          description: 'Center the view on a specific element by ID'
+        },
+        zoom: {
+          type: 'number',
+          description: 'Zoom level (0.1–10, where 1 = 100%)'
+        },
+        offsetX: {
+          type: 'number',
+          description: 'Horizontal scroll offset'
+        },
+        offsetY: {
+          type: 'number',
+          description: 'Vertical scroll offset'
         }
       }
     }
@@ -1696,6 +1836,127 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
               text: 'Canvas screenshot captured. This is what the diagram currently looks like.'
             }
           ]
+        };
+      }
+
+      case 'read_diagram_guide': {
+        return {
+          content: [{ type: 'text', text: DIAGRAM_DESIGN_GUIDE }]
+        };
+      }
+
+      case 'export_to_excalidraw_url': {
+        logger.info('Exporting to excalidraw.com URL');
+
+        // 1. Fetch current scene elements
+        const urlExportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+        if (!urlExportResponse.ok) {
+          throw new Error(`Failed to fetch elements: ${urlExportResponse.status}`);
+        }
+        const urlExportData = await urlExportResponse.json() as ApiResponse;
+        const urlExportElements = urlExportData.elements || [];
+
+        if (urlExportElements.length === 0) {
+          throw new Error('Canvas is empty — nothing to export');
+        }
+
+        // 2. Build .excalidraw scene JSON
+        const excalidrawScene = {
+          type: 'excalidraw',
+          version: 2,
+          source: 'mcp-excalidraw-server',
+          elements: urlExportElements,
+          appState: {
+            viewBackgroundColor: '#ffffff',
+            gridSize: null
+          },
+          files: {}
+        };
+        const sceneJson = JSON.stringify(excalidrawScene);
+        const dataBytes = new TextEncoder().encode(sceneJson);
+
+        // 3. Build metadata buffer: version(1) + IV placeholder(12)
+        const metadataVersion = new Uint8Array([2]); // encoding version
+        const iv = webcrypto.getRandomValues(new Uint8Array(12));
+
+        // 4. Compress with zlib deflate
+        const compressed = deflateSync(Buffer.from(dataBytes));
+
+        // 5. Encrypt with AES-GCM 128-bit key
+        const cryptoKey = await webcrypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 128 },
+          true,
+          ['encrypt']
+        );
+
+        const encrypted = await webcrypto.subtle.encrypt(
+          { name: 'AES-GCM', iv },
+          cryptoKey,
+          compressed
+        );
+
+        // 6. Build payload: version(1) + iv(12) + ciphertext
+        const ciphertext = new Uint8Array(encrypted);
+        const payload = new Uint8Array(1 + iv.byteLength + ciphertext.byteLength);
+        payload.set(metadataVersion, 0);
+        payload.set(iv, 1);
+        payload.set(ciphertext, 1 + iv.byteLength);
+
+        // 7. POST to excalidraw.com JSON store
+        const uploadResponse = await fetch('https://json.excalidraw.com/api/v2/post/', {
+          method: 'POST',
+          body: Buffer.from(payload)
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`Upload to excalidraw.com failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+        }
+
+        const uploadResult = await uploadResponse.json() as { id: string };
+
+        // 8. Export key as JWK to get the "k" field
+        const jwk = await webcrypto.subtle.exportKey('jwk', cryptoKey);
+
+        // 9. Build shareable URL
+        const shareUrl = `https://excalidraw.com/#json=${uploadResult.id},${jwk.k}`;
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Diagram exported to excalidraw.com!\n\nShareable URL: ${shareUrl}\n\nAnyone with this link can view and edit the diagram.`
+          }]
+        };
+      }
+
+      case 'set_viewport': {
+        const viewportParams = z.object({
+          scrollToContent: z.boolean().optional(),
+          scrollToElementId: z.string().optional(),
+          zoom: z.number().min(0.1).max(10).optional(),
+          offsetX: z.number().optional(),
+          offsetY: z.number().optional()
+        }).parse(args || {});
+
+        logger.info('Setting viewport via MCP', viewportParams);
+
+        const viewportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/viewport`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(viewportParams)
+        });
+
+        if (!viewportResponse.ok) {
+          const viewportError = await viewportResponse.json() as ApiResponse;
+          throw new Error(viewportError.error || `Viewport request failed: ${viewportResponse.status}`);
+        }
+
+        const viewportResult = await viewportResponse.json() as { success: boolean; message?: string };
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Viewport updated successfully.\n\n${JSON.stringify(viewportResult, null, 2)}`
+          }]
         };
       }
 

@@ -14,13 +14,15 @@ description: Programmatic canvas toolkit for creating, editing, and refining Exc
 
 ## Workflow: Draw A Diagram
 
-1. Confirm canvas: `node scripts/healthcheck.cjs` or `GET /health`.
-2. Optional: `clear_canvas` to start fresh.
-3. Use `batch_create_elements` with all shapes AND arrows in one call.
-4. **Assign custom `id` to shapes** (e.g. `"id": "auth-svc"`). Set `text` field to label shapes.
-5. **Bind arrows to shapes** using `startElementId` / `endElementId` — arrows auto-route to element edges.
-6. `align_elements` / `distribute_elements` after rough placement.
-7. `describe_scene` to verify layout. `get_canvas_screenshot` to visually check.
+1. **Call `read_diagram_guide`** first to load design best practices (colors, sizing, layout, anti-patterns).
+2. Confirm canvas: `node scripts/healthcheck.cjs` or `GET /health`.
+3. Optional: `clear_canvas` to start fresh.
+4. Use `batch_create_elements` with all shapes AND arrows in one call.
+5. **Assign custom `id` to shapes** (e.g. `"id": "auth-svc"`). Set `text` field to label shapes.
+6. **Bind arrows to shapes** using `startElementId` / `endElementId` — arrows auto-route to element edges.
+7. `align_elements` / `distribute_elements` after rough placement.
+8. `set_viewport` with `scrollToContent: true` to auto-fit the diagram in view.
+9. `describe_scene` to verify layout. `get_canvas_screenshot` to visually check.
 
 ### Arrow Binding (Recommended)
 
@@ -87,6 +89,18 @@ The `points` field accepts both formats:
 
 Both are normalized to tuples automatically.
 
+## Workflow: Share Diagram (excalidraw.com URL)
+
+1. Create your diagram using any of the above workflows.
+2. `export_to_excalidraw_url` — uploads encrypted scene, returns a shareable URL.
+3. Share the URL — anyone can open it in excalidraw.com to view and edit.
+
+## Workflow: Viewport Control
+
+- `set_viewport` with `scrollToContent: true` — auto-fit all elements (zoom-to-fit).
+- `set_viewport` with `scrollToElementId: "my-element"` — center view on a specific element.
+- `set_viewport` with `zoom: 1.5, offsetX: 100, offsetY: 200` — manual camera control.
+
 ## References
 
-- `references/cheatsheet.md`: Complete MCP tool list (23 tools) + REST API endpoints + payload shapes.
+- `references/cheatsheet.md`: Complete MCP tool list (26 tools) + REST API endpoints + payload shapes.

@@ -181,7 +181,8 @@ export type WebSocketMessageType =
   | 'sync_status'
   | 'mermaid_convert'
   | 'canvas_cleared'
-  | 'export_image_request';
+  | 'export_image_request'
+  | 'set_viewport';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
@@ -257,6 +258,17 @@ export interface ExportImageRequestMessage extends WebSocketMessage {
   requestId: string;
   format: 'png' | 'svg';
   background?: boolean;
+}
+
+// Viewport control types
+export interface SetViewportMessage extends WebSocketMessage {
+  type: 'set_viewport';
+  requestId: string;
+  scrollToContent?: boolean;
+  scrollToElementId?: string;
+  zoom?: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 // Snapshot types

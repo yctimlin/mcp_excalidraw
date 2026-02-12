@@ -5,7 +5,7 @@
 - Canvas base URL: `EXPRESS_SERVER_URL` (default `http://localhost:3000`)
 - Canvas health: `GET /health`
 
-## MCP Tools (23 total)
+## MCP Tools (26 total)
 
 ### Element CRUD
 
@@ -45,6 +45,7 @@
 | `export_scene` | Export to .excalidraw JSON | (optional) `filePath` |
 | `import_scene` | Import from .excalidraw JSON | `mode` ("replace"\|"merge"), `filePath` or `data` |
 | `export_to_image` | Export to PNG/SVG (needs browser) | `format` ("png"\|"svg"), (optional) `filePath`, `background` |
+| `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL | (none) |
 
 ### State Management
 
@@ -53,6 +54,18 @@
 | `clear_canvas` | Remove all elements | (none) |
 | `snapshot_scene` | Save named snapshot | `name` |
 | `restore_snapshot` | Restore from snapshot | `name` |
+
+### Viewport & Camera
+
+| Tool | Description | Required params |
+|------|-------------|-----------------|
+| `set_viewport` | Control camera: zoom-to-fit, center on element, manual zoom/scroll (needs browser) | (optional) `scrollToContent`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
+
+### Design Guide
+
+| Tool | Description | Required params |
+|------|-------------|-----------------|
+| `read_diagram_guide` | Get design best practices (colors, sizing, layout, anti-patterns) | (none) |
 
 ### Conversion
 
@@ -88,6 +101,13 @@ Notes:
 |--------|----------|-------------|
 | `POST` | `/api/export/image` | Request image export (needs frontend) |
 | `POST` | `/api/export/image/result` | Frontend posts export result back |
+
+### Viewport
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/viewport` | Set viewport/camera (needs frontend) |
+| `POST` | `/api/viewport/result` | Frontend posts viewport result back |
 
 ### Snapshots
 
