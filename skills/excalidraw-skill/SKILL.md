@@ -155,7 +155,7 @@ Bind arrows to shapes for auto-routed edges. The format differs between MCP and 
 {"elements": [
   {"id": "svc-a", "type": "rectangle", "x": 0, "y": 0, "width": 120, "height": 60, "label": {"text": "Service A"}},
   {"id": "svc-b", "type": "rectangle", "x": 0, "y": 200, "width": 120, "height": 60, "label": {"text": "Service B"}},
-  {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}}
+  {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}, "label": {"text": "calls"}}
 ]}
 ```
 
@@ -181,7 +181,7 @@ The waypoint `[50, -40]` pushes the arrow upward to arc over elements. `roundnes
 {
   "type": "arrow", "x": 100, "y": 100,
   "points": [[0, 0], [0, -50], [200, -50], [200, 0]],
-  "roundness": {"type": 2},
+  "elbowed": true,
   "strokeColor": "#1971c2"
 }
 ```
