@@ -1022,6 +1022,38 @@ app.get('/health', (req: Request, res: Response) => {
   });
 });
 
+// Chat API endpoint for natural language diagram creation
+app.post('/api/chat', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Message is required and must be a string'
+      });
+    }
+    
+    logger.info('Processing chat request', { message });
+    
+    // Dynamically import the chat module
+    const chatModule = await import('./chat.js');
+    const result = await chatModule.processChatRequest(message);
+    
+    res.json({
+      success: true,
+      response: result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Error processing chat request:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message
+    });
+  }
+});
+
 // Sync status endpoint
 app.get('/api/sync/status', (req: Request, res: Response) => {
   res.json({
