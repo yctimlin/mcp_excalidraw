@@ -209,6 +209,23 @@ function normalizePoints(points: Array<{ x: number; y: number } | [number, numbe
   });
 }
 
+// Normalize fontFamily from string names to numeric values that Excalidraw expects
+// Excalidraw uses: 1 = Virgil (handwritten), 2 = Helvetica (sans-serif), 3 = Cascadia (monospace)
+function normalizeFontFamily(fontFamily: string | number | undefined): number | undefined {
+  if (fontFamily === undefined) return undefined;
+  if (typeof fontFamily === 'number') return fontFamily;
+  if (typeof fontFamily === 'string') {
+    const map: Record<string, number> = {
+      'virgil': 1, 'hand': 1, 'handwritten': 1,
+      'helvetica': 2, 'sans': 2, 'sans-serif': 2,
+      'cascadia': 3, 'mono': 3, 'monospace': 3,
+      '1': 1, '2': 2, '3': 3,
+    };
+    return map[fontFamily.toLowerCase()] ?? 1;
+  }
+  return 1;
+}
+
 // Schema definitions using zod
 const ElementSchema = z.object({
   id: z.string().optional(),
@@ -225,7 +242,7 @@ const ElementSchema = z.object({
   opacity: z.number().optional(),
   text: z.string().optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
+  fontFamily: z.union([z.string(), z.number()]).optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
   strokeStyle: z.string().optional(),
@@ -387,7 +404,7 @@ const tools: Tool[] = [
         opacity: { type: 'number' },
         text: { type: 'string' },
         fontSize: { type: 'number' },
-        fontFamily: { type: 'string' },
+        fontFamily: { type: 'string', description: 'Font family name (virgil, helvetica, cascadia) or numeric ID (1, 2, 3)' },
         startElementId: { type: 'string', description: 'For arrows: ID of the element to bind the arrow start to. Arrow auto-routes to element edge.' },
         endElementId: { type: 'string', description: 'For arrows: ID of the element to bind the arrow end to. Arrow auto-routes to element edge.' },
         endArrowhead: { type: 'string', description: 'Arrowhead style at end: arrow, bar, dot, triangle, or null' },
@@ -419,7 +436,7 @@ const tools: Tool[] = [
         opacity: { type: 'number' },
         text: { type: 'string' },
         fontSize: { type: 'number' },
-        fontFamily: { type: 'string' }
+        fontFamily: { type: 'string', description: 'Font family name (virgil, helvetica, cascadia) or numeric ID (1, 2, 3)' }
       },
       required: ['id']
     }
@@ -618,7 +635,7 @@ const tools: Tool[] = [
               opacity: { type: 'number' },
               text: { type: 'string' },
               fontSize: { type: 'number' },
-              fontFamily: { type: 'string' },
+              fontFamily: { type: 'string', description: 'Font family name (virgil, helvetica, cascadia) or numeric ID (1, 2, 3)' },
               startElementId: { type: 'string', description: 'For arrows: ID of element to bind arrow start to' },
               endElementId: { type: 'string', description: 'For arrows: ID of element to bind arrow end to' },
               endArrowhead: { type: 'string', description: 'Arrowhead style at end: arrow, bar, dot, triangle, or null' },
@@ -881,6 +898,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           version: 1
         };
 
+        // Normalize fontFamily from string names to numeric values
+        if (element.fontFamily !== undefined) {
+          (element as any).fontFamily = normalizeFontFamily(element.fontFamily);
+        }
+
         // For bound arrows without explicit points, set a default
         if ((startElementId || endElementId) && !elementProps.points) {
           (element as any).points = [[0, 0], [100, 0]];
@@ -923,6 +945,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           points: rawPoints ? normalizePoints(rawPoints) : undefined,
           updatedAt: new Date().toISOString()
         };
+
+        // Normalize fontFamily from string names to numeric values
+        if (updatePayload.fontFamily !== undefined) {
+          (updatePayload as any).fontFamily = normalizeFontFamily(updatePayload.fontFamily);
+        }
 
         // Convert text to label format for Excalidraw
         const excalidrawElement = convertTextToLabel(updatePayload as ServerElement);
@@ -1375,6 +1402,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             updatedAt: new Date().toISOString(),
             version: 1
           };
+
+          // Normalize fontFamily from string names to numeric values
+          if (element.fontFamily !== undefined) {
+            (element as any).fontFamily = normalizeFontFamily(element.fontFamily);
+          }
 
           // For bound arrows without explicit points, set a default
           if ((startElementId || endElementId) && !elementProps.points) {
@@ -1914,7 +1946,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             base.text = text ?? '';
             base.originalText = text ?? '';
             base.fontSize = rest.fontSize ?? 20;
-            base.fontFamily = rest.fontFamily ?? 1;
+            base.fontFamily = normalizeFontFamily(rest.fontFamily) ?? 1;
             base.textAlign = rest.textAlign ?? 'center';
             base.verticalAlign = rest.verticalAlign ?? 'middle';
             base.autoResize = rest.autoResize ?? true;
@@ -2009,7 +2041,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
               text: labelText,
               originalText: labelText,
               fontSize: isArrow ? 14 : (rest.fontSize ?? 16),
-              fontFamily: rest.fontFamily ?? 1,
+              fontFamily: normalizeFontFamily(rest.fontFamily) ?? 1,
               textAlign: 'center',
               verticalAlign: 'middle',
               autoResize: true,

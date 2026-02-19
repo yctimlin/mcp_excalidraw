@@ -35,6 +35,22 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Normalize fontFamily from string names to numeric values that Excalidraw expects
+function normalizeFontFamily(fontFamily: string | number | undefined): number | undefined {
+  if (fontFamily === undefined) return undefined;
+  if (typeof fontFamily === 'number') return fontFamily;
+  if (typeof fontFamily === 'string') {
+    const map: Record<string, number> = {
+      'virgil': 1, 'hand': 1, 'handwritten': 1,
+      'helvetica': 2, 'sans': 2, 'sans-serif': 2,
+      'cascadia': 3, 'mono': 3, 'monospace': 3,
+      '1': 1, '2': 2, '3': 3,
+    };
+    return map[fontFamily.toLowerCase()] ?? 1;
+  }
+  return 1;
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -108,7 +124,7 @@ const CreateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
+  fontFamily: z.union([z.string(), z.number()]).optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
@@ -140,7 +156,7 @@ const UpdateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
+  fontFamily: z.union([z.string(), z.number()]).optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
@@ -187,13 +203,14 @@ app.post('/api/elements', (req: Request, res: Response) => {
     const element: ServerElement = {
       id,
       ...params,
+      fontFamily: normalizeFontFamily(params.fontFamily),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 1
     };
 
     elements.set(id, element);
-    
+
     // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
       type: 'element_created',
@@ -238,6 +255,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     const updatedElement: ServerElement = {
       ...existingElement,
       ...updates,
+      fontFamily: updates.fontFamily !== undefined ? normalizeFontFamily(updates.fontFamily) : existingElement.fontFamily,
       updatedAt: new Date().toISOString(),
       version: (existingElement.version || 0) + 1
     };
@@ -553,6 +571,7 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
       const element: ServerElement = {
         id,
         ...params,
+        fontFamily: normalizeFontFamily(params.fontFamily),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         version: 1
