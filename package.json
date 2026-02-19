@@ -1,6 +1,6 @@
 {
   "name": "@sanjibdevnath/mcp-excalidraw-local",
-  "version": "3.0.0",
+  "version": "1.0.0",
   "description": "Fully local MCP server for Excalidraw with SQLite persistence, multi-tenancy, auto-sync, real-time canvas, and 32 tools",
   "main": "dist/index.js",
   "type": "module",

@@ -122,7 +122,7 @@ This fork extends [yctimlin/mcp_excalidraw](https://github.com/yctimlin/mcp_exca
 
 ## What's New
 
-### v3.0 — This Fork (Persistence & Multi-Tenancy)
+### v1.0 — This Fork (Persistence & Multi-Tenancy)
 
 - **SQLite persistence**: Elements, projects, tenants, snapshots, and element versions stored in `~/.excalidraw-mcp/excalidraw.db` with WAL mode and `busy_timeout` for multi-process safety
 - **Multi-tenancy**: Each workspace gets an isolated canvas. Tenant auto-detected from workspace path via `server.listRoots()`. UI dropdown with search for switching workspaces
