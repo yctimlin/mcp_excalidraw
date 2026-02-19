@@ -25,7 +25,8 @@ import {
   EXCALIDRAW_ELEMENT_TYPES,
   ServerElement,
   ExcalidrawElementType,
-  validateElement
+  validateElement,
+  normalizeFontFamily
 } from './types.js';
 import fetch from 'node-fetch';
 
@@ -207,23 +208,6 @@ function normalizePoints(points: Array<{ x: number; y: number } | [number, numbe
     if (Array.isArray(p)) return p as [number, number];
     return [p.x, p.y] as [number, number];
   });
-}
-
-// Normalize fontFamily from string names to numeric values that Excalidraw expects
-// Excalidraw uses: 1 = Virgil (handwritten), 2 = Helvetica (sans-serif), 3 = Cascadia (monospace)
-function normalizeFontFamily(fontFamily: string | number | undefined): number | undefined {
-  if (fontFamily === undefined) return undefined;
-  if (typeof fontFamily === 'number') return fontFamily;
-  if (typeof fontFamily === 'string') {
-    const map: Record<string, number> = {
-      'virgil': 1, 'hand': 1, 'handwritten': 1,
-      'helvetica': 2, 'sans': 2, 'sans-serif': 2,
-      'cascadia': 3, 'mono': 3, 'monospace': 3,
-      '1': 1, '2': 2, '3': 3,
-    };
-    return map[fontFamily.toLowerCase()] ?? 1;
-  }
-  return 1;
 }
 
 // Schema definitions using zod
@@ -900,7 +884,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         // Normalize fontFamily from string names to numeric values
         if (element.fontFamily !== undefined) {
-          (element as any).fontFamily = normalizeFontFamily(element.fontFamily);
+          element.fontFamily = normalizeFontFamily(element.fontFamily);
         }
 
         // For bound arrows without explicit points, set a default
@@ -948,7 +932,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         // Normalize fontFamily from string names to numeric values
         if (updatePayload.fontFamily !== undefined) {
-          (updatePayload as any).fontFamily = normalizeFontFamily(updatePayload.fontFamily);
+          updatePayload.fontFamily = normalizeFontFamily(updatePayload.fontFamily);
         }
 
         // Convert text to label format for Excalidraw
@@ -1405,7 +1389,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
           // Normalize fontFamily from string names to numeric values
           if (element.fontFamily !== undefined) {
-            (element as any).fontFamily = normalizeFontFamily(element.fontFamily);
+            element.fontFamily = normalizeFontFamily(element.fontFamily);
           }
 
           // For bound arrows without explicit points, set a default

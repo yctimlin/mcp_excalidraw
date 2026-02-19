@@ -20,7 +20,8 @@ import {
   BatchCreatedMessage,
   SyncStatusMessage,
   InitialElementsMessage,
-  Snapshot
+  Snapshot,
+  normalizeFontFamily
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
@@ -34,22 +35,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
-
-// Normalize fontFamily from string names to numeric values that Excalidraw expects
-function normalizeFontFamily(fontFamily: string | number | undefined): number | undefined {
-  if (fontFamily === undefined) return undefined;
-  if (typeof fontFamily === 'number') return fontFamily;
-  if (typeof fontFamily === 'string') {
-    const map: Record<string, number> = {
-      'virgil': 1, 'hand': 1, 'handwritten': 1,
-      'helvetica': 2, 'sans': 2, 'sans-serif': 2,
-      'cascadia': 3, 'mono': 3, 'monospace': 3,
-      '1': 1, '2': 2, '3': 3,
-    };
-    return map[fontFamily.toLowerCase()] ?? 1;
-  }
-  return 1;
-}
 
 // Middleware
 app.use(cors());
