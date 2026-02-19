@@ -304,3 +304,17 @@ export function validateElement(element: Partial<ServerElement>): element is Ser
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 }
+
+// Normalize fontFamily from string names to numeric values that Excalidraw expects
+// Excalidraw uses: 1 = Virgil (handwritten), 2 = Helvetica (sans-serif), 3 = Cascadia (monospace)
+export function normalizeFontFamily(fontFamily: string | number | undefined): number | undefined {
+  if (fontFamily === undefined) return undefined;
+  if (typeof fontFamily === 'number') return fontFamily;
+  const map: Record<string, number> = {
+    'virgil': 1, 'hand': 1, 'handwritten': 1,
+    'helvetica': 2, 'sans': 2, 'sans-serif': 2,
+    'cascadia': 3, 'mono': 3, 'monospace': 3,
+    '1': 1, '2': 2, '3': 3,
+  };
+  return map[fontFamily.toLowerCase()] ?? 1;
+}

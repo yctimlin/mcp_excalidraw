@@ -20,7 +20,8 @@ import {
   BatchCreatedMessage,
   SyncStatusMessage,
   InitialElementsMessage,
-  Snapshot
+  Snapshot,
+  normalizeFontFamily
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
@@ -108,7 +109,7 @@ const CreateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
+  fontFamily: z.union([z.string(), z.number()]).optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
@@ -140,7 +141,7 @@ const UpdateElementSchema = z.object({
     text: z.string()
   }).optional(),
   fontSize: z.number().optional(),
-  fontFamily: z.string().optional(),
+  fontFamily: z.union([z.string(), z.number()]).optional(),
   groupIds: z.array(z.string()).optional(),
   locked: z.boolean().optional(),
   roundness: z.object({ type: z.number(), value: z.number().optional() }).nullable().optional(),
@@ -187,13 +188,14 @@ app.post('/api/elements', (req: Request, res: Response) => {
     const element: ServerElement = {
       id,
       ...params,
+      fontFamily: normalizeFontFamily(params.fontFamily),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       version: 1
     };
 
     elements.set(id, element);
-    
+
     // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
       type: 'element_created',
@@ -238,6 +240,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     const updatedElement: ServerElement = {
       ...existingElement,
       ...updates,
+      fontFamily: updates.fontFamily !== undefined ? normalizeFontFamily(updates.fontFamily) : existingElement.fontFamily,
       updatedAt: new Date().toISOString(),
       version: (existingElement.version || 0) + 1
     };
@@ -553,6 +556,7 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
       const element: ServerElement = {
         id,
         ...params,
+        fontFamily: normalizeFontFamily(params.fontFamily),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         version: 1
