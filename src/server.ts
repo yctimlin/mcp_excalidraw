@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { type Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -7,8 +7,6 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import {
-  elements,
-  snapshots,
   generateId,
   EXCALIDRAW_ELEMENT_TYPES,
   ServerElement,
@@ -22,6 +20,8 @@ import {
   InitialElementsMessage,
   Snapshot
 } from './types.js';
+import * as store from './db.js';
+import { listTenants as dbListTenants, getActiveTenant as dbGetActiveTenant, setActiveTenant as dbSetActiveTenant, getDefaultProjectForTenant } from './db.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
 
@@ -31,9 +31,9 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const app: Application = express();
+const httpServer = createServer(app);
+const wss = new WebSocketServer({ server: httpServer });
 
 // Middleware
 app.use(cors());
@@ -44,6 +44,14 @@ const staticDir = path.join(__dirname, '../dist');
 app.use(express.static(staticDir));
 // Also serve frontend assets
 app.use(express.static(path.join(__dirname, '../dist/frontend')));
+
+// Resolve tenant from X-Tenant-Id header to a projectId override.
+// Returns undefined when header is absent (browser requests), falling back to global state.
+function resolveTenantProject(req: Request): string | undefined {
+  const tenantId = req.headers['x-tenant-id'] as string | undefined;
+  if (!tenantId) return undefined;
+  return getDefaultProjectForTenant(tenantId);
+}
 
 // WebSocket connections
 const clients = new Set<WebSocket>();
@@ -62,18 +70,27 @@ function broadcast(message: WebSocketMessage): void {
 wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
   logger.info('New WebSocket connection established');
+
+  // Send current tenant info
+  try {
+    const tenant = dbGetActiveTenant();
+    ws.send(JSON.stringify({
+      type: 'tenant_switched',
+      tenant: { id: tenant.id, name: tenant.name, workspace_path: tenant.workspace_path }
+    }));
+  } catch {}
   
   // Send current elements to new client
   const initialMessage: InitialElementsMessage = {
     type: 'initial_elements',
-    elements: Array.from(elements.values())
+    elements: store.getAllElements()
   };
   ws.send(JSON.stringify(initialMessage));
   
   // Send sync status to new client
   const syncMessage: SyncStatusMessage = {
     type: 'sync_status',
-    elementCount: elements.size,
+    elementCount: store.getElementCount(),
     timestamp: new Date().toISOString()
   };
   ws.send(JSON.stringify(syncMessage));
@@ -161,11 +178,12 @@ const UpdateElementSchema = z.object({
 // Get all elements
 app.get('/api/elements', (req: Request, res: Response) => {
   try {
-    const elementsArray = Array.from(elements.values());
+    const projId = resolveTenantProject(req);
+    const allElements = store.getAllElements(projId);
     res.json({
       success: true,
-      elements: elementsArray,
-      count: elementsArray.length
+      elements: allElements,
+      count: allElements.length
     });
   } catch (error) {
     logger.error('Error fetching elements:', error);
@@ -179,10 +197,10 @@ app.get('/api/elements', (req: Request, res: Response) => {
 // Create new element
 app.post('/api/elements', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const params = CreateElementSchema.parse(req.body);
     logger.info('Creating element via API', { type: params.type });
 
-    // Prioritize passed ID (for MCP sync), otherwise generate new ID
     const id = params.id || generateId();
     const element: ServerElement = {
       id,
@@ -192,9 +210,8 @@ app.post('/api/elements', (req: Request, res: Response) => {
       version: 1
     };
 
-    elements.set(id, element);
+    store.setElement(id, element, projId);
     
-    // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
       type: 'element_created',
       element: element
@@ -217,6 +234,7 @@ app.post('/api/elements', (req: Request, res: Response) => {
 // Update element
 app.put('/api/elements/:id', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { id } = req.params;
     const updates = UpdateElementSchema.parse({ id, ...req.body });
     
@@ -227,7 +245,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
       });
     }
     
-    const existingElement = elements.get(id);
+    const existingElement = store.getElement(id, projId);
     if (!existingElement) {
       return res.status(404).json({
         success: false,
@@ -242,9 +260,8 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
       version: (existingElement.version || 0) + 1
     };
 
-    elements.set(id, updatedElement);
+    store.setElement(id, updatedElement, projId);
     
-    // Broadcast to all connected clients
     const message: ElementUpdatedMessage = {
       type: 'element_updated',
       element: updatedElement
@@ -267,8 +284,8 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
 // Clear all elements (must be before /:id route)
 app.delete('/api/elements/clear', (req: Request, res: Response) => {
   try {
-    const count = elements.size;
-    elements.clear();
+    const projId = resolveTenantProject(req);
+    const count = store.clearElements(projId);
 
     broadcast({
       type: 'canvas_cleared',
@@ -294,6 +311,7 @@ app.delete('/api/elements/clear', (req: Request, res: Response) => {
 // Delete element
 app.delete('/api/elements/:id', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { id } = req.params;
     
     if (!id) {
@@ -303,14 +321,14 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
       });
     }
     
-    if (!elements.has(id)) {
+    if (!store.hasElement(id, projId)) {
       return res.status(404).json({
         success: false,
         error: `Element with ID ${id} not found`
       });
     }
     
-    elements.delete(id);
+    store.deleteElement(id, projId);
     
     // Broadcast to all connected clients
     const message: ElementDeletedMessage = {
@@ -335,22 +353,19 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
 // Query elements with filters
 app.get('/api/elements/search', (req: Request, res: Response) => {
   try {
-    const { type, ...filters } = req.query;
-    let results = Array.from(elements.values());
-    
-    // Filter by type if specified
-    if (type && typeof type === 'string') {
-      results = results.filter(element => element.type === type);
+    const projId = resolveTenantProject(req);
+    const { type, q, ...filters } = req.query;
+
+    if (q && typeof q === 'string') {
+      const results = store.searchElements(q, projId);
+      return res.json({ success: true, elements: results, count: results.length });
     }
-    
-    // Apply additional filters
-    if (Object.keys(filters).length > 0) {
-      results = results.filter(element => {
-        return Object.entries(filters).every(([key, value]) => {
-          return (element as any)[key] === value;
-        });
-      });
-    }
+
+    const results = store.queryElements(
+      type && typeof type === 'string' ? type : undefined,
+      Object.keys(filters).length > 0 ? filters as Record<string, any> : undefined,
+      projId
+    );
     
     res.json({
       success: true,
@@ -369,6 +384,7 @@ app.get('/api/elements/search', (req: Request, res: Response) => {
 // Get element by ID
 app.get('/api/elements/:id', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { id } = req.params;
     
     if (!id) {
@@ -378,7 +394,7 @@ app.get('/api/elements/:id', (req: Request, res: Response) => {
       });
     }
     
-    const element = elements.get(id);
+    const element = store.getElement(id, projId);
     
     if (!element) {
       return res.status(404).json({
@@ -453,14 +469,14 @@ function computeEdgePoint(
 }
 
 // Helper: resolve arrow bindings in a batch
-function resolveArrowBindings(batchElements: ServerElement[]): void {
+function resolveArrowBindings(batchElements: ServerElement[], projectId?: string): void {
   const elementMap = new Map<string, ServerElement>();
   batchElements.forEach(el => elementMap.set(el.id, el));
 
   // Also check existing elements for cross-batch references
-  elements.forEach((el, id) => {
-    if (!elementMap.has(id)) elementMap.set(id, el);
-  });
+  for (const el of store.getAllElements(projectId)) {
+    if (!elementMap.has(el.id)) elementMap.set(el.id, el);
+  }
 
   for (const el of batchElements) {
     if (el.type !== 'arrow' && el.type !== 'line') continue;
@@ -535,6 +551,7 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
 // Batch create elements
 app.post('/api/elements/batch', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { elements: elementsToCreate } = req.body;
 
     if (!Array.isArray(elementsToCreate)) {
@@ -548,7 +565,6 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
 
     elementsToCreate.forEach(elementData => {
       const params = CreateElementSchema.parse(elementData);
-      // Prioritize passed ID (for MCP sync), otherwise generate new ID
       const id = params.id || generateId();
       const element: ServerElement = {
         id,
@@ -561,11 +577,9 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
       createdElements.push(element);
     });
 
-    // Resolve arrow bindings (computes positions, startBinding, endBinding, boundElements)
-    resolveArrowBindings(createdElements);
+    resolveArrowBindings(createdElements, projId);
 
-    // Store all elements after binding resolution
-    createdElements.forEach(el => elements.set(el.id, el));
+    createdElements.forEach(el => store.setElement(el.id, el, projId));
 
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
@@ -632,6 +646,7 @@ app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
 // Sync elements from frontend (overwrite sync)
 app.post('/api/elements/sync', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { elements: frontendElements, timestamp } = req.body;
     
     logger.info(`Sync request received: ${frontendElements.length} elements`, {
@@ -639,7 +654,6 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       elementCount: frontendElements.length
     });
     
-    // Validate input data
     if (!Array.isArray(frontendElements)) {
       return res.status(400).json({
         success: false,
@@ -647,23 +661,15 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       });
     }
     
-    // Record element count before sync
-    const beforeCount = elements.size;
-    
-    // 1. Clear existing memory storage
-    elements.clear();
-    logger.info(`Cleared existing elements: ${beforeCount} elements removed`);
-    
-    // 2. Batch write new data
-    let successCount = 0;
+    const beforeCount = store.getElementCount(projId);
+
+    // Process elements with server metadata
     const processedElements: ServerElement[] = [];
-    
+    let successCount = 0;
+
     frontendElements.forEach((element: any, index: number) => {
       try {
-        // Ensure element has ID, generate one if missing
         const elementId = element.id || generateId();
-        
-        // Add server metadata
         const processedElement: ServerElement = {
           ...element,
           id: elementId,
@@ -672,35 +678,30 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
           syncTimestamp: timestamp,
           version: 1
         };
-        
-        // Store to memory
-        elements.set(elementId, processedElement);
         processedElements.push(processedElement);
         successCount++;
-        
       } catch (elementError) {
         logger.warn(`Failed to process element ${index}:`, elementError);
       }
     });
-    
+
+    store.bulkReplaceElements(processedElements, projId);
     logger.info(`Sync completed: ${successCount}/${frontendElements.length} elements synced`);
-    
-    // 3. Broadcast sync event to all WebSocket clients
+
     broadcast({
       type: 'elements_synced',
       count: successCount,
       timestamp: new Date().toISOString(),
       source: 'manual_sync'
     });
-    
-    // 4. Return sync results
+
     res.json({
       success: true,
       message: `Successfully synced ${successCount} elements`,
       count: successCount,
       syncedAt: new Date().toISOString(),
       beforeCount,
-      afterCount: elements.size
+      afterCount: store.getElementCount(projId)
     });
     
   } catch (error) {
@@ -919,6 +920,7 @@ app.post('/api/viewport/result', (req: Request, res: Response) => {
 // Snapshots: save
 app.post('/api/snapshots', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { name } = req.body;
 
     if (!name || typeof name !== 'string') {
@@ -928,20 +930,15 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
       });
     }
 
-    const snapshot: Snapshot = {
-      name,
-      elements: Array.from(elements.values()),
-      createdAt: new Date().toISOString()
-    };
-
-    snapshots.set(name, snapshot);
-    logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
+    const allElements = store.getAllElements(projId);
+    store.saveSnapshot(name, allElements, projId);
+    logger.info(`Snapshot saved: "${name}" with ${allElements.length} elements`);
 
     res.json({
       success: true,
       name,
-      elementCount: snapshot.elements.length,
-      createdAt: snapshot.createdAt
+      elementCount: allElements.length,
+      createdAt: new Date().toISOString()
     });
   } catch (error) {
     logger.error('Error saving snapshot:', error);
@@ -955,11 +952,8 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
 // Snapshots: list
 app.get('/api/snapshots', (req: Request, res: Response) => {
   try {
-    const list = Array.from(snapshots.values()).map(s => ({
-      name: s.name,
-      elementCount: s.elements.length,
-      createdAt: s.createdAt
-    }));
+    const projId = resolveTenantProject(req);
+    const list = store.listSnapshots(projId);
 
     res.json({
       success: true,
@@ -978,8 +972,9 @@ app.get('/api/snapshots', (req: Request, res: Response) => {
 // Snapshots: get by name
 app.get('/api/snapshots/:name', (req: Request, res: Response) => {
   try {
+    const projId = resolveTenantProject(req);
     const { name } = req.params;
-    const snapshot = snapshots.get(name!);
+    const snapshot = store.getSnapshot(name!, projId);
 
     if (!snapshot) {
       return res.status(404).json({
@@ -1012,21 +1007,68 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
+// ── Tenant API ──
+
+app.get('/api/tenants', (req: Request, res: Response) => {
+  try {
+    const tenants = dbListTenants();
+    const active = dbGetActiveTenant();
+    res.json({ success: true, tenants, activeTenantId: active.id });
+  } catch (error) {
+    logger.error('Error listing tenants:', error);
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.get('/api/tenant/active', (req: Request, res: Response) => {
+  try {
+    const tenant = dbGetActiveTenant();
+    res.json({ success: true, tenant });
+  } catch (error) {
+    logger.error('Error getting active tenant:', error);
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.put('/api/tenant/active', (req: Request, res: Response) => {
+  try {
+    const { tenantId } = req.body;
+    if (!tenantId || typeof tenantId !== 'string') {
+      return res.status(400).json({ success: false, error: 'tenantId is required' });
+    }
+
+    dbSetActiveTenant(tenantId);
+    const tenant = dbGetActiveTenant();
+
+    broadcast({
+      type: 'tenant_switched',
+      tenant: { id: tenant.id, name: tenant.name, workspace_path: tenant.workspace_path }
+    });
+
+    res.json({ success: true, tenant });
+  } catch (error) {
+    logger.error('Error switching tenant:', error);
+    res.status(400).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
+  const projId = resolveTenantProject(req);
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    elements_count: elements.size,
+    elements_count: store.getElementCount(projId),
     websocket_clients: clients.size
   });
 });
 
 // Sync status endpoint
 app.get('/api/sync/status', (req: Request, res: Response) => {
+  const projId = resolveTenantProject(req);
   res.json({
     success: true,
-    elementCount: elements.size,
+    elementCount: store.getElementCount(projId),
     timestamp: new Date().toISOString(),
     memoryUsage: {
       heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
@@ -1045,13 +1087,40 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Start server
-const PORT = parseInt(process.env.PORT || '3000', 10);
+// Server configuration
+const PORT = parseInt(process.env.CANVAS_PORT || process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || 'localhost';
 
-server.listen(PORT, HOST, () => {
-  logger.info(`POC server running on http://${HOST}:${PORT}`);
-  logger.info(`WebSocket server running on ws://${HOST}:${PORT}`);
-});
+export function startCanvasServer(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (err: Error) => {
+      httpServer.removeListener('error', onError);
+      reject(err);
+    };
+    httpServer.on('error', onError);
+
+    httpServer.listen(PORT, HOST, () => {
+      httpServer.removeListener('error', onError);
+      logger.info(`Canvas server running on http://${HOST}:${PORT}`);
+      logger.info(`WebSocket server running on ws://${HOST}:${PORT}`);
+      resolve();
+    });
+  });
+}
+
+export function stopCanvasServer(): Promise<void> {
+  return new Promise((resolve) => {
+    clients.forEach(c => c.close());
+    httpServer.close(() => resolve());
+  });
+}
+
+// Direct execution: `node dist/server.js` still works standalone
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
+  startCanvasServer().catch((err) => {
+    logger.error('Failed to start canvas server:', err);
+    process.exit(1);
+  });
+}
 
 export default app;

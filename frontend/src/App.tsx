@@ -70,7 +70,7 @@ interface ApiResponse {
   message?: string;
 }
 
-type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+type SyncStatus = 'idle' | 'syncing';
 
 // Helper function to clean elements for Excalidraw
 const cleanElementForExcalidraw = (element: ServerElement): Partial<ExcalidrawElement> => {
@@ -134,14 +134,52 @@ const validateAndFixBindings = (elements: Partial<ExcalidrawElement>[]): Partial
   });
 }
 
+interface TenantInfo {
+  id: string;
+  name: string;
+  workspace_path: string;
+}
+
 function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
   
-  // Sync state management
+  // Sync state
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
-  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [autoSave, setAutoSave] = useState<boolean>(() => {
+    const stored = localStorage.getItem('excalidraw-autosave')
+    return stored === null ? true : stored === 'true'
+  })
+  const isSyncingRef = useRef<boolean>(false)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSyncedHashRef = useRef<string>('')
+
+  const DEBOUNCE_MS = 3000
+
+  // Tenant state
+  const [activeTenant, setActiveTenant] = useState<TenantInfo | null>(null)
+  const activeTenantIdRef = useRef<string | null>(null)
+  const [tenantList, setTenantList] = useState<TenantInfo[]>([])
+  const [menuOpen, setMenuOpen] = useState<boolean>(false)
+  const [tenantSearch, setTenantSearch] = useState<string>('')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Keep ref in sync so closures (WebSocket handlers) always see latest tenant
+  useEffect(() => {
+    activeTenantIdRef.current = activeTenant?.id ?? null
+  }, [activeTenant])
+
+  // Build headers with tenant ID for all fetch calls to the backend
+  const tenantHeaders = (extra?: Record<string, string>): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...extra
+    }
+    const tid = activeTenantIdRef.current
+    if (tid) headers['X-Tenant-Id'] = tid
+    return headers
+  }
 
   // WebSocket connection
   useEffect(() => {
@@ -165,15 +203,71 @@ function App(): JSX.Element {
     }
   }, [excalidrawAPI, isConnected])
 
+  const computeElementHash = (elements: readonly { id: string; version: number }[]): string => {
+    let h = String(elements.length)
+    for (let i = 0; i < elements.length; i++) {
+      h += elements[i].id
+      h += elements[i].version
+    }
+    return h
+  }
+
+  // Persist auto-save preference and cancel pending timer when toggled off
+  const toggleAutoSave = () => {
+    setAutoSave(prev => {
+      const next = !prev
+      localStorage.setItem('excalidraw-autosave', String(next))
+      if (!next && debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+        debounceTimerRef.current = null
+      }
+      return next
+    })
+  }
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    }
+  }, [])
+
+  // Trailing debounce: resets on every change, fires after user is idle.
+  // Only active when auto-save is on.
+  const handleCanvasChange = (): void => {
+    if (!autoSave) return
+
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+
+    debounceTimerRef.current = setTimeout(() => {
+      if (!excalidrawAPI || isSyncingRef.current) return
+
+      const elements = excalidrawAPI.getSceneElements()
+      const hash = computeElementHash(elements)
+      if (hash === lastSyncedHashRef.current) return
+
+      syncToBackend()
+    }, DEBOUNCE_MS)
+  }
+
   const loadExistingElements = async (): Promise<void> => {
     try {
-      const response = await fetch('/api/elements')
+      const response = await fetch('/api/elements', { headers: tenantHeaders() })
       const result: ApiResponse = await response.json()
       
       if (result.success && result.elements && result.elements.length > 0) {
         const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
-        excalidrawAPI?.updateScene({ elements: convertedElements })
+        // Elements with containerId are in Excalidraw native format (from a
+        // previous sync before the normalization fix). Pass them directly —
+        // convertToExcalidrawElements would re-create bound text and break layout.
+        const hasNativeFormat = cleanedElements.some((el: any) => el.containerId)
+        if (hasNativeFormat) {
+          const validated = validateAndFixBindings(cleanedElements)
+          excalidrawAPI?.updateScene({ elements: validated as any })
+        } else {
+          const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
+          excalidrawAPI?.updateScene({ elements: convertedElements })
+        }
       }
     } catch (error) {
       console.error('Error loading existing elements:', error)
@@ -355,7 +449,7 @@ function App(): JSX.Element {
                 const svgString = new XMLSerializer().serializeToString(svg)
                 await fetch('/api/export/image/result', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: tenantHeaders(),
                   body: JSON.stringify({
                     requestId: data.requestId,
                     format: 'svg',
@@ -382,7 +476,7 @@ function App(): JSX.Element {
                     }
                     await fetch('/api/export/image/result', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: tenantHeaders(),
                       body: JSON.stringify({
                         requestId: data.requestId,
                         format: 'png',
@@ -393,7 +487,7 @@ function App(): JSX.Element {
                     console.error('Image export (FileReader) failed:', readerError)
                     await fetch('/api/export/image/result', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: tenantHeaders(),
                       body: JSON.stringify({
                         requestId: data.requestId,
                         error: (readerError as Error).message
@@ -405,7 +499,7 @@ function App(): JSX.Element {
                   console.error('FileReader error:', reader.error)
                   await fetch('/api/export/image/result', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: tenantHeaders(),
                     body: JSON.stringify({
                       requestId: data.requestId,
                       error: reader.error?.message || 'FileReader failed'
@@ -419,7 +513,7 @@ function App(): JSX.Element {
               console.error('Image export failed:', exportError)
               await fetch('/api/export/image/result', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: tenantHeaders(),
                 body: JSON.stringify({
                   requestId: data.requestId,
                   error: (exportError as Error).message
@@ -465,7 +559,7 @@ function App(): JSX.Element {
 
               await fetch('/api/viewport/result', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: tenantHeaders(),
                 body: JSON.stringify({
                   requestId: data.requestId,
                   success: true,
@@ -476,7 +570,7 @@ function App(): JSX.Element {
               console.error('Viewport control failed:', viewportError)
               await fetch('/api/viewport/result', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: tenantHeaders(),
                 body: JSON.stringify({
                   requestId: data.requestId,
                   error: (viewportError as Error).message
@@ -519,6 +613,27 @@ function App(): JSX.Element {
           }
           break
           
+        case 'tenant_switched':
+          console.log('Tenant switched:', data.tenant)
+          if (data.tenant) {
+            const incoming = data.tenant as TenantInfo
+            // Only reload if the switch came from an external source (MCP tool)
+            // and we aren't already on that tenant (UI-driven switch handles its own reload)
+            if (incoming.id !== activeTenantIdRef.current) {
+              activeTenantIdRef.current = incoming.id
+              setActiveTenant(incoming)
+              excalidrawAPI.updateScene({
+                elements: [],
+                captureUpdate: CaptureUpdateAction.NEVER
+              })
+              lastSyncedHashRef.current = ''
+              loadExistingElements()
+            } else {
+              setActiveTenant(incoming)
+            }
+          }
+          break
+
         default:
           console.log('Unknown WebSocket message type:', data.type)
       }
@@ -527,84 +642,192 @@ function App(): JSX.Element {
     }
   }
 
-  // Data format conversion for backend
-  const convertToBackendFormat = (element: ExcalidrawElement): ServerElement => {
-    return {
-      ...element
-    } as ServerElement
+  // Normalize Excalidraw native elements back to MCP format for backend storage.
+  // Excalidraw internally splits label text out of containers into separate text
+  // elements linked by containerId/boundElements. This causes text to detach on
+  // reload because convertToExcalidrawElements doesn't reconstruct that binding.
+  // Fix: merge bound text back into container label.text so the backend always
+  // stores MCP format that round-trips cleanly.
+  const normalizeForBackend = (elements: readonly ExcalidrawElement[]): ServerElement[] => {
+    const elementMap = new Map<string, ExcalidrawElement>()
+    for (const el of elements) elementMap.set(el.id, el)
+
+    // Collect IDs of text elements that are bound inside a container
+    const boundTextIds = new Set<string>()
+    // Map containerId → text content for merging
+    const containerTextMap = new Map<string, { text: string; fontSize?: number; fontFamily?: number }>()
+
+    for (const el of elements) {
+      const cid = (el as any).containerId
+      if (el.type === 'text' && cid && elementMap.has(cid)) {
+        boundTextIds.add(el.id)
+        containerTextMap.set(cid, {
+          text: (el as any).text || (el as any).originalText || '',
+          fontSize: (el as any).fontSize,
+          fontFamily: (el as any).fontFamily,
+        })
+      }
+    }
+
+    const result: ServerElement[] = []
+    for (const el of elements) {
+      if (boundTextIds.has(el.id)) continue // skip bound text — merged into container
+
+      const out: any = { ...el }
+
+      // If this container has bound text, put it back as label.text
+      const merged = containerTextMap.get(el.id)
+      if (merged && merged.text) {
+        out.label = { text: merged.text }
+        if (merged.fontSize) out.fontSize = merged.fontSize
+        if (merged.fontFamily) out.fontFamily = merged.fontFamily
+        // Clean up Excalidraw-internal binding metadata
+        delete out.boundElements
+      }
+
+      // Normalize arrow bindings from Excalidraw format back to MCP format
+      if (el.type === 'arrow') {
+        const startBinding = (el as any).startBinding
+        const endBinding = (el as any).endBinding
+        if (startBinding?.elementId) out.start = { id: startBinding.elementId }
+        if (endBinding?.elementId) out.end = { id: endBinding.elementId }
+      }
+
+      result.push(out as ServerElement)
+    }
+    return result
   }
 
-  // Format sync time display
-  const formatSyncTime = (time: Date | null): string => {
-    if (!time) return ''
-    return time.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    })
+  // Toast message shown briefly in the center of the header
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showToast = (msg: string, durationMs = 2000) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToast(msg)
+    toastTimerRef.current = setTimeout(() => setToast(null), durationMs)
   }
 
-  // Main sync function
-  const syncToBackend = async (): Promise<void> => {
-    if (!excalidrawAPI) {
-      console.warn('Excalidraw API not available')
+  // Fetch list of tenants for the menu
+  const fetchTenants = async () => {
+    try {
+      const res = await fetch('/api/tenants', { headers: tenantHeaders() })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.success) {
+        setTenantList(data.tenants)
+      }
+    } catch (err) {
+      console.error('Failed to fetch tenants:', err)
+    }
+  }
+
+  // Switch active tenant via API, then reload canvas with new tenant's elements
+  const switchTenant = async (tenantId: string) => {
+    if (tenantId === activeTenantIdRef.current) {
+      setMenuOpen(false)
       return
     }
-    
-    setSyncStatus('syncing')
-    
+
     try {
-      // 1. Get current elements
-      const currentElements = excalidrawAPI.getSceneElements()
-      console.log(`Syncing ${currentElements.length} elements to backend`)
-      
-      // Filter out deleted elements
-      const activeElements = currentElements.filter(el => !el.isDeleted)
-      
-      // 3. Convert to backend format
-      const backendElements = activeElements.map(convertToBackendFormat)
-      
-      // 4. Send to backend
-      const response = await fetch('/api/elements/sync', {
-        method: 'POST',
+      const res = await fetch('/api/tenant/active', {
+        method: 'PUT',
+        headers: tenantHeaders(),
+        body: JSON.stringify({ tenantId })
+      })
+      if (!res.ok) return
+
+      // Update ref immediately so subsequent fetch uses the new tenant
+      activeTenantIdRef.current = tenantId
+
+      // Clear the canvas before loading the new tenant's elements
+      excalidrawAPI?.updateScene({
+        elements: [],
+        captureUpdate: CaptureUpdateAction.NEVER
+      })
+      lastSyncedHashRef.current = ''
+
+      // Update React state (will also re-sync the ref via useEffect, which is fine)
+      const tenant = tenantList.find(t => t.id === tenantId)
+      if (tenant) setActiveTenant(tenant)
+
+      setMenuOpen(false)
+
+      // Load elements for the newly-active tenant
+      const elemRes = await fetch('/api/elements', {
         headers: {
           'Content-Type': 'application/json',
-        },
+          'X-Tenant-Id': tenantId
+        }
+      })
+      const result: ApiResponse = await elemRes.json()
+      if (result.success && result.elements && result.elements.length > 0) {
+        const cleanedElements = result.elements.map(cleanElementForExcalidraw)
+        const hasNativeFormat = cleanedElements.some((el: any) => el.containerId)
+        if (hasNativeFormat) {
+          const validated = validateAndFixBindings(cleanedElements)
+          excalidrawAPI?.updateScene({ elements: validated as any })
+        } else {
+          const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
+          excalidrawAPI?.updateScene({ elements: convertedElements })
+        }
+      }
+
+      showToast('Workspace switched')
+    } catch (err) {
+      console.error('Failed to switch tenant:', err)
+    }
+  }
+
+  const syncToBackend = async (): Promise<void> => {
+    if (!excalidrawAPI || isSyncingRef.current) return
+
+    isSyncingRef.current = true
+    setSyncStatus('syncing')
+
+    try {
+      const currentElements = excalidrawAPI.getSceneElements()
+      const activeElements = currentElements.filter(el => !el.isDeleted)
+      const backendElements = normalizeForBackend(activeElements)
+
+      const response = await fetch('/api/elements/sync', {
+        method: 'POST',
+        headers: tenantHeaders(),
         body: JSON.stringify({
           elements: backendElements,
           timestamp: new Date().toISOString()
         })
       })
-      
+
       if (response.ok) {
         const result: ApiResponse = await response.json()
-        setSyncStatus('success')
-        setLastSyncTime(new Date())
-        console.log(`Sync successful: ${result.count} elements synced`)
-        
-        // Reset status after 2 seconds
-        setTimeout(() => setSyncStatus('idle'), 2000)
+        lastSyncedHashRef.current = computeElementHash(currentElements)
+        setSyncStatus('idle')
+        showToast('Saved')
+        console.log(`Sync: ${result.count} elements synced`)
       } else {
-        const error: ApiResponse = await response.json()
-        setSyncStatus('error')
-        console.error('Sync failed:', error.error)
+        setSyncStatus('idle')
+        showToast('Sync failed', 3000)
+        console.error('Sync failed:', (await response.json() as ApiResponse).error)
       }
     } catch (error) {
-      setSyncStatus('error')
+      setSyncStatus('idle')
+      showToast('Sync failed', 3000)
       console.error('Sync error:', error)
+    } finally {
+      isSyncingRef.current = false
     }
   }
 
   const clearCanvas = async (): Promise<void> => {
     if (excalidrawAPI) {
       try {
-        // Get all current elements and delete them from backend
-        const response = await fetch('/api/elements')
+        const response = await fetch('/api/elements', { headers: tenantHeaders() })
         const result: ApiResponse = await response.json()
         
         if (result.success && result.elements) {
           const deletePromises = result.elements.map(element => 
-            fetch(`/api/elements/${element.id}`, { method: 'DELETE' })
+            fetch(`/api/elements/${element.id}`, { method: 'DELETE', headers: tenantHeaders() })
           )
           await Promise.all(deletePromises)
         }
@@ -629,43 +852,99 @@ function App(): JSX.Element {
     <div className="app">
       {/* Header */}
       <div className="header">
-        <h1>Excalidraw Canvas</h1>
+        <div className="header-left">
+          <h1>Excalidraw Canvas</h1>
+          {activeTenant && (
+            <button
+              className="tenant-badge-btn"
+              onClick={() => {
+                setMenuOpen(o => {
+                  if (!o) {
+                    setTenantSearch('')
+                    fetchTenants()
+                    setTimeout(() => searchInputRef.current?.focus(), 80)
+                  }
+                  return !o
+                })
+              }}
+              title="Switch workspace"
+            >
+              <span className="tenant-label">Workspace:</span> {activeTenant.name} ▾
+            </button>
+          )}
+        </div>
+
+        {toast && <div className="toast">{toast}</div>}
+
         <div className="controls">
           <div className="status">
             <div className={`status-dot ${isConnected ? 'status-connected' : 'status-disconnected'}`}></div>
             <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
           
-          {/* Sync Controls */}
-          <div className="sync-controls">
-            <button 
-              className={`btn-primary ${syncStatus === 'syncing' ? 'btn-loading' : ''}`}
+          <div className="btn-group">
+            <button
+              className={`btn-group-item ${syncStatus === 'syncing' ? 'btn-group-busy' : ''}`}
               onClick={syncToBackend}
               disabled={syncStatus === 'syncing' || !excalidrawAPI}
             >
-              {syncStatus === 'syncing' && <span className="spinner"></span>}
-              {syncStatus === 'syncing' ? 'Syncing...' : 'Sync to Backend'}
+              {syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}
             </button>
-            
-            {/* Sync Status */}
-            <div className="sync-status">
-              {syncStatus === 'success' && (
-                <span className="sync-success">✅ Synced</span>
-              )}
-              {syncStatus === 'error' && (
-                <span className="sync-error">❌ Sync Failed</span>
-              )}
-              {lastSyncTime && syncStatus === 'idle' && (
-                <span className="sync-time">
-                  Last sync: {formatSyncTime(lastSyncTime)}
-                </span>
-              )}
-            </div>
+            <button
+              className="btn-group-item"
+              onClick={toggleAutoSave}
+              title={autoSave ? 'Auto-sync is on — click to turn off' : 'Auto-sync is off — click to turn on'}
+            >
+              {autoSave ? 'Auto ✓' : 'Auto ✗'}
+            </button>
           </div>
           
           <button className="btn-secondary" onClick={clearCanvas}>Clear Canvas</button>
         </div>
       </div>
+
+      {/* Tenant menu overlay */}
+      {menuOpen && (() => {
+        const q = tenantSearch.toLowerCase()
+        const filtered = q
+          ? tenantList.filter(t => t.name.toLowerCase().includes(q) || t.workspace_path.toLowerCase().includes(q))
+          : tenantList
+        return (
+          <div className="menu-overlay" onClick={() => setMenuOpen(false)}>
+            <div className="menu-panel" onClick={e => e.stopPropagation()}>
+              <div className="menu-header">Workspaces</div>
+              <div className="menu-search-wrap">
+                <input
+                  ref={searchInputRef}
+                  className="menu-search"
+                  type="text"
+                  placeholder="Search workspaces..."
+                  value={tenantSearch}
+                  onChange={e => setTenantSearch(e.target.value)}
+                />
+              </div>
+              <div className="menu-list">
+                {filtered.map(t => (
+                  <button
+                    key={t.id}
+                    className={`menu-item ${activeTenant?.id === t.id ? 'menu-item-active' : ''}`}
+                    onClick={() => switchTenant(t.id)}
+                  >
+                    <span className="menu-item-name">{t.name}</span>
+                    <span className="menu-item-path" title={t.workspace_path}>
+                      {t.workspace_path.length > 40
+                        ? '...' + t.workspace_path.slice(-37)
+                        : t.workspace_path}
+                    </span>
+                    {activeTenant?.id === t.id && <span className="menu-item-check">✓</span>}
+                  </button>
+                ))}
+                {filtered.length === 0 && <div className="menu-empty">No matching workspaces</div>}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Canvas Container */}
       <div className="canvas-container">
@@ -678,6 +957,7 @@ function App(): JSX.Element {
               viewBackgroundColor: '#ffffff'
             }
           }}
+          onChange={handleCanvasChange}
         />
       </div>
     </div>

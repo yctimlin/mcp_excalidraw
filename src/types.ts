@@ -182,7 +182,8 @@ export type WebSocketMessageType =
   | 'mermaid_convert'
   | 'canvas_cleared'
   | 'export_image_request'
-  | 'set_viewport';
+  | 'set_viewport'
+  | 'tenant_switched';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
@@ -271,6 +272,16 @@ export interface SetViewportMessage extends WebSocketMessage {
   offsetY?: number;
 }
 
+// Tenant switched message
+export interface TenantSwitchedMessage extends WebSocketMessage {
+  type: 'tenant_switched';
+  tenant: {
+    id: string;
+    name: string;
+    workspace_path: string;
+  };
+}
+
 // Snapshot types
 export interface Snapshot {
   name: string;
@@ -278,11 +289,9 @@ export interface Snapshot {
   createdAt: string;
 }
 
-// In-memory storage for Excalidraw elements
-export const elements = new Map<string, ServerElement>();
-
-// In-memory storage for snapshots
-export const snapshots = new Map<string, Snapshot>();
+// Storage is now handled by src/db.ts (SQLite).
+// The Map exports below are kept only for backward compatibility with
+// standalone server.ts usage; they are NOT used when the DB is active.
 
 // Validation function for Excalidraw elements
 export function validateElement(element: Partial<ServerElement>): element is ServerElement {

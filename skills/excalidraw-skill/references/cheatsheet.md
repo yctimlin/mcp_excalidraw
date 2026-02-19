@@ -2,10 +2,12 @@
 
 ## Defaults
 
-- Canvas base URL: `EXPRESS_SERVER_URL` (default `http://localhost:3000`)
+- Canvas base URL: configurable via `CANVAS_PORT` env var (default `3000`), resolves to `http://localhost:<CANVAS_PORT>`
 - Canvas health: `GET /health`
+- Data persistence: SQLite database at `~/.excalidraw-mcp/excalidraw.db`
+- Multi-tenancy: each Cursor workspace auto-creates a tenant (hash of workspace path)
 
-## MCP Tools (26 total)
+## MCP Tools (32 total)
 
 ### Element CRUD
 
@@ -15,9 +17,11 @@
 | `get_element` | Get single element by ID | `id` |
 | `update_element` | Update element properties | `id` |
 | `delete_element` | Delete element | `id` |
-| `query_elements` | Query by type/filters | (optional) `type`, `filter` |
-| `batch_create_elements` | Create many at once | `elements[]` |
+| `query_elements` | Query by type | (optional) `type` |
+| `batch_create_elements` | Create many at once (recommended) | `elements[]` |
 | `duplicate_elements` | Clone with offset | `elementIds[]`, (optional) `offsetX`, `offsetY` |
+| `search_elements` | Full-text search over labels/text | `query` |
+| `element_history` | View version history (create/update/delete ops) | (optional) `elementId`, `limit` (default 50) |
 
 ### Layout & Organization
 
@@ -35,8 +39,9 @@
 | Tool | Description | Required params |
 |------|-------------|-----------------|
 | `describe_scene` | AI-readable scene description (types, positions, labels, connections, bounding box) | (none) |
-| `get_canvas_screenshot` | Returns PNG image of canvas for visual verification | (optional) `background` |
+| `get_canvas_screenshot` | Returns PNG image of canvas for visual verification (may return empty — use Chrome DevTools as fallback) | (optional) `background` |
 | `get_resource` | Get scene/library/theme/elements | `resource` |
+| `read_diagram_guide` | Get design best practices (colors, sizing, layout, anti-patterns) | (none) |
 
 ### File I/O & Export
 
@@ -45,15 +50,15 @@
 | `export_scene` | Export to .excalidraw JSON | (optional) `filePath` |
 | `import_scene` | Import from .excalidraw JSON | `mode` ("replace"\|"merge"), `filePath` or `data` |
 | `export_to_image` | Export to PNG/SVG (needs browser) | `format` ("png"\|"svg"), (optional) `filePath`, `background` |
-| `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL | (none) |
+| `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL (may fail if org blocks excalidraw.com) | (none) |
 
 ### State Management
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `clear_canvas` | Remove all elements | (none) |
-| `snapshot_scene` | Save named snapshot | `name` |
-| `restore_snapshot` | Restore from snapshot | `name` |
+| `clear_canvas` | Remove all elements from active project | (none) |
+| `snapshot_scene` | Save named snapshot of current canvas state | `name` |
+| `restore_snapshot` | Restore from snapshot (may not reload into view — re-fetch if canvas appears empty) | `name` |
 
 ### Viewport & Camera
 
@@ -61,33 +66,65 @@
 |------|-------------|-----------------|
 | `set_viewport` | Control camera: zoom-to-fit, center on element, manual zoom/scroll (needs browser) | (optional) `scrollToContent`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
 
-### Design Guide
+### Multi-Tenancy (Workspaces)
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `read_diagram_guide` | Get design best practices (colors, sizing, layout, anti-patterns) | (none) |
+| `list_tenants` | List all tenants (workspaces). Each tenant maps to a Cursor workspace. | (none) |
+| `switch_tenant` | Switch active tenant. All later operations use that tenant's projects/elements. | `tenantId` |
+
+### Projects (Within a Tenant)
+
+| Tool | Description | Required params |
+|------|-------------|-----------------|
+| `list_projects` | List all diagram projects in the active tenant | (none) |
+| `switch_project` | Switch active project or create a new one | (optional) `projectId`, `createName`, `createDescription` |
 
 ### Conversion
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `create_from_mermaid` | Mermaid diagram to Excalidraw | `mermaidDiagram` |
+| `create_from_mermaid` | Mermaid diagram to Excalidraw (⚠ produces low-quality output — use `batch_create_elements` for production diagrams) | `mermaidDiagram` |
 
-Notes:
-- **MCP tools**: Set `text` field on shapes to label them (auto-converts to `label.text`). Use `startElementId`/`endElementId` on arrows.
-- **REST API**: Use `"label": {"text": "..."}` for shape labels. Use `"start": {"id": "..."}` / `"end": {"id": "..."}` for arrow binding. (Different format from MCP!)
-- `fontFamily` must be a string (e.g. `"1"`) or omit it entirely — do NOT pass a number.
-- `points` accepts both `[[x,y]]` tuples and `[{x,y}]` objects.
-- **Curved arrows**: Use `"roundness": {"type": 2}` with 3+ points for smooth curves. Use `"elbowed": true` for right-angle routing.
-- Prefer creating shapes first, then arrows, then alignment/grouping.
+## Key Notes
+
+### MCP vs REST API Format Differences
+
+| Concept | MCP Tool Format | REST API Format |
+|---------|----------------|-----------------|
+| Shape labels | `"text": "My Label"` (auto-converts) | `"label": {"text": "My Label"}` |
+| Arrow binding | `"startElementId": "id"` / `"endElementId": "id"` | `"start": {"id": "id"}` / `"end": {"id": "id"}` |
+| `fontFamily` | String `"1"` or omit | String `"1"` or omit (never a number) |
+| Tenant scoping | Auto (uses active tenant) | Include `X-Tenant-Id` header on every request |
+
+### Element Creation Best Practices
+
+- **Always set `roughness: 0`** for clean, professional diagrams (default is hand-drawn).
+- **Always set `strokeWidth: 2`** on arrows for visibility.
+- **Create shapes first, arrows second** (two separate `batch_create_elements` calls).
+- **Assign custom `id`** to every shape so arrows can reference it.
+- **Size shapes for their text** — Virgil font is ~30% wider than standard. Use sizing formulas from SKILL.md.
+- `points` accepts both `[[x,y]]` tuples and `[{x,y}]` objects — normalized automatically.
+- **Curved arrows**: Use `"roundness": {"type": 2}` with 3+ points. **Elbowed arrows**: Use `"elbowed": true`.
+
+### Multi-Tenancy Architecture
+
+- **Tenant**: Maps to a Cursor workspace. Auto-created on MCP startup from workspace path hash.
+- **Project**: Groups diagrams within a tenant. Default project created per tenant.
+- **Elements**: Belong to the active project within the active tenant.
+- **Hierarchy**: Tenant → Project → Elements
+- **Concurrent instances**: Multiple Cursor windows each send `X-Tenant-Id` header for isolation. SQLite `busy_timeout` handles concurrent writes.
+- **Frontend workspace switcher**: Dropdown in the canvas UI header labeled "Workspace: [name] ▾" with search filter.
 
 ## Canvas REST API (HTTP)
+
+All endpoints accept an optional `X-Tenant-Id` header to scope operations to a specific tenant.
 
 ### Elements
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/elements` | List all elements |
+| `GET` | `/api/elements` | List all elements in active project |
 | `GET` | `/api/elements/:id` | Get element by ID |
 | `POST` | `/api/elements` | Create element |
 | `PUT` | `/api/elements/:id` | Update element |
@@ -95,29 +132,37 @@ Notes:
 | `DELETE` | `/api/elements/clear` | Clear all elements |
 | `GET` | `/api/elements/search?type=...` | Search with filters |
 | `POST` | `/api/elements/batch` | Batch create |
-| `POST` | `/api/elements/sync` | Overwrite import (clear + write) |
+| `POST` | `/api/elements/sync` | Full sync (clear + write all elements) |
 | `POST` | `/api/elements/from-mermaid` | Mermaid conversion via frontend |
+
+### Tenants
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tenants` | List all tenants |
+| `GET` | `/api/tenant/active` | Get active tenant |
+| `PUT` | `/api/tenant/active` | Switch active tenant `{"tenantId": "..."}` (broadcasts to all WebSocket clients) |
 
 ### Export
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/export/image` | Request image export (needs frontend) |
+| `POST` | `/api/export/image` | Request image export (needs browser) |
 | `POST` | `/api/export/image/result` | Frontend posts export result back |
 
 ### Viewport
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/viewport` | Set viewport/camera (needs frontend) |
+| `POST` | `/api/viewport` | Set viewport/camera (needs browser) |
 | `POST` | `/api/viewport/result` | Frontend posts viewport result back |
 
 ### Snapshots
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/snapshots` | Save snapshot `{name}` |
-| `GET` | `/api/snapshots` | List snapshots |
+| `POST` | `/api/snapshots` | Save snapshot `{"name": "..."}` |
+| `GET` | `/api/snapshots` | List all snapshots |
 | `GET` | `/api/snapshots/:name` | Get snapshot by name |
 
 ### System
@@ -125,7 +170,7 @@ Notes:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/api/sync/status` | Memory/WebSocket stats |
+| `GET` | `/api/sync/status` | Element count and WebSocket stats |
 
 ## Skill Scripts
 
@@ -140,3 +185,11 @@ node scripts/create-element.cjs --data '{...}'
 node scripts/update-element.cjs --id <id> --data '{...}'
 node scripts/delete-element.cjs --id <id>
 ```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CANVAS_PORT` | `3000` | Port the canvas server listens on |
+| `EXPRESS_SERVER_URL` | `http://localhost:3000` | Full canvas URL (derived from CANVAS_PORT if not set) |
+| `EXCALIDRAW_EXPORT_DIR` | `process.cwd()` | Allowed base directory for file exports (path traversal protection) |

@@ -13,6 +13,7 @@
         }
         
         .header {
+            position: relative;
             background: #fff;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             padding: 10px 20px;
@@ -106,6 +107,7 @@
             width: 100%;
             position: relative;
         }
+
         
         .api-panel {
             position: fixed;
@@ -232,48 +234,181 @@
             margin-bottom: 10px;
         }
         
-        /* Sync Controls Styles */
-        .sync-controls {
+        /* Button group — joined buttons with shared style */
+        .btn-group {
+            display: inline-flex;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn-group .btn-group-item {
+            border-radius: 0;
+            border: none;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #4caf50;
+            color: #fff;
+            transition: background 0.2s;
+            border-right: 1px solid rgba(255,255,255,0.18);
+        }
+        .btn-group .btn-group-item:last-child { border-right: none; }
+        .btn-group .btn-group-item:hover:not(:disabled) { background: #43a047; }
+        .btn-group .btn-group-item:disabled { opacity: 0.55; cursor: not-allowed; }
+        .btn-group .btn-group-item.btn-group-busy { opacity: 0.7; cursor: wait; }
+
+        /* Floating toast — centered in the header */
+        .toast {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #333;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 5px 16px;
+            border-radius: 999px;
+            pointer-events: none;
+            white-space: nowrap;
+            animation: toast-in 0.25s ease, toast-out 0.4s ease 1.6s forwards;
+            z-index: 10;
+        }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+            to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes toast-out {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+
+        /* Header left group */
+        .header-left {
             display: flex;
             align-items: center;
             gap: 10px;
         }
+        .header-left h1 { margin: 0; color: #333; font-size: 24px; }
 
-        .btn-loading {
-            position: relative;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid #ffffff40;
-            border-top: 2px solid #ffffff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 5px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .sync-status {
+        /* Clickable tenant badge — opens workspace switcher */
+        .tenant-badge-btn {
             font-size: 12px;
-            min-width: 100px;
+            font-weight: 600;
+            background: #e9ecef;
+            color: #495057;
+            padding: 4px 12px;
+            border-radius: 999px;
+            white-space: nowrap;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .tenant-badge-btn:hover {
+            background: #dee2e6;
+            border-color: #ced4da;
+        }
+        .tenant-label {
+            color: #868e96;
+            font-weight: 400;
         }
 
-        .sync-success {
+        /* Menu overlay + panel */
+        .menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.15);
+            z-index: 2000;
+        }
+        .menu-panel {
+            position: absolute;
+            top: 56px;
+            left: 100px;
+            width: 320px;
+            max-height: calc(100vh - 80px);
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .menu-header {
+            padding: 14px 16px 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .menu-search-wrap {
+            padding: 8px 10px 4px;
+        }
+        .menu-search {
+            width: 100%;
+            padding: 7px 10px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.15s;
+        }
+        .menu-search:focus {
+            border-color: #4caf50;
+        }
+        .menu-list {
+            overflow-y: auto;
+            max-height: 320px;
+            padding: 6px;
+        }
+        .menu-item {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 100%;
+            padding: 10px 12px;
+            border: none;
+            background: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: left;
+            font-size: 14px;
+            position: relative;
+            transition: background 0.15s;
+        }
+        .menu-item:hover { background: #f5f5f5; }
+        .menu-item-active { background: #e8f5e9; }
+        .menu-item-active:hover { background: #c8e6c9; }
+        .menu-item-name {
+            font-weight: 600;
+            color: #333;
+        }
+        .menu-item-path {
+            font-size: 11px;
+            color: #999;
+            margin-top: 2px;
+            word-break: break-all;
+        }
+        .menu-item-check {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
             color: #4caf50;
+            font-weight: 700;
+            font-size: 16px;
         }
-
-        .sync-error {
-            color: #f44336;
-        }
-
-        .sync-time {
-            color: #666;
+        .menu-empty {
+            padding: 20px;
+            text-align: center;
+            color: #aaa;
+            font-size: 13px;
         }
     </style>
 </head>

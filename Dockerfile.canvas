@@ -77,6 +77,6 @@ EXPOSE 3000
 CMD ["node", "dist/server.js"]
 
 # Labels for metadata
-LABEL org.opencontainers.image.source="https://github.com/yctimlin/mcp_excalidraw"
-LABEL org.opencontainers.image.description="MCP Excalidraw Canvas Server - Web UI and REST API"
+LABEL org.opencontainers.image.source="https://github.com/sanjibdevnathlabs/mcp-excalidraw-local"
+LABEL org.opencontainers.image.description="MCP Excalidraw Canvas Server - Web UI and REST API (with SQLite persistence & multi-tenancy)"
 LABEL org.opencontainers.image.licenses="MIT"

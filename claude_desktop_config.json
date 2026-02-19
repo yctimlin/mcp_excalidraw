@@ -1,8 +1,11 @@
 {
   "mcpServers": {
-    "mcp_excalidraw": {
-      "command": "npx",
-      "args": ["-y", "excalidraw-mcp"]
+    "excalidraw-canvas": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-excalidraw-local/dist/index.js"],
+      "env": {
+        "CANVAS_PORT": "3000"
+      }
     }
   }
 }
