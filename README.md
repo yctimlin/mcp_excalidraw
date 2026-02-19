@@ -153,30 +153,7 @@ This fork extends [yctimlin/mcp_excalidraw](https://github.com/yctimlin/mcp_exca
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│  MCP Process (single node process)              │
-│                                                 │
-│  ┌──────────────┐     ┌──────────────────────┐  │
-│  │  MCP Server   │────▶│  Canvas Server        │  │
-│  │  (stdio)      │     │  (Express + WS)       │  │
-│  │  32 tools     │     │  http://localhost:PORT │  │
-│  └──────────────┘     └──────────┬───────────┘  │
-│                                  │               │
-│                       ┌──────────▼───────────┐  │
-│                       │  SQLite Database      │  │
-│                       │  ~/.excalidraw-mcp/   │  │
-│                       │  excalidraw.db        │  │
-│                       └──────────────────────┘  │
-└─────────────────────────────────────────────────┘
-         ▲                         ▲
-         │ stdio                   │ HTTP/WS
-    ┌────┴─────┐           ┌───────┴──────┐
-    │ Any MCP   │           │   Browser     │
-    │ Client    │           │  :3000        │
-    │           │           │  (Excalidraw) │
-    └──────────┘           └──────────────┘
-```
+![Architecture](docs/screenshots/architecture.png)
 
 - **Single process**: The MCP server embeds the canvas server. Starting the MCP starts both; stopping it stops both.
 - **SQLite**: Stored at `~/.excalidraw-mcp/excalidraw.db` by default. WAL mode + `busy_timeout` for multi-process safety.
