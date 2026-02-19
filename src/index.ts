@@ -6,7 +6,7 @@ process.env.NO_COLOR = '1';
 
 import { fileURLToPath } from "url";
 import { deflateSync } from 'zlib';
-import { webcrypto } from 'crypto';
+import { webcrypto, createHash } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { 
@@ -28,6 +28,17 @@ import {
   validateElement
 } from './types.js';
 import fetch from 'node-fetch';
+import { startCanvasServer, stopCanvasServer } from './server.js';
+import {
+  initDb, closeDb,
+  searchElements as dbSearchElements,
+  listProjects as dbListProjects, createProject as dbCreateProject,
+  setActiveProject as dbSetActiveProject, getActiveProject as dbGetActiveProject,
+  getElementHistory as dbGetElementHistory, getProjectHistory as dbGetProjectHistory,
+  ensureTenant as dbEnsureTenant, setActiveTenant as dbSetActiveTenant,
+  getActiveTenant as dbGetActiveTenant, getActiveTenantId as dbGetActiveTenantId,
+  listTenants as dbListTenants
+} from './db.js';
 
 // Load environment variables
 dotenv.config();
@@ -47,9 +58,10 @@ function sanitizeFilePath(filePath: string): string {
   return resolved;
 }
 
-// Express server configuration
-const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || 'http://localhost:3000';
-const ENABLE_CANVAS_SYNC = process.env.ENABLE_CANVAS_SYNC !== 'false'; // Default to true
+// Express server configuration — derive URL from CANVAS_PORT
+const CANVAS_PORT = process.env.CANVAS_PORT || process.env.PORT || '3000';
+const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || `http://localhost:${CANVAS_PORT}`;
+const ENABLE_CANVAS_SYNC = true;
 
 // API Response types
 interface ApiResponse {
@@ -64,6 +76,14 @@ interface ApiResponse {
 interface SyncResponse {
   element?: ServerElement;
   elements?: ServerElement[];
+}
+
+function canvasHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-Tenant-Id': dbGetActiveTenantId(),
+    ...extra
+  };
 }
 
 // Helper functions to sync with Express server (canvas)
@@ -82,7 +102,7 @@ async function syncToCanvas(operation: string, data: any): Promise<SyncResponse 
         url = `${EXPRESS_SERVER_URL}/api/elements`;
         options = {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify(data)
         };
         break;
@@ -91,21 +111,21 @@ async function syncToCanvas(operation: string, data: any): Promise<SyncResponse 
         url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
         options = {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify(data)
         };
         break;
         
       case 'delete':
         url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
-        options = { method: 'DELETE' };
+        options = { method: 'DELETE', headers: canvasHeaders() };
         break;
         
       case 'batch_create':
         url = `${EXPRESS_SERVER_URL}/api/elements/batch`;
         options = {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify({ elements: data })
         };
         break;
@@ -168,7 +188,9 @@ async function getElementFromCanvas(elementId: string): Promise<ServerElement | 
   }
 
   try {
-    const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/${elementId}`);
+    const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/${elementId}`, {
+      headers: canvasHeaders()
+    });
     if (!response.ok) {
       logger.warn(`Failed to fetch element ${elementId}: ${response.status}`);
       return null;
@@ -819,6 +841,88 @@ const tools: Tool[] = [
         }
       }
     }
+  },
+  {
+    name: 'search_elements',
+    description: 'Full-text search across element labels and text content. Returns elements matching the query.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query for FTS (matches against element labels and text)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'list_projects',
+    description: 'List all diagram projects. Projects organize diagrams into separate workspaces.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'switch_project',
+    description: 'Switch the active project or create a new one. All element operations apply to the active project.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: {
+          type: 'string',
+          description: 'ID of existing project to switch to'
+        },
+        createName: {
+          type: 'string',
+          description: 'Name for a new project (creates and switches to it)'
+        },
+        createDescription: {
+          type: 'string',
+          description: 'Optional description for the new project'
+        }
+      }
+    }
+  },
+  {
+    name: 'element_history',
+    description: 'View the version history of a specific element or the entire active project. Shows create, update, and delete operations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        elementId: {
+          type: 'string',
+          description: 'Element ID to view history for (omit for project-wide history)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of history entries to return (default: 50)'
+        }
+      }
+    }
+  },
+  {
+    name: 'list_tenants',
+    description: 'List all tenants (workspaces). Each tenant corresponds to a Cursor workspace and has isolated diagrams.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'switch_tenant',
+    description: 'Switch the active tenant (workspace). All subsequent operations will use the selected tenant\'s projects and elements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tenantId: {
+          type: 'string',
+          description: 'ID of the tenant to switch to'
+        }
+      },
+      required: ['tenantId']
+    }
   }
 ];
 
@@ -983,9 +1087,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             });
           }
           
-          // Query elements from HTTP server
           const url = `${EXPRESS_SERVER_URL}/api/elements/search?${queryParams}`;
-          const response = await fetch(url);
+          const response = await fetch(url, { headers: canvasHeaders() });
           
           if (!response.ok) {
             throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
@@ -1019,8 +1122,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           case 'library':
           case 'elements':
             try {
-              // Get elements from HTTP server
-              const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+              const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`, {
+                headers: canvasHeaders()
+              });
               if (!response.ok) {
                 throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
               }
@@ -1327,7 +1431,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           // The frontend will use mermaid-to-excalidraw to convert it
           const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/from-mermaid`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: canvasHeaders(),
             body: JSON.stringify({
               mermaidDiagram: params.mermaidDiagram,
               config: params.config
@@ -1429,7 +1533,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         logger.info('Clearing canvas via MCP');
 
         const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: canvasHeaders()
         });
 
         if (!response.ok) {
@@ -1453,7 +1558,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         logger.info('Exporting scene via MCP');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`, {
+          headers: canvasHeaders()
+        });
         if (!response.ok) {
           throw new Error(`Failed to fetch elements: ${response.status} ${response.statusText}`);
         }
@@ -1522,9 +1629,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           throw new Error('No elements found in the import data');
         }
 
-        // If replace mode, clear first
         if (params.mode === 'replace') {
-          await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE' });
+          await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE', headers: canvasHeaders() });
         }
 
         // Batch create the imported elements
@@ -1557,7 +1663,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const response = await fetch(`${EXPRESS_SERVER_URL}/api/export/image`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify({
             format: params.format,
             background: params.background ?? true
@@ -1649,7 +1755,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify({ name: params.name })
         });
 
@@ -1671,16 +1777,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const params = z.object({ name: z.string() }).parse(args);
         logger.info('Restoring snapshot via MCP', { name: params.name });
 
-        // Fetch the snapshot
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots/${encodeURIComponent(params.name)}`);
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots/${encodeURIComponent(params.name)}`, {
+          headers: canvasHeaders()
+        });
         if (!response.ok) {
           throw new Error(`Snapshot "${params.name}" not found`);
         }
 
         const data = await response.json() as { success: boolean; snapshot: { name: string; elements: ServerElement[]; createdAt: string } };
 
-        // Clear current canvas
-        await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE' });
+        await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE', headers: canvasHeaders() });
 
         // Restore elements
         const canvasElements = await batchCreateElementsOnCanvas(data.snapshot.elements);
@@ -1696,7 +1802,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'describe_scene': {
         logger.info('Describing scene via MCP');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`, {
+          headers: canvasHeaders()
+        });
         if (!response.ok) {
           throw new Error(`Failed to fetch elements: ${response.status}`);
         }
@@ -1813,7 +1921,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const response = await fetch(`${EXPRESS_SERVER_URL}/api/export/image`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify({
             format: 'png',
             background: params.background ?? true
@@ -1851,8 +1959,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'export_to_excalidraw_url': {
         logger.info('Exporting to excalidraw.com URL');
 
-        // 1. Fetch current scene elements
-        const urlExportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+        const urlExportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/elements`, {
+          headers: canvasHeaders()
+        });
         if (!urlExportResponse.ok) {
           throw new Error(`Failed to fetch elements: ${urlExportResponse.status}`);
         }
@@ -2151,7 +2260,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const viewportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/viewport`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: canvasHeaders(),
           body: JSON.stringify(viewportParams)
         });
 
@@ -2166,6 +2275,135 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           content: [{
             type: 'text',
             text: `Viewport updated successfully.\n\n${JSON.stringify(viewportResult, null, 2)}`
+          }]
+        };
+      }
+
+      case 'search_elements': {
+        const params = z.object({ query: z.string() }).parse(args);
+        logger.info('Searching elements via MCP', { query: params.query });
+
+        const results = dbSearchElements(params.query);
+        return {
+          content: [{
+            type: 'text',
+            text: results.length > 0
+              ? `Found ${results.length} matching elements:\n\n${JSON.stringify(results, null, 2)}`
+              : `No elements found matching "${params.query}"`
+          }]
+        };
+      }
+
+      case 'list_projects': {
+        logger.info('Listing projects via MCP');
+        const projects = dbListProjects();
+        const active = dbGetActiveProject();
+        return {
+          content: [{
+            type: 'text',
+            text: `Active project: ${active.name} (${active.id})\n\nAll projects:\n${JSON.stringify(projects, null, 2)}`
+          }]
+        };
+      }
+
+      case 'switch_project': {
+        const params = z.object({
+          projectId: z.string().optional(),
+          createName: z.string().optional(),
+          createDescription: z.string().optional()
+        }).parse(args || {});
+
+        if (params.createName) {
+          const newProject = dbCreateProject(params.createName, params.createDescription);
+          dbSetActiveProject(newProject.id);
+          logger.info('Created and switched to new project', { project: newProject });
+          return {
+            content: [{
+              type: 'text',
+              text: `Created new project "${newProject.name}" and switched to it.\n\n${JSON.stringify(newProject, null, 2)}`
+            }]
+          };
+        }
+
+        if (params.projectId) {
+          dbSetActiveProject(params.projectId);
+          const active = dbGetActiveProject();
+          logger.info('Switched project', { project: active });
+          return {
+            content: [{
+              type: 'text',
+              text: `Switched to project "${active.name}" (${active.id})`
+            }]
+          };
+        }
+
+        throw new Error('Provide either projectId to switch to or createName to create a new project');
+      }
+
+      case 'element_history': {
+        const params = z.object({
+          elementId: z.string().optional(),
+          limit: z.number().optional()
+        }).parse(args || {});
+
+        const limit = params.limit ?? 50;
+
+        if (params.elementId) {
+          const history = dbGetElementHistory(params.elementId, limit);
+          return {
+            content: [{
+              type: 'text',
+              text: history.length > 0
+                ? `Version history for element ${params.elementId} (${history.length} entries):\n\n${JSON.stringify(history, null, 2)}`
+                : `No history found for element ${params.elementId}`
+            }]
+          };
+        }
+
+        const history = dbGetProjectHistory(limit);
+        const active = dbGetActiveProject();
+        return {
+          content: [{
+            type: 'text',
+            text: history.length > 0
+              ? `Project history for "${active.name}" (${history.length} entries):\n\n${JSON.stringify(history, null, 2)}`
+              : `No history in project "${active.name}"`
+          }]
+        };
+      }
+
+      case 'list_tenants': {
+        logger.info('Listing tenants via MCP');
+        const tenants = dbListTenants();
+        const activeTenant = dbGetActiveTenant();
+        return {
+          content: [{
+            type: 'text',
+            text: `Active tenant: ${activeTenant.name} (${activeTenant.id})\nWorkspace: ${activeTenant.workspace_path}\n\nAll tenants:\n${JSON.stringify(tenants, null, 2)}`
+          }]
+        };
+      }
+
+      case 'switch_tenant': {
+        const params = z.object({ tenantId: z.string() }).parse(args);
+        logger.info('Switching tenant via MCP', { tenantId: params.tenantId });
+
+        dbSetActiveTenant(params.tenantId);
+        const tenant = dbGetActiveTenant();
+        const activeProject = dbGetActiveProject();
+
+        try {
+          await fetch(`${EXPRESS_SERVER_URL}/api/tenant/active`, {
+            method: 'PUT',
+            headers: canvasHeaders(),
+            body: JSON.stringify({ tenantId: params.tenantId })
+          });
+        } catch {}
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Switched to tenant "${tenant.name}" (${tenant.id})\nWorkspace: ${tenant.workspace_path}\nActive project: ${activeProject.name} (${activeProject.id})`
           }]
         };
       }
@@ -2193,11 +2431,73 @@ async function runServer(): Promise<void> {
   try {
     logger.info('Starting Excalidraw MCP server...');
 
+    // Initialize SQLite before anything else
+    initDb();
+
+    // Bootstrap tenant from process.cwd() (may be home dir for global MCPs)
+    let workspacePath = process.cwd();
+
+    function applyTenant(wp: string) {
+      const tid = createHash('sha256').update(wp).digest('hex').slice(0, 12);
+      const tname = path.basename(wp);
+      dbEnsureTenant(tid, tname, wp);
+      dbSetActiveTenant(tid);
+      logger.info(`Tenant initialized: "${tname}" (${tid}) from ${wp}`);
+      return { tenantId: tid, tenantName: tname };
+    }
+
+    applyTenant(workspacePath);
+
+    try {
+      await startCanvasServer();
+      logger.info('Canvas server started — lifecycle managed by MCP process');
+    } catch (canvasError) {
+      logger.warn('Canvas server failed to start:', (canvasError as Error).message);
+      logger.warn('MCP tools will work without real-time canvas sync');
+    }
+
     const transport = new StdioServerTransport();
     logger.debug('Connecting to stdio transport...');
 
     await server.connect(transport);
     logger.info('Excalidraw MCP server running on stdio');
+
+    // After connecting, ask the client for the real workspace roots.
+    // Global MCPs often get cwd=HOME; roots gives us the actual workspace.
+    try {
+      const { roots } = await server.listRoots(undefined, { timeout: 5_000 });
+      if (roots && roots.length > 0) {
+        const rootUri = roots[0]!.uri;
+        const rootPath = rootUri.startsWith('file://') ? decodeURIComponent(rootUri.slice(7)) : rootUri;
+        if (rootPath && rootPath !== workspacePath) {
+          logger.info(`Client reported workspace root: ${rootPath} (was ${workspacePath})`);
+          workspacePath = rootPath;
+          const { tenantId: newTid } = applyTenant(workspacePath);
+
+          try {
+            await fetch(`${EXPRESS_SERVER_URL}/api/tenant/active`, {
+              method: 'PUT',
+              headers: canvasHeaders(),
+              body: JSON.stringify({ tenantId: newTid })
+            });
+          } catch {}
+        }
+      }
+    } catch (rootsErr) {
+      logger.debug('Could not retrieve roots from client (not supported or timed out):', (rootsErr as Error).message);
+    }
+
+    async function shutdown() {
+      logger.info('MCP transport closed — shutting down');
+      try { await stopCanvasServer(); } catch {}
+      try { closeDb(); } catch {}
+      process.exit(0);
+    }
+
+    server.onclose = shutdown;
+    process.stdin.on('close', shutdown);
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 
     process.stdin.resume();
   } catch (error) {

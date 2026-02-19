@@ -15,7 +15,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.canvas
-    image: mcp-excalidraw-canvas:latest
+    image: sanjibdevnath/mcp-excalidraw-local-canvas:latest
     container_name: mcp-excalidraw-canvas
     ports:
       - "3000:3000"
@@ -40,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mcp-excalidraw:latest
+    image: sanjibdevnath/mcp-excalidraw-local:latest
     container_name: mcp-excalidraw-mcp
     stdin_open: true
     tty: true

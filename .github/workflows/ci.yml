@@ -70,3 +70,27 @@ jobs:
 
       - name: Check for TypeScript errors
         run: npm run type-check
+
+  ci-status:
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    name: CI Status Check
+    needs: [build-and-test, lint-check]
+    if: always()
+    permissions:
+      statuses: write
+    steps:
+      - name: Failed
+        id: failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          curl -X POST -H "Content-Type: application/json" -H "Authorization: token ${{ github.token }}" \
+          -d '{ "state" : "failure" , "context" : "github/ci-status-check" , "description" : "CI checks failed", "target_url" : "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" }' \
+          https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}
+          exit 1
+      - name: Success
+        if: steps.failed.conclusion == 'skipped'
+        run: |
+          curl -X POST -H "Content-Type: application/json" -H "Authorization: token ${{ github.token }}" \
+          -d '{ "state" : "success" , "context" : "github/ci-status-check" , "description" : "CI checks passed", "target_url" : "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" }' \
+          https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}

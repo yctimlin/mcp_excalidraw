@@ -53,7 +53,7 @@ jobs:
       - name: Check if version exists on NPM
         id: check-version
         run: |
-          if npm view mcp-excalidraw-server@${{ steps.package-version.outputs.version }} version 2>/dev/null; then
+          if npm view @sanjibdevnath/mcp-excalidraw-local@${{ steps.package-version.outputs.version }} version 2>/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Version ${{ steps.package-version.outputs.version }} already exists on NPM"
           else
@@ -82,14 +82,14 @@ jobs:
       - name: Create GitHub Release Assets
         if: github.event_name == 'release'
         run: |
-          tar -czf mcp-excalidraw-server-${{ steps.package-version.outputs.version }}.tar.gz dist/
+          tar -czf mcp-excalidraw-local-${{ steps.package-version.outputs.version }}.tar.gz dist/
 
       - name: Upload Release Assets
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            mcp-excalidraw-server-${{ steps.package-version.outputs.version }}.tar.gz
+            mcp-excalidraw-local-${{ steps.package-version.outputs.version }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -103,4 +103,4 @@ jobs:
       - name: Success notification
         run: |
           echo "✅ Package successfully published to NPM!"
-          echo "View at: https://www.npmjs.com/package/mcp-excalidraw-server"
+          echo "View at: https://www.npmjs.com/package/@sanjibdevnath/mcp-excalidraw-local"

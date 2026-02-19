@@ -1,82 +1,62 @@
 # Dockerfile for Canvas Server (Optional)
-# This is for users who want to run the visual canvas UI
-# The canvas server provides the web interface and REST API
+# Provides the web interface, REST API, and SQLite persistence
 
 # Stage 1: Build frontend
 FROM node:18-slim AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 
-# Install all dependencies (including dev dependencies for build)
-RUN npm ci && npm cache clean --force
-
-# Copy frontend source
 COPY frontend ./frontend
 COPY vite.config.js ./
-
-# Build frontend
 RUN npm run build:frontend
 
-# Stage 2: Build backend (TypeScript compilation)
+# Stage 2: Build backend (TypeScript compilation + native modules)
 FROM node:18-slim AS backend-builder
+
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
 
-# Install all dependencies (including TypeScript compiler)
-RUN npm ci && npm cache clean --force
-
-# Copy backend source
 COPY src ./src
 COPY tsconfig.json ./
-
-# Compile TypeScript
 RUN npm run build:server
 
 # Stage 3: Production Canvas Server
 FROM node:18-slim AS production
 
-# Create non-root user for security
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --gid 1001 nodejs
 
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Remove build tools after native modules are compiled
+RUN apt-get purge -y python3 make g++ && apt-get autoremove -y
 
-# Copy compiled backend from builder stage
 COPY --from=backend-builder /app/dist ./dist
-
-# Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
 
-# Set ownership to nodejs user
 RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
 USER nodejs
 
-# Set environment variables with defaults
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# Expose port
 EXPOSE 3000
 
-# Run canvas server (web UI + REST API)
 CMD ["node", "dist/server.js"]
 
-# Labels for metadata
-LABEL org.opencontainers.image.source="https://github.com/yctimlin/mcp_excalidraw"
-LABEL org.opencontainers.image.description="MCP Excalidraw Canvas Server - Web UI and REST API"
+LABEL org.opencontainers.image.source="https://github.com/sanjibdevnathlabs/mcp-excalidraw-local"
+LABEL org.opencontainers.image.description="MCP Excalidraw Canvas Server - Web UI and REST API (with SQLite persistence & multi-tenancy)"
 LABEL org.opencontainers.image.licenses="MIT"
