@@ -138,10 +138,13 @@ function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
-  
+
   // Sync state management
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+
+  // Auto-sync debouncing
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // WebSocket connection
   useEffect(() => {
@@ -595,29 +598,50 @@ function App(): JSX.Element {
     }
   }
 
+  // Auto-sync with debouncing to avoid excessive API calls
+  const debouncedAutoSync = async (): Promise<void> => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current)
+    }
+
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        await syncToBackend()
+      } catch (error) {
+        console.error('Auto-sync failed:', error)
+      }
+    }, 1000) // Wait 1 second after last change before syncing
+  }
+
+  // Handle canvas changes
+  const handleCanvasChange = (elements: readonly ExcalidrawElement[]) => {
+    // Trigger auto-sync after debounce delay
+    debouncedAutoSync()
+  }
+
   const clearCanvas = async (): Promise<void> => {
     if (excalidrawAPI) {
       try {
         // Get all current elements and delete them from backend
         const response = await fetch('/api/elements')
         const result: ApiResponse = await response.json()
-        
+
         if (result.success && result.elements) {
-          const deletePromises = result.elements.map(element => 
+          const deletePromises = result.elements.map(element =>
             fetch(`/api/elements/${element.id}`, { method: 'DELETE' })
           )
           await Promise.all(deletePromises)
         }
-        
+
         // Clear the frontend canvas
-        excalidrawAPI.updateScene({ 
+        excalidrawAPI.updateScene({
           elements: [],
           captureUpdate: CaptureUpdateAction.IMMEDIATELY
         })
       } catch (error) {
         console.error('Error clearing canvas:', error)
         // Still clear frontend even if backend fails
-        excalidrawAPI.updateScene({ 
+        excalidrawAPI.updateScene({
           elements: [],
           captureUpdate: CaptureUpdateAction.IMMEDIATELY
         })
@@ -671,6 +695,7 @@ function App(): JSX.Element {
       <div className="canvas-container">
         <Excalidraw
           excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
+          onChange={handleCanvasChange}
           initialData={{
             elements: [],
             appState: {
