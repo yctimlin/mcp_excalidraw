@@ -9,8 +9,8 @@ import { deflateSync } from 'zlib';
 import { webcrypto } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { 
-  CallToolRequestSchema, 
+import {
+  CallToolRequestSchema,
   ListToolsRequestSchema,
   CallToolRequest,
   Tool
@@ -28,6 +28,7 @@ import {
   validateElement
 } from './types.js';
 import fetch from 'node-fetch';
+import { redisMemory } from './services/RedisMemoryService.js';
 
 // Load environment variables
 dotenv.config();
@@ -1694,19 +1695,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       }
 
       case 'describe_scene': {
-        logger.info('Describing scene via MCP');
+        logger.info('Describing scene via MCP with Redis memory context');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch elements: ${response.status}`);
+        // Try to get state from Redis first, fall back to HTTP API
+        let allElements: ServerElement[] = [];
+        let memoryContext = '';
+
+        try {
+          const diagramState = await redisMemory.getDiagramState();
+          if (diagramState) {
+            allElements = diagramState.elements;
+            const recentChanges = await redisMemory.getRecentChanges(5);
+            const memoryStats = await redisMemory.getMemoryStats();
+
+            memoryContext = `\n### Memory Context\n`;
+            memoryContext += `Last updated: ${diagramState.lastUpdated}\n`;
+            memoryContext += `Memory stats: ${memoryStats.changeCount} total changes tracked\n`;
+
+            if (recentChanges.length > 0) {
+              memoryContext += `\n#### Recent Changes:\n`;
+              for (const change of recentChanges) {
+                const timeAgo = new Date(Date.now() - new Date(change.timestamp).getTime()).getMinutes();
+                let changeDesc = `  ${change.type}`;
+                if (change.elementId) changeDesc += ` element ${change.elementId}`;
+                if (change.elementIds) changeDesc += ` ${change.elementIds.length} elements`;
+                if (change.changeCount) changeDesc += ` (${change.changeCount} total)`;
+                changeDesc += ` (${timeAgo}m ago)`;
+                memoryContext += changeDesc + '\n';
+              }
+            }
+          } else {
+            logger.warn('No Redis state found, falling back to HTTP API');
+            const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch elements: ${response.status}`);
+            }
+            const data = await response.json() as ApiResponse;
+            allElements = data.elements || [];
+            memoryContext = '\n### Memory Context\n(Redis not available - using live HTTP data)\n';
+          }
+        } catch (error) {
+          logger.warn('Redis query failed, falling back to HTTP API:', error);
+          const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch elements: ${response.status}`);
+          }
+          const data = await response.json() as ApiResponse;
+          allElements = data.elements || [];
+          memoryContext = '\n### Memory Context\n(Redis error - using live HTTP data)\n';
         }
-
-        const data = await response.json() as ApiResponse;
-        const allElements = data.elements || [];
 
         if (allElements.length === 0) {
           return {
-            content: [{ type: 'text', text: 'The canvas is empty. No elements to describe.' }]
+            content: [{ type: 'text', text: 'The canvas is empty. No elements to describe.' + memoryContext }]
           };
         }
 
@@ -1798,6 +1839,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             lines.push(`  Group ${gid}: [${ids.join(', ')}]`);
           }
         }
+
+        // Add memory context
+        lines.push(memoryContext);
 
         return {
           content: [{ type: 'text', text: lines.join('\n') }]
@@ -2230,6 +2274,27 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
   runServer().catch(error => {
     logger.error('Failed to start server:', error);
     process.exit(1);
+  });
+
+  // Graceful shutdown handling
+  process.on('SIGINT', async () => {
+    logger.info('Received SIGINT, disconnecting from Redis');
+    try {
+      await redisMemory.disconnect();
+    } catch (error) {
+      logger.error('Error disconnecting from Redis:', error);
+    }
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', async () => {
+    logger.info('Received SIGTERM, disconnecting from Redis');
+    try {
+      await redisMemory.disconnect();
+    } catch (error) {
+      logger.error('Error disconnecting from Redis:', error);
+    }
+    process.exit(0);
   });
 }
 

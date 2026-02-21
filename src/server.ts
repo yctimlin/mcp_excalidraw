@@ -24,6 +24,8 @@ import {
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
+import { redisMemory } from './services/RedisMemoryService.js';
+import { pollingService } from './services/PollingService.js';
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +49,39 @@ app.use(express.static(path.join(__dirname, '../dist/frontend')));
 
 // WebSocket connections
 const clients = new Set<WebSocket>();
+
+// Initialize Redis connection and polling service
+async function initializeServices(): Promise<void> {
+  try {
+    // Initialize Redis
+    await redisMemory.connect();
+    const currentElements = Array.from(elements.values());
+    if (currentElements.length > 0) {
+      await redisMemory.storeDiagramState(currentElements);
+      logger.info(`Initialized Redis with ${currentElements.length} existing elements`);
+    }
+
+    // Start polling service for change detection
+    await pollingService.start();
+    logger.info('Polling service started for change detection');
+
+  } catch (error) {
+    logger.error('Failed to initialize services:', error);
+  }
+}
+
+// Cleanup function for graceful shutdown
+async function cleanup(): Promise<void> {
+  logger.info('Shutting down services...');
+
+  try {
+    await pollingService.stop();
+    await redisMemory.disconnect();
+    logger.info('Services shut down successfully');
+  } catch (error) {
+    logger.error('Error during cleanup:', error);
+  }
+}
 
 // Broadcast to all connected clients
 function broadcast(message: WebSocketMessage): void {
@@ -177,7 +212,7 @@ app.get('/api/elements', (req: Request, res: Response) => {
 });
 
 // Create new element
-app.post('/api/elements', (req: Request, res: Response) => {
+app.post('/api/elements', async (req: Request, res: Response) => {
   try {
     const params = CreateElementSchema.parse(req.body);
     logger.info('Creating element via API', { type: params.type });
@@ -193,14 +228,24 @@ app.post('/api/elements', (req: Request, res: Response) => {
     };
 
     elements.set(id, element);
-    
+
+    // Update Redis memory
+    const allElements = Array.from(elements.values());
+    await redisMemory.storeDiagramState(allElements);
+    await redisMemory.logChange({
+      type: 'created',
+      timestamp: new Date().toISOString(),
+      elementId: id,
+      element: element
+    });
+
     // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
       type: 'element_created',
       element: element
     };
     broadcast(message);
-    
+
     res.json({
       success: true,
       element: element
@@ -215,18 +260,18 @@ app.post('/api/elements', (req: Request, res: Response) => {
 });
 
 // Update element
-app.put('/api/elements/:id', (req: Request, res: Response) => {
+app.put('/api/elements/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = UpdateElementSchema.parse({ id, ...req.body });
-    
+
     if (!id) {
       return res.status(400).json({
         success: false,
         error: 'Element ID is required'
       });
     }
-    
+
     const existingElement = elements.get(id);
     if (!existingElement) {
       return res.status(404).json({
@@ -243,14 +288,24 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     };
 
     elements.set(id, updatedElement);
-    
+
+    // Update Redis memory
+    const allElements = Array.from(elements.values());
+    await redisMemory.storeDiagramState(allElements);
+    await redisMemory.logChange({
+      type: 'updated',
+      timestamp: new Date().toISOString(),
+      elementId: id,
+      element: updatedElement
+    });
+
     // Broadcast to all connected clients
     const message: ElementUpdatedMessage = {
       type: 'element_updated',
       element: updatedElement
     };
     broadcast(message);
-    
+
     res.json({
       success: true,
       element: updatedElement
@@ -265,10 +320,18 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
 });
 
 // Clear all elements (must be before /:id route)
-app.delete('/api/elements/clear', (req: Request, res: Response) => {
+app.delete('/api/elements/clear', async (req: Request, res: Response) => {
   try {
     const count = elements.size;
     elements.clear();
+
+    // Update Redis memory
+    await redisMemory.storeDiagramState([]);
+    await redisMemory.logChange({
+      type: 'cleared',
+      timestamp: new Date().toISOString(),
+      changeCount: count
+    });
 
     broadcast({
       type: 'canvas_cleared',
@@ -292,33 +355,42 @@ app.delete('/api/elements/clear', (req: Request, res: Response) => {
 });
 
 // Delete element
-app.delete('/api/elements/:id', (req: Request, res: Response) => {
+app.delete('/api/elements/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    
+
     if (!id) {
       return res.status(400).json({
         success: false,
         error: 'Element ID is required'
       });
     }
-    
+
     if (!elements.has(id)) {
       return res.status(404).json({
         success: false,
         error: `Element with ID ${id} not found`
       });
     }
-    
+
     elements.delete(id);
-    
+
+    // Update Redis memory
+    const allElements = Array.from(elements.values());
+    await redisMemory.storeDiagramState(allElements);
+    await redisMemory.logChange({
+      type: 'deleted',
+      timestamp: new Date().toISOString(),
+      elementId: id!
+    });
+
     // Broadcast to all connected clients
     const message: ElementDeletedMessage = {
       type: 'element_deleted',
       elementId: id!
     };
     broadcast(message);
-    
+
     res.json({
       success: true,
       message: `Element ${id} deleted successfully`
@@ -533,7 +605,7 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
 }
 
 // Batch create elements
-app.post('/api/elements/batch', (req: Request, res: Response) => {
+app.post('/api/elements/batch', async (req: Request, res: Response) => {
   try {
     const { elements: elementsToCreate } = req.body;
 
@@ -566,6 +638,16 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
 
     // Store all elements after binding resolution
     createdElements.forEach(el => elements.set(el.id, el));
+
+    // Update Redis memory
+    const allElements = Array.from(elements.values());
+    await redisMemory.storeDiagramState(allElements);
+    await redisMemory.logChange({
+      type: 'batch_created',
+      timestamp: new Date().toISOString(),
+      elementIds: createdElements.map(el => el.id),
+      elements: createdElements
+    });
 
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
@@ -1049,9 +1131,25 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || 'localhost';
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   logger.info(`POC server running on http://${HOST}:${PORT}`);
   logger.info(`WebSocket server running on ws://${HOST}:${PORT}`);
+
+  // Initialize services
+  await initializeServices();
+});
+
+// Graceful shutdown handling
+process.on('SIGINT', async () => {
+  logger.info('Received SIGINT, shutting down gracefully');
+  await cleanup();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  logger.info('Received SIGTERM, shutting down gracefully');
+  await cleanup();
+  process.exit(0);
 });
 
 export default app;
