@@ -78,8 +78,70 @@ export class RedisMemoryService {
     return this.isConnected;
   }
 
-  // Store current diagram state
-  async storeDiagramState(elements: ServerElement[]): Promise<void> {
+  // Store individual element
+  async storeElement(element: ServerElement): Promise<void> {
+    if (!await this.ensureConnected()) {
+      logger.warn('Redis not connected, skipping element storage');
+      return;
+    }
+
+    try {
+      await this.client.set(`diagram:element:${element.id}`, JSON.stringify(element));
+      logger.debug(`Stored element: ${element.id}`);
+    } catch (error) {
+      logger.error('Error storing element:', error);
+    }
+  }
+
+  // Store multiple elements efficiently
+  async storeElements(elements: ServerElement[]): Promise<void> {
+    if (!await this.ensureConnected() || elements.length === 0) {
+      return;
+    }
+
+    try {
+      const pipeline = this.client.multi();
+      elements.forEach(element => {
+        pipeline.set(`diagram:element:${element.id}`, JSON.stringify(element));
+      });
+      await pipeline.exec();
+      logger.debug(`Stored ${elements.length} elements`);
+    } catch (error) {
+      logger.error('Error storing elements:', error);
+    }
+  }
+
+  // Remove element
+  async removeElement(elementId: string): Promise<void> {
+    if (!await this.ensureConnected()) {
+      return;
+    }
+
+    try {
+      await this.client.del(`diagram:element:${elementId}`);
+      logger.debug(`Removed element: ${elementId}`);
+    } catch (error) {
+      logger.error('Error removing element:', error);
+    }
+  }
+
+  // Remove multiple elements efficiently
+  async removeElements(elementIds: string[]): Promise<void> {
+    if (!await this.ensureConnected() || elementIds.length === 0) {
+      return;
+    }
+
+    try {
+      const keys = elementIds.map(id => `diagram:element:${id}`);
+      await this.client.del(keys);
+      logger.debug(`Removed ${elementIds.length} elements`);
+    } catch (error) {
+      logger.error('Error removing elements:', error);
+    }
+  }
+
+  // Store current diagram state (optimized - only updates changed elements)
+  async storeDiagramState(elements: ServerElement[], forceFullUpdate: boolean = false): Promise<void> {
     if (!await this.ensureConnected()) {
       logger.warn('Redis not connected, skipping state storage');
       return;
@@ -94,23 +156,23 @@ export class RedisMemoryService {
 
       await this.client.set('diagram:current', JSON.stringify(state));
 
-      // Also store individual elements for quick lookups
-      const pipeline = this.client.multi();
-
-      // Clear existing element keys first
-      const existingKeys = await this.client.keys('diagram:element:*');
-      if (existingKeys.length > 0) {
-        pipeline.del(existingKeys);
+      if (forceFullUpdate) {
+        // Full refresh - clear all and recreate (original behavior)
+        const pipeline = this.client.multi();
+        const existingKeys = await this.client.keys('diagram:element:*');
+        if (existingKeys.length > 0) {
+          pipeline.del(existingKeys);
+        }
+        elements.forEach(element => {
+          pipeline.set(`diagram:element:${element.id}`, JSON.stringify(element));
+        });
+        await pipeline.exec();
+        logger.debug(`Full update: stored diagram state with ${elements.length} elements`);
+      } else {
+        // Incremental update - only store new/changed elements
+        await this.storeElements(elements);
+        logger.debug(`Incremental update: stored diagram state with ${elements.length} elements`);
       }
-
-      // Store new elements
-      elements.forEach(element => {
-        pipeline.set(`diagram:element:${element.id}`, JSON.stringify(element));
-      });
-
-      await pipeline.exec();
-
-      logger.debug(`Stored diagram state with ${elements.length} elements`);
     } catch (error) {
       logger.error('Error storing diagram state:', error);
     }

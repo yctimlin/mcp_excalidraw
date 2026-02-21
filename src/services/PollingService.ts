@@ -147,17 +147,38 @@ export class PollingService {
         }
       }
 
-      // Log changes and update Redis
+      // Log changes and update Redis incrementally
       if (changes.length > 0) {
         logger.info(`Detected ${changes.length} changes via polling`);
 
-        // Log each change to Redis
+        // Process changes efficiently
+        const elementsToStore: ServerElement[] = [];
+        const elementsToDelete: string[] = [];
+
         for (const change of changes) {
+          // Log each change to Redis
           await redisMemory.logChange(change);
+
+          // Collect elements for batch operations
+          if (change.type === 'created' || change.type === 'updated') {
+            if (change.element) {
+              elementsToStore.push(change.element);
+            }
+          } else if (change.type === 'deleted' && change.elementId) {
+            elementsToDelete.push(change.elementId);
+          }
         }
 
-        // Update stored diagram state
-        await redisMemory.storeDiagramState(currentElements);
+        // Batch update Redis efficiently
+        if (elementsToStore.length > 0) {
+          await redisMemory.storeElements(elementsToStore);
+        }
+        if (elementsToDelete.length > 0) {
+          await redisMemory.removeElements(elementsToDelete);
+        }
+
+        // Update diagram state metadata (without forcing full element refresh)
+        await redisMemory.storeDiagramState(currentElements, false);
 
         // Update last known state
         this.lastKnownState = currentState;
