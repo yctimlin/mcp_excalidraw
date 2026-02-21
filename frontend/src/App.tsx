@@ -146,6 +146,10 @@ function App(): JSX.Element {
   // Auto-sync debouncing
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Double-space clear functionality
+  const lastSpacePressRef = useRef<number>(0)
+  const DOUBLE_SPACE_DELAY = 300 // milliseconds
+
   // WebSocket connection
   useEffect(() => {
     connectWebSocket()
@@ -160,13 +164,47 @@ function App(): JSX.Element {
   useEffect(() => {
     if (excalidrawAPI) {
       loadExistingElements()
-      
+
       // Ensure WebSocket is connected for real-time updates
       if (!isConnected) {
         connectWebSocket()
       }
     }
   }, [excalidrawAPI, isConnected])
+
+  // Keyboard event handler for double-space clear
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger if space is pressed and not in a text input
+      if (event.code === 'Space' &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.shiftKey &&
+          !(event.target as HTMLElement).matches('input, textarea, [contenteditable]')) {
+
+        const now = Date.now()
+        const timeSinceLastSpace = now - lastSpacePressRef.current
+
+        if (timeSinceLastSpace < DOUBLE_SPACE_DELAY) {
+          // Double space detected - clear canvas
+          event.preventDefault()
+          console.log('Double space detected - clearing canvas')
+          clearCanvas()
+        }
+
+        lastSpacePressRef.current = now
+      }
+    }
+
+    // Add event listener
+    document.addEventListener('keydown', handleKeyDown)
+
+    // Cleanup on unmount
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [excalidrawAPI]) // Re-add listener when excalidrawAPI changes
 
   const loadExistingElements = async (): Promise<void> => {
     try {
