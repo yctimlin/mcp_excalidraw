@@ -136,6 +136,11 @@ const validateAndFixBindings = (elements: Partial<ExcalidrawElement>[]): Partial
 
 function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
+  // Ref so WS message handlers (captured in stale closures) always see the latest API instance
+  const excalidrawAPIRef = useRef<ExcalidrawAPIRefValue | null>(null)
+  useEffect(() => {
+    excalidrawAPIRef.current = excalidrawAPI
+  }, [excalidrawAPI])
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
   
@@ -223,6 +228,7 @@ function App(): JSX.Element {
   }
 
   const handleWebSocketMessage = async (data: WebSocketMessage): Promise<void> => {
+    const excalidrawAPI = excalidrawAPIRef.current
     if (!excalidrawAPI) {
       return
     }

@@ -63,7 +63,7 @@ function broadcast(message: WebSocketMessage): void {
 wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
   logger.info('New WebSocket connection established');
-  
+
   // Send current elements to new client
   const initialMessage: InitialElementsMessage = {
     type: 'initial_elements',
