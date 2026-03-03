@@ -8,11 +8,13 @@ import dotenv from 'dotenv';
 import logger from './utils/logger.js';
 import {
   elements,
+  files,
   snapshots,
   generateId,
   EXCALIDRAW_ELEMENT_TYPES,
   ServerElement,
   ExcalidrawElementType,
+  ExcalidrawFile,
   WebSocketMessage,
   ElementCreatedMessage,
   ElementUpdatedMessage,
@@ -65,9 +67,12 @@ wss.on('connection', (ws: WebSocket) => {
   logger.info('New WebSocket connection established');
   
   // Send current elements to new client
-  const initialMessage: InitialElementsMessage = {
+  const filesObj: Record<string, ExcalidrawFile> = {};
+  files.forEach((f, id) => { filesObj[id] = f; });
+  const initialMessage: InitialElementsMessage & { files?: Record<string, ExcalidrawFile> } = {
     type: 'initial_elements',
-    elements: Array.from(elements.values())
+    elements: Array.from(elements.values()),
+    ...(files.size > 0 ? { files: filesObj } : {})
   };
   ws.send(JSON.stringify(initialMessage));
   
@@ -121,6 +126,10 @@ const CreateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Image-specific properties
+  fileId: z.string().optional(),
+  status: z.string().optional(),
+  scale: z.tuple([z.number(), z.number()]).optional(),
 });
 
 const UpdateElementSchema = z.object({
@@ -155,6 +164,10 @@ const UpdateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Image-specific properties
+  fileId: z.string().optional(),
+  status: z.string().optional(),
+  scale: z.tuple([z.number(), z.number()]).optional(),
 });
 
 // API Routes
@@ -715,6 +728,35 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       details: 'Internal server error during sync operation'
     });
   }
+});
+
+// ─── Files API (for image elements) ───────────────────────────
+// GET all files
+app.get('/api/files', (_req: Request, res: Response) => {
+  const filesObj: Record<string, ExcalidrawFile> = {};
+  files.forEach((f, id) => { filesObj[id] = f; });
+  res.json({ files: filesObj });
+});
+
+// POST add/update files (batch)
+app.post('/api/files', (req: Request, res: Response) => {
+  const body = req.body;
+  const fileList: ExcalidrawFile[] = Array.isArray(body) ? body : (body.files || []);
+  for (const f of fileList) {
+    if (f.id && f.dataURL) {
+      files.set(f.id, { id: f.id, dataURL: f.dataURL, mimeType: f.mimeType || 'image/png', created: f.created || Date.now() });
+    }
+  }
+  // Broadcast files to connected clients
+  broadcast({ type: 'files_added', files: fileList } as any);
+  res.json({ success: true, count: fileList.length });
+});
+
+// DELETE a file
+app.delete('/api/files/:id', (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  files.delete(id);
+  res.json({ success: true });
 });
 
 // Image export: request (MCP -> Express -> WebSocket -> Frontend)

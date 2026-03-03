@@ -243,6 +243,17 @@ function App(): JSX.Element {
               captureUpdate: CaptureUpdateAction.NEVER
             })
           }
+          // Load files for image elements
+          if ((data as any).files) {
+            excalidrawAPI.addFiles(Object.values((data as any).files))
+          }
+          break
+
+        case 'files_added':
+          if ((data as any).files) {
+            const fileList = Array.isArray((data as any).files) ? (data as any).files : Object.values((data as any).files)
+            excalidrawAPI.addFiles(fileList as any[])
+          }
           break
 
         case 'element_created':
