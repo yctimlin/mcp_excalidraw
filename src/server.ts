@@ -572,6 +572,12 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         focus: 0,
         gap: GAP
       };
+      // Add boundElements to the source shape so Excalidraw knows the connection
+      const startBound = (startEl.boundElements as any[] || []);
+      if (!startBound.some((b: any) => b.id === el.id)) {
+        startBound.push({ id: el.id, type: 'arrow' });
+      }
+      (startEl as any).boundElements = startBound;
     }
     if (endEl) {
       (el as any).endBinding = {
@@ -579,6 +585,12 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         focus: 0,
         gap: GAP
       };
+      // Add boundElements to the target shape so Excalidraw knows the connection
+      const endBound = (endEl.boundElements as any[] || []);
+      if (!endBound.some((b: any) => b.id === el.id)) {
+        endBound.push({ id: el.id, type: 'arrow' });
+      }
+      (endEl as any).boundElements = endBound;
     }
   }
 }
