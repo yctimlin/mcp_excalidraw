@@ -53,8 +53,13 @@ const clients = new Set<WebSocket>();
 function broadcast(message: WebSocketMessage): void {
   const data = JSON.stringify(message);
   clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+    try {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    } catch (err) {
+      logger.warn('Failed to send to client, removing');
+      clients.delete(client);
     }
   });
 }
@@ -121,6 +126,25 @@ const CreateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Arrow binding properties (preserved for Excalidraw frontend)
+  startBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  endBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  boundElements: z.array(z.object({
+    id: z.string(),
+    type: z.enum(["arrow", "text"]),
+  })).nullable().optional(),
 });
 
 const UpdateElementSchema = z.object({
@@ -155,6 +179,25 @@ const UpdateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Arrow binding properties (preserved for Excalidraw frontend)
+  startBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  endBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  boundElements: z.array(z.object({
+    id: z.string(),
+    type: z.enum(["arrow", "text"]),
+  })).nullable().optional(),
 });
 
 // API Routes
@@ -193,6 +236,11 @@ app.post('/api/elements', (req: Request, res: Response) => {
       updatedAt: new Date().toISOString(),
       version: 1
     };
+
+    // Resolve arrow bindings against existing elements
+    if (element.type === 'arrow' || element.type === 'line') {
+      resolveArrowBindings([element]);
+    }
 
     elements.set(id, element);
 
