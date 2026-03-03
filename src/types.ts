@@ -183,7 +183,9 @@ export type WebSocketMessageType =
   | 'mermaid_convert'
   | 'canvas_cleared'
   | 'export_image_request'
-  | 'set_viewport';
+  | 'set_viewport'
+  | 'files_added'
+  | 'file_deleted';
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';

@@ -250,9 +250,8 @@ function App(): JSX.Element {
           break
 
         case 'files_added':
-          if ((data as any).files) {
-            const fileList = Array.isArray((data as any).files) ? (data as any).files : Object.values((data as any).files)
-            excalidrawAPI.addFiles(fileList as any[])
+          if (Array.isArray((data as any).files)) {
+            excalidrawAPI.addFiles((data as any).files)
           }
           break
 

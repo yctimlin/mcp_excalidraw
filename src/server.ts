@@ -741,22 +741,26 @@ app.get('/api/files', (_req: Request, res: Response) => {
 // POST add/update files (batch)
 app.post('/api/files', (req: Request, res: Response) => {
   const body = req.body;
-  const fileList: ExcalidrawFile[] = Array.isArray(body) ? body : (body.files || []);
+  const fileList: ExcalidrawFile[] = Array.isArray(body) ? body : (body?.files || []);
   for (const f of fileList) {
     if (f.id && f.dataURL) {
       files.set(f.id, { id: f.id, dataURL: f.dataURL, mimeType: f.mimeType || 'image/png', created: f.created || Date.now() });
     }
   }
   // Broadcast files to connected clients
-  broadcast({ type: 'files_added', files: fileList } as any);
+  broadcast({ type: 'files_added', files: fileList });
   res.json({ success: true, count: fileList.length });
 });
 
 // DELETE a file
 app.delete('/api/files/:id', (req: Request, res: Response) => {
   const id = req.params.id as string;
-  files.delete(id);
-  res.json({ success: true });
+  if (files.delete(id)) {
+    broadcast({ type: 'file_deleted', fileId: id });
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ success: false, error: `File with ID ${id} not found` });
+  }
 });
 
 // Image export: request (MCP -> Express -> WebSocket -> Frontend)
