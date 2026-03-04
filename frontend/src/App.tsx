@@ -47,6 +47,12 @@ interface ServerElement {
   strokeStyle?: string;
   endArrowhead?: string;
   startArrowhead?: string;
+  // Image element fields
+  fileId?: string;
+  status?: string;
+  scale?: [number, number];
+  angle?: number;
+  link?: string | null;
 }
 
 interface WebSocketMessage {
@@ -65,6 +71,7 @@ interface ApiResponse {
   success: boolean;
   elements?: ServerElement[];
   element?: ServerElement;
+  files?: Record<string, unknown>;
   count?: number;
   error?: string;
   message?: string;
@@ -134,6 +141,57 @@ const validateAndFixBindings = (elements: Partial<ExcalidrawElement>[]): Partial
   });
 }
 
+const isImageElement = (element: Partial<ExcalidrawElement>): boolean => {
+  return element.type === 'image'
+}
+
+const normalizeImageElement = (element: Partial<ExcalidrawElement>): Partial<ExcalidrawElement> => {
+  const img = element as any
+  return {
+    ...img,
+    angle: img.angle || 0,
+    strokeColor: img.strokeColor || 'transparent',
+    backgroundColor: img.backgroundColor || 'transparent',
+    fillStyle: img.fillStyle || 'solid',
+    strokeWidth: img.strokeWidth || 1,
+    strokeStyle: img.strokeStyle || 'solid',
+    roughness: img.roughness ?? 0,
+    opacity: img.opacity ?? 100,
+    groupIds: img.groupIds || [],
+    roundness: null,
+    seed: img.seed || Math.floor(Math.random() * 1000000),
+    version: img.version || 1,
+    versionNonce: img.versionNonce || Math.floor(Math.random() * 1000000),
+    isDeleted: img.isDeleted ?? false,
+    boundElements: img.boundElements || null,
+    link: img.link || null,
+    locked: img.locked || false,
+    status: img.status || 'saved',
+    fileId: img.fileId,
+    scale: img.scale || [1, 1],
+  }
+}
+
+const convertElementsPreservingImageProps = (
+  elements: Partial<ExcalidrawElement>[]
+): Partial<ExcalidrawElement>[] => {
+  if (elements.length === 0) return []
+
+  const validatedElements = validateAndFixBindings(elements)
+  const nonImageElements = validatedElements.filter(el => !isImageElement(el))
+  const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
+  let nonImageIndex = 0
+
+  return validatedElements.map(element => {
+    if (isImageElement(element)) {
+      return normalizeImageElement(element)
+    }
+    const convertedElement = convertedNonImageElements[nonImageIndex]
+    nonImageIndex += 1
+    return convertedElement
+  })
+}
+
 function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
   // Ref so WS message handlers (captured in stale closures) always see the latest API instance
@@ -177,8 +235,19 @@ function App(): JSX.Element {
       
       if (result.success && result.elements && result.elements.length > 0) {
         const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertToExcalidrawElements(cleanedElements, { regenerateIds: false })
-        excalidrawAPI?.updateScene({ elements: convertedElements })
+        const convertedElements = convertElementsPreservingImageProps(cleanedElements)
+        excalidrawAPI?.updateScene({
+          elements: convertedElements,
+          captureUpdate: CaptureUpdateAction.NEVER
+        })
+      }
+
+      const filesResponse = await fetch('/api/files')
+      if (filesResponse.ok) {
+        const filesResult = await filesResponse.json() as ApiResponse
+        if (filesResult.files) {
+          excalidrawAPI?.addFiles(Object.values(filesResult.files))
+        }
       }
     } catch (error) {
       console.error('Error loading existing elements:', error)
@@ -241,13 +310,21 @@ function App(): JSX.Element {
         case 'initial_elements':
           if (data.elements && data.elements.length > 0) {
             const cleanedElements = data.elements.map(cleanElementForExcalidraw)
-            const validatedElements = validateAndFixBindings(cleanedElements)
-            // Preserve server IDs so later update/delete websocket events can match by id.
-            const convertedElements = convertToExcalidrawElements(validatedElements, { regenerateIds: false })
+            const convertedElements = convertElementsPreservingImageProps(cleanedElements)
             excalidrawAPI.updateScene({
               elements: convertedElements,
               captureUpdate: CaptureUpdateAction.NEVER
             })
+          }
+          // Load files for image elements
+          if ((data as any).files) {
+            excalidrawAPI.addFiles(Object.values((data as any).files))
+          }
+          break
+
+        case 'files_added':
+          if (Array.isArray((data as any).files)) {
+            excalidrawAPI.addFiles((data as any).files)
           }
           break
 
@@ -258,14 +335,14 @@ function App(): JSX.Element {
             if (hasBindings) {
               // Bound arrow: re-convert all elements together so bindings resolve
               const allElements = [...currentElements, cleanedNewElement] as any[]
-              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              const convertedAll = convertElementsPreservingImageProps(allElements)
               excalidrawAPI.updateScene({
                 elements: convertedAll,
                 captureUpdate: CaptureUpdateAction.NEVER
               })
             } else {
               // Preserve server IDs so later update/delete websocket events can match by id.
-              const newElement = convertToExcalidrawElements([cleanedNewElement], { regenerateIds: false })
+              const newElement = convertElementsPreservingImageProps([cleanedNewElement])
               const updatedElementsAfterCreate = [...currentElements, ...newElement]
               excalidrawAPI.updateScene({
                 elements: updatedElementsAfterCreate,
@@ -279,7 +356,7 @@ function App(): JSX.Element {
           if (data.element) {
             const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
             // Preserve server IDs so we can replace the existing element by id.
-            const convertedUpdatedElement = convertToExcalidrawElements([cleanedUpdatedElement], { regenerateIds: false })[0]
+            const convertedUpdatedElement = convertElementsPreservingImageProps([cleanedUpdatedElement])[0]
             const updatedElements = currentElements.map(el =>
               el.id === data.element!.id ? convertedUpdatedElement : el
             )
@@ -307,14 +384,14 @@ function App(): JSX.Element {
             if (hasBoundArrows) {
               // Convert ALL elements together so arrow bindings resolve to target shapes
               const allElements = [...currentElements, ...cleanedBatchElements] as any[]
-              const convertedAll = convertToExcalidrawElements(allElements, { regenerateIds: false })
+              const convertedAll = convertElementsPreservingImageProps(allElements)
               excalidrawAPI.updateScene({
                 elements: convertedAll,
                 captureUpdate: CaptureUpdateAction.NEVER
               })
             } else {
               // Preserve server IDs so later update/delete websocket events can match by id.
-              const batchElements = convertToExcalidrawElements(cleanedBatchElements, { regenerateIds: false })
+              const batchElements = convertElementsPreservingImageProps(cleanedBatchElements)
               const updatedElementsAfterBatch = [...currentElements, ...batchElements]
               excalidrawAPI.updateScene({
                 elements: updatedElementsAfterBatch,

@@ -1477,7 +1477,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const data = await response.json() as ApiResponse;
         const sceneElements = data.elements || [];
 
-        const excalidrawScene = {
+        // Fetch files for image elements
+        let sceneFiles: Record<string, any> = {};
+        try {
+          const filesResponse = await fetch(`${EXPRESS_SERVER_URL}/api/files`);
+          if (filesResponse.ok) {
+            const filesData = await filesResponse.json() as any;
+            sceneFiles = filesData.files || {};
+          }
+        } catch { /* files endpoint may not exist */ }
+
+        const excalidrawScene: any = {
           type: 'excalidraw',
           version: 2,
           source: 'mcp-excalidraw-server',
@@ -1485,7 +1495,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           appState: {
             viewBackgroundColor: '#ffffff',
             gridSize: null
-          }
+          },
+          ...(Object.keys(sceneFiles).length > 0 ? { files: sceneFiles } : {})
         };
 
         const jsonString = JSON.stringify(excalidrawScene, null, 2);
@@ -1554,10 +1565,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const canvasElements = await batchCreateElementsOnCanvas(elementsToCreate);
 
+        // Import files if present (for image elements)
+        let importedFileCount = 0;
+        const importFiles = sceneData.files;
+        if (importFiles && typeof importFiles === 'object') {
+          const fileList = Object.values(importFiles);
+          if (fileList.length > 0) {
+            try {
+              await fetch(`${EXPRESS_SERVER_URL}/api/files`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(fileList)
+              });
+              importedFileCount = fileList.length;
+            } catch { /* best effort */ }
+          }
+        }
+
         return {
           content: [{
             type: 'text',
-            text: `Imported ${elementsToCreate.length} elements (mode: ${params.mode})\n\n✅ Synced to canvas`
+            text: `Imported ${elementsToCreate.length} elements${importedFileCount > 0 ? ` and ${importedFileCount} files` : ''} (mode: ${params.mode})\n\n✅ Synced to canvas`
           }]
         };
       }
