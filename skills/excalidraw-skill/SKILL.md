@@ -5,39 +5,28 @@ description: Programmatic canvas toolkit for creating, editing, and refining Exc
 
 # Excalidraw Skill
 
-## Step 0: Detect Connection Mode
+## Step 0: Determine Connection Mode
 
-Before doing anything, determine which mode is available. Run these checks **in order**:
+Two modes are available. Try MCP first — it has more capabilities.
 
-### Check 1: MCP Server (Best experience)
-```bash
-mcp-cli tools | grep excalidraw
-```
-If you see tools like `excalidraw/batch_create_elements` → **use MCP mode**. Call MCP tools directly.
+**MCP mode** (preferred): If `excalidraw/batch_create_elements` and other `excalidraw/*` tools appear in your tool list, use them directly. MCP tools handle label and arrow binding format automatically.
 
-### Check 2: REST API (Fallback — works without MCP server)
-```bash
-curl -s http://localhost:3000/health
-```
-If you get `{"status":"ok"}` → **use REST API mode**. Use HTTP endpoints (`curl` / `fetch`) from the cheatsheet.
+**REST API mode** (fallback): If MCP tools aren't available, use HTTP endpoints at `http://localhost:3000`. See the cheatsheet for REST payloads. Note the format differences in the table below — REST and MCP accept slightly different field names.
 
-### Check 3: Nothing works → Guide user to install
-If neither works, tell the user:
+**Neither works?** Tell the user:
 > The Excalidraw canvas server is not running. To set up:
-> 1. Clone: `git clone https://github.com/yctimlin/mcp_excalidraw && cd mcp_excalidraw`
-> 2. Build: `npm ci && npm run build`
-> 3. Start canvas: `HOST=0.0.0.0 PORT=3000 npm run canvas`
+> 1. `git clone https://github.com/yctimlin/mcp_excalidraw && cd mcp_excalidraw`
+> 2. `npm ci && npm run build`
+> 3. `HOST=0.0.0.0 PORT=3000 npm run canvas`
 > 4. Open `http://localhost:3000` in a browser
-> 5. (Recommended) Install the MCP server for the best experience:
->    ```
->    claude mcp add excalidraw -s user -e EXPRESS_SERVER_URL=http://localhost:3000 -- node /path/to/mcp_excalidraw/dist/index.js
->    ```
+> 5. (Recommended) Install the MCP server:
+>    `claude mcp add excalidraw -s user -e EXPRESS_SERVER_URL=http://localhost:3000 -- node /path/to/mcp_excalidraw/dist/index.js`
 
 ### MCP vs REST API Quick Reference
 
 | Operation | MCP Tool | REST API Equivalent |
 |-----------|----------|-------------------|
-| Create elements | `batch_create_elements` | `POST /api/elements/batch` with `{"elements": [...]}` |
+| Create elements | `batch_create_elements` | `POST /api/elements/batch` |
 | Get all elements | `query_elements` | `GET /api/elements` |
 | Get one element | `get_element` | `GET /api/elements/:id` |
 | Update element | `update_element` | `PUT /api/elements/:id` |
@@ -45,235 +34,228 @@ If neither works, tell the user:
 | Clear canvas | `clear_canvas` | `DELETE /api/elements/clear` |
 | Describe scene | `describe_scene` | `GET /api/elements` (parse manually) |
 | Export scene | `export_scene` | `GET /api/elements` (save to file) |
-| Import scene | `import_scene` | `POST /api/elements/sync` with `{"elements": [...]}` |
-| Snapshot | `snapshot_scene` | `POST /api/snapshots` with `{"name": "..."}` |
+| Import scene | `import_scene` | `POST /api/elements/sync` |
+| Snapshot | `snapshot_scene` | `POST /api/snapshots` |
 | Restore snapshot | `restore_snapshot` | `GET /api/snapshots/:name` then `POST /api/elements/sync` |
-| Screenshot | `get_canvas_screenshot` | Only via MCP (needs browser) |
-| Design guide | `read_diagram_guide` | Not available — see cheatsheet for guidelines |
+| Screenshot | `get_canvas_screenshot` | `POST /api/export/image` (needs browser) |
 | Viewport | `set_viewport` | `POST /api/viewport` (needs browser) |
 | Export image | `export_to_image` | `POST /api/export/image` (needs browser) |
 | Export URL | `export_to_excalidraw_url` | Only via MCP |
 
-### REST API Gotchas (Critical — read before using REST API)
+### Format Differences Between Modes (Critical)
 
-1. **Labels**: Use `"label": {"text": "My Label"}` (not `"text": "My Label"`). MCP tools auto-convert, REST API does not.
-2. **Arrow binding**: Use `"start": {"id": "svc-a"}, "end": {"id": "svc-b"}` (not `"startElementId"`/`"endElementId"`). MCP tools accept `startElementId` and convert, REST API requires the `start`/`end` object format directly.
-3. **fontFamily**: Must be a string (e.g. `"1"`) or omit it entirely. Do NOT pass a number like `1`.
-4. **Updating labels**: When updating a shape via `PUT /api/elements/:id`, include the full `label` in the update body to preserve it. Omitting `label` from the update won't delete it, but re-sending ensures it renders correctly.
-5. **Screenshot in REST mode**: `POST /api/export/image` returns `{"data": "<base64>"}`. Save to file and read it back for visual verification. Requires browser open.
+1. **Labels**: MCP accepts `"text": "My Label"` on shapes (auto-converts). REST requires `"label": {"text": "My Label"}`.
+2. **Arrow binding**: MCP accepts `startElementId`/`endElementId`. REST requires `"start": {"id": "..."}` / `"end": {"id": "..."}`.
+3. **fontFamily**: Must be a string (e.g. `"1"`) or omit entirely. Never pass a number.
+4. **Updating labels via REST**: Re-include `"label"` in the PUT body to ensure it renders correctly after updates.
 
-## Quality Gate (MANDATORY — read before creating any diagram)
+---
 
-**After EVERY iteration (each batch of elements added), you MUST run a quality check before proceeding. NEVER say "looks great" unless ALL checks pass.**
+## Coordinate System
 
-### Quality Checklist — verify ALL before adding more elements:
-1. **Text truncation**: Is ALL text fully visible? Labels must fit inside their shapes. If text is cut off or wrapping badly → increase `width` and/or `height`.
-2. **Overlap**: Do ANY elements overlap each other? Check that no rectangles, ellipses, or text elements share the same space. Background zones must fully contain their children with padding.
-3. **Arrow crossing**: Do arrows cross through unrelated elements or overlap with text labels? If yes → **use curved/elbowed arrows with waypoints** to route around obstacles (see "Arrow Routing" section). Never accept crossing arrows.
-4. **Arrow-text overlap**: Do any arrow labels ("charge", "event", etc.) overlap with shapes? Arrow labels are positioned at the midpoint — if they overlap, either remove the label, shorten it, or adjust the arrow path.
-5. **Spacing**: Is there at least 40px gap between elements? Cramped layouts are unreadable.
-6. **Readability**: Can all labels be read at normal zoom? Font size >= 16 for body text, >= 20 for titles.
+The canvas uses a 2D coordinate grid: **(0, 0) is the origin**, **x increases rightward**, **y increases downward**. Plan your layout before writing any JSON.
 
-### If ANY issue is found:
-- **STOP adding new elements**
-- Fix the issue first (resize, reposition, delete and recreate)
-- Re-verify with a new screenshot
-- Only proceed to next iteration after ALL checks pass
+**General spacing guidelines:**
+- Vertical spacing between tiers: 80–120px (enough that arrows don't crowd labels)
+- Horizontal spacing between siblings: 40–60px minimum
+- Shape width: `max(160, labelCharCount * 9)` to prevent text truncation
+- Shape height: 60px single-line, 80px two-line labels
+- Background/zone padding: 50px on all sides around contained elements
 
-### Sizing Rules (prevent truncation):
-- **Shape width**: `max(160, labelTextLength * 9)` pixels. For multi-word labels like "API Gateway (Kong)", count all characters.
-- **Shape height**: 60px for single line, 80px for 2 lines, 100px for 3 lines.
-- **Background zones**: Add 50px padding on ALL sides around contained elements.
-- **Element spacing**: 60px vertical between tiers, 40px horizontal between siblings.
-- **Side panels**: Place at least 80px away from main diagram elements.
-- **Arrow labels**: Keep labels short (1-2 words). Long arrow labels overlap with other elements.
+---
 
-### Layout Planning (prevent overlap):
-Before creating elements, **plan your coordinate grid** on paper first:
-- Tier 1 (y=50-130): Client apps
-- Tier 2 (y=200-280): Gateway/Edge
-- Tier 3 (y=350-440): Services (spread wide: each service ~180px apart)
-- Tier 4 (y=510-590): Data stores
-- Side panels: x < 0 (left) or x > mainDiagramRight + 80 (right)
+## Quality: Why It Matters (and How to Check)
 
-**Do NOT place side panels (observability, external APIs) at the same x-range as the main diagram — they WILL overlap.**
+Excalidraw diagrams are visual communication. If text is cut off, elements overlap, or arrows cross through unrelated shapes, the diagram becomes confusing and unprofessional — it defeats the whole purpose of drawing it. So after every batch of elements, verify before adding more.
 
-## Quick Start
+### Quality Checklist
 
-1. Run **Step 0** above to detect your connection mode.
-2. Open the canvas URL in a browser (required for image export/screenshot).
-3. **MCP mode**: Use MCP tools for all operations. **REST mode**: Use HTTP endpoints from cheatsheet.
-4. For full tool/endpoint reference, read `references/cheatsheet.md`.
+After each `batch_create_elements` / `POST /api/elements/batch`, take a screenshot and check:
 
-## Workflow: Draw A Diagram
+1. **Text truncation** — Is all label text fully visible? Truncated text means the shape is too small. Increase `width` and/or `height`.
+2. **Overlap** — Do any shapes share the same space? Background zones must fully contain children with padding.
+3. **Arrow crossing** — Do arrows cut through unrelated elements? If yes, route them around using curved or elbowed arrows (see Arrow Routing below).
+4. **Arrow-label overlap** — Arrow labels sit at the midpoint. If they overlap a shape, shorten the label or adjust the arrow path.
+5. **Spacing** — At least 40px gap between elements. Cramped layouts are hard to read.
+6. **Readability** — Font size ≥ 16 for body text, ≥ 20 for titles.
+
+If you find any issue: **stop, fix it, re-screenshot, then continue.** Say "I see [issue], fixing it" rather than glossing over problems. Only proceed once all checks pass.
+
+---
+
+## Workflow: Drawing a New Diagram
+
+### Mermaid vs. Direct Creation — Which to Use?
+
+**Use `create_from_mermaid`** when: the user already has a Mermaid diagram, or the structure maps cleanly to a flowchart/sequence/ER diagram with standard Mermaid syntax. It's fast and handles conversion automatically, though you get less control over exact layout.
+
+**Use `batch_create_elements` directly** when: you need precise layout control, the diagram type doesn't map to Mermaid well (e.g., custom architecture, annotated cloud diagrams), or you want elements positioned in a specific coordinate grid.
 
 ### MCP Mode
-1. **Call `read_diagram_guide`** first to load design best practices.
-2. **Plan your coordinate grid** (see Quality Gate → Layout Planning) before writing any JSON.
+
+1. Call `read_diagram_guide` for design best practices (colors, fonts, anti-patterns).
+2. Plan your coordinate grid on paper/in comments — map out tiers and x-positions before writing JSON.
 3. Optional: `clear_canvas` to start fresh.
-4. Use `batch_create_elements` with shapes AND arrows in one call.
-5. **Assign custom `id` to shapes** (e.g. `"id": "auth-svc"`). Set `text` field to label shapes.
-6. **Size shapes for their text** — use `width: max(160, textLength * 9)`.
-7. **Bind arrows** using `startElementId` / `endElementId` — arrows auto-route.
-8. `set_viewport` with `scrollToContent: true` to auto-fit the diagram.
-9. **Run Quality Checklist** — `get_canvas_screenshot` and critically evaluate. Fix issues before proceeding.
+4. Use `batch_create_elements` — create shapes and arrows in one call. Custom `id` fields (e.g. `"id": "auth-svc"`) make later updates easy.
+5. Set shape widths using `max(160, labelLength * 9)`. Use `text` field for labels.
+6. Bind arrows with `startElementId` / `endElementId` — they auto-route to element edges.
+7. `set_viewport` with `scrollToContent: true` to auto-fit.
+8. `get_canvas_screenshot` → run Quality Checklist → fix issues before next iteration.
+
+**MCP element + arrow example:**
+```json
+{"elements": [
+  {"id": "lb", "type": "rectangle", "x": 300, "y": 50, "width": 180, "height": 60, "text": "Load Balancer"},
+  {"id": "svc-a", "type": "rectangle", "x": 100, "y": 200, "width": 160, "height": 60, "text": "Web Server 1"},
+  {"id": "svc-b", "type": "rectangle", "x": 450, "y": 200, "width": 160, "height": 60, "text": "Web Server 2"},
+  {"id": "db", "type": "rectangle", "x": 275, "y": 350, "width": 210, "height": 60, "text": "PostgreSQL"},
+  {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-a"},
+  {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-b"},
+  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-a", "endElementId": "db"},
+  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-b", "endElementId": "db"}
+]}
+```
 
 ### REST API Mode
-1. Read `references/cheatsheet.md` for design guidelines.
-2. **Plan your coordinate grid** (see Quality Gate → Layout Planning) before writing any JSON.
-3. Optional: `curl -X DELETE http://localhost:3000/api/elements/clear`
-4. Create elements in one call (use `@file.json` for large payloads):
-   ```bash
-   curl -X POST http://localhost:3000/api/elements/batch \
-     -H "Content-Type: application/json" \
-     -d '{"elements": [
-       {"id": "svc-a", "type": "rectangle", "x": 0, "y": 0, "width": 160, "height": 60, "label": {"text": "Service A"}},
-       {"id": "svc-b", "type": "rectangle", "x": 0, "y": 200, "width": 160, "height": 60, "label": {"text": "Service B"}},
-       {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}}
-     ]}'
-   ```
-5. **Use `"label": {"text": "..."}` for shape labels** (not `"text": "..."`).
-6. **Bind arrows with `"start": {"id": "..."}` / `"end": {"id": "..."}`** — server auto-routes edges.
-7. **Size shapes for their text** — use `width: max(160, labelTextLength * 9)`.
-8. **Run Quality Checklist** — take screenshot, critically evaluate. Fix issues before adding more elements.
 
-### Arrow Binding (Recommended)
+1. Plan your coordinate grid first.
+2. Optional: `curl -X DELETE http://localhost:3000/api/elements/clear`
+3. Create elements using `POST /api/elements/batch`. Use `"label": {"text": "..."}` for labels.
+4. Bind arrows with `"start": {"id": "..."}` / `"end": {"id": "..."}`.
+5. Verify with `POST /api/export/image` → save PNG → run Quality Checklist.
 
-Bind arrows to shapes for auto-routed edges. The format differs between MCP and REST API:
-
-**MCP Mode** — use `startElementId` / `endElementId`:
-```json
-{"elements": [
-  {"id": "svc-a", "type": "rectangle", "x": 0, "y": 0, "width": 120, "height": 60, "text": "Service A"},
-  {"id": "svc-b", "type": "rectangle", "x": 0, "y": 200, "width": 120, "height": 60, "text": "Service B"},
-  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-a", "endElementId": "svc-b", "text": "calls"}
-]}
+**REST API element + arrow example:**
+```bash
+curl -X POST http://localhost:3000/api/elements/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "elements": [
+      {"id": "svc-a", "type": "rectangle", "x": 100, "y": 100, "width": 160, "height": 60, "label": {"text": "Service A"}},
+      {"id": "svc-b", "type": "rectangle", "x": 400, "y": 100, "width": 160, "height": 60, "label": {"text": "Service B"}},
+      {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}, "label": {"text": "calls"}}
+    ]
+  }'
 ```
 
-**REST API Mode** — use `start: {id}` / `end: {id}` and `label: {text}`:
-```json
-{"elements": [
-  {"id": "svc-a", "type": "rectangle", "x": 0, "y": 0, "width": 120, "height": 60, "label": {"text": "Service A"}},
-  {"id": "svc-b", "type": "rectangle", "x": 0, "y": 200, "width": 120, "height": 60, "label": {"text": "Service B"}},
-  {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}, "label": {"text": "calls"}}
-]}
-```
+---
 
-Arrows without binding use manual `x`, `y`, `points` coordinates.
+## Arrow Routing — Avoid Overlaps
 
-### Arrow Routing — Avoid Overlaps (Critical for complex diagrams)
+Straight arrows can cross through elements in complex diagrams. Use curved or elbowed arrows when needed:
 
-Straight arrows (2-point) cause crossing and overlap in complex diagrams. **Use curved or elbowed arrows instead:**
-
-**Option 1: Curved arrows** — add intermediate waypoints + `roundness`:
+**Curved arrows** (smooth arc over obstacles):
 ```json
 {
   "type": "arrow", "x": 100, "y": 100,
   "points": [[0, 0], [50, -40], [200, 0]],
-  "roundness": {"type": 2},
-  "strokeColor": "#1971c2"
+  "roundness": {"type": 2}
 }
 ```
-The waypoint `[50, -40]` pushes the arrow upward to arc over elements. `roundness: {type: 2}` makes it a smooth curve.
+The intermediate waypoint `[50, -40]` lifts the arrow upward. `roundness: {type: 2}` makes it smooth.
 
-**Option 2: Elbowed arrows** — right-angle routing (L-shaped or Z-shaped):
+**Elbowed arrows** (right-angle / L-shaped routing):
 ```json
 {
   "type": "arrow", "x": 100, "y": 100,
   "points": [[0, 0], [0, -50], [200, -50], [200, 0]],
-  "elbowed": true,
-  "strokeColor": "#1971c2"
+  "elbowed": true
 }
 ```
 
 **When to use which:**
-- **Fan-out arrows** (one source → many targets): Use curved arrows with waypoints spread vertically to avoid overlapping each other.
-- **Cross-lane arrows** (connecting to side panels): Use elbowed arrows that route around the main diagram — go UP first, then ACROSS, then DOWN.
-- **Inter-service arrows** (horizontal connections): Use curved arrows with a slight vertical offset to avoid crossing through adjacent elements.
+- Fan-out (one source → many targets): curved arrows with waypoints spread to avoid overlapping
+- Cross-lane (connecting to side panels): elbowed arrows that go up, then across, then down
+- Long horizontal connections: curved arrows with a slight vertical offset
 
-**Rule of thumb:** If an arrow would cross through an unrelated element, add a waypoint to route around it. Never accept crossing arrows — always fix them.
+**Rule:** If an arrow would pass through an unrelated shape, add a waypoint to route around it.
 
-## Workflow: Iterative Refinement (Key Differentiator)
+**Points format**: Both `[[x, y], ...]` tuples and `[{"x": ..., "y": ...}]` objects are accepted; both are normalized automatically.
 
-The feedback loop that makes this skill unique. **Each iteration MUST include a quality check.**
+---
 
-### MCP Mode (full feedback loop)
-1. Add elements (`batch_create_elements`, `create_element`).
-2. `set_viewport` with `scrollToContent: true`.
-3. `get_canvas_screenshot` — **critically evaluate** against the Quality Checklist.
-4. **If issues found** → fix them (`update_element`, `delete_element`, resize, reposition).
-5. `get_canvas_screenshot` again — re-verify fix.
-6. **Only proceed to next iteration when ALL quality checks pass.**
+## Workflow: Iterative Refinement
 
-### REST API Mode (partial feedback loop)
-1. Add elements via `POST /api/elements/batch`.
-2. `POST /api/viewport` with `{"scrollToContent": true}`.
-3. Take screenshot: `POST /api/export/image` → save PNG → **critically evaluate** against Quality Checklist.
-4. **If issues found** → fix via `PUT /api/elements/:id` or delete and recreate.
-5. Re-screenshot and re-verify.
-6. **Only proceed to next iteration when ALL quality checks pass.**
+Using `describe_scene` and `get_canvas_screenshot` together is what makes this skill powerful.
 
-### How to critically evaluate a screenshot:
-- Look at EVERY label — is any text cut off or overflowing its container?
-- Look at EVERY arrow — does any arrow pass through an unrelated element?
-- Look at ALL element pairs — do any overlap or touch?
-- Look at spacing — is anything crammed together?
-- **Be honest.** If you see ANY issue, say "I see [issue], fixing it" — not "looks great".
+- **`describe_scene`** → returns structured text: element IDs, types, positions, labels, connections. Use this when you need to know *what's on the canvas* before making programmatic updates (find IDs, understand bounding boxes).
+- **`get_canvas_screenshot`** → returns a PNG image of the actual rendered canvas. Use this for *visual quality verification* — it shows you exactly what the user sees, including truncation, overlap, and arrow routing.
 
-Example flow (MCP):
+**Feedback loop (MCP):**
 ```
-batch_create_elements → get_canvas_screenshot → "text truncated on 2 shapes"
-→ update_element (increase widths) → get_canvas_screenshot → "overlap between X and Y"
-→ update_element (reposition) → get_canvas_screenshot → "all checks pass"
-→ proceed to next iteration
+batch_create_elements
+  → get_canvas_screenshot → "text truncated on auth-svc"
+  → update_element (increase width) → get_canvas_screenshot → "overlap between auth-svc and rate-limiter"
+  → update_element (reposition) → get_canvas_screenshot → "all checks pass"
+  → proceed
 ```
 
-## Workflow: Refine An Existing Diagram
+**Feedback loop (REST):**
+```
+POST /api/elements/batch
+  → POST /api/export/image → save PNG → evaluate
+  → PUT /api/elements/:id (fix issues) → re-screenshot → evaluate
+  → proceed
+```
 
-1. `describe_scene` to understand current state.
-2. Identify targets by id, type, or label text (not x/y coordinates).
-3. `update_element` to move/resize/recolor, `delete_element` to remove.
-4. `get_canvas_screenshot` to verify changes visually.
-5. If updates fail: check element id exists (`get_element`), element isn't locked (`unlock_elements`).
+---
 
-## Workflow: File I/O (Diagrams-as-Code)
+## Workflow: Refine an Existing Diagram
 
-- Export to .excalidraw format: `export_scene` with optional `filePath`.
-- Import from .excalidraw: `import_scene` with `mode: "replace"` or `"merge"`.
-- Export to image: `export_to_image` with `format: "png"` or `"svg"` (requires browser open).
+1. `describe_scene` to understand current state — note element IDs and positions.
+2. Identify elements by `id` or label text (not by x/y coordinates — they change).
+3. `update_element` to resize/recolor/move; `delete_element` to remove.
+4. `get_canvas_screenshot` to confirm the change looks right.
+5. If updates fail: check the ID exists with `get_element`; check it's not locked with `unlock_elements`.
+
+---
+
+## Workflow: Mermaid Conversion
+
+For converting existing Mermaid diagrams to Excalidraw:
+
+**MCP mode:**
+```
+create_from_mermaid(mermaidDiagram: "graph TD\n  A --> B\n  B --> C")
+```
+After conversion, call `set_viewport` with `scrollToContent: true` and `get_canvas_screenshot` to verify layout. If the auto-layout is poor (nodes crowded, edges crossing), identify problem elements with `describe_scene` and reposition with `update_element`.
+
+**REST mode:**
+```bash
+curl -X POST http://localhost:3000/api/elements/from-mermaid \
+  -H "Content-Type: application/json" \
+  -d '{"mermaid": "graph TD\n  A --> B\n  B --> C"}'
+```
+
+---
+
+## Workflow: File I/O
+
+- Export to `.excalidraw`: `export_scene` with optional `filePath`
+- Import from `.excalidraw`: `import_scene` with `mode: "replace"` or `"merge"`
+- Export to image: `export_to_image` with `format: "png"` or `"svg"` (requires browser open)
+- Share link: `export_to_excalidraw_url` — encrypts scene, returns shareable excalidraw.com URL
 - CLI export: `node scripts/export-elements.cjs --out diagram.elements.json`
 - CLI import: `node scripts/import-elements.cjs --in diagram.elements.json --mode batch|sync`
 
-## Workflow: Snapshots (Save/Restore Canvas State)
+## Workflow: Snapshots
 
 1. `snapshot_scene` with a name before risky changes.
-2. Make changes, `describe_scene` / `get_canvas_screenshot` to evaluate.
-3. `restore_snapshot` to rollback if needed.
+2. Make changes, evaluate with `describe_scene` / `get_canvas_screenshot`.
+3. `restore_snapshot` to roll back if needed.
 
 ## Workflow: Duplication
 
-- `duplicate_elements` with `elementIds` and optional `offsetX`/`offsetY` (default 20,20).
-- Useful for creating repeated patterns or copying existing layouts.
+`duplicate_elements` with `elementIds` and optional `offsetX`/`offsetY` (default: 20, 20). Useful for repeated patterns or copying layouts.
 
-## Points Format for Arrows/Lines
+## Error Recovery
 
-The `points` field accepts both formats:
-- Tuple: `[[0, 0], [100, 50]]`
-- Object: `[{"x": 0, "y": 0}, {"x": 100, "y": 50}]`
+- **Elements not appearing?** Check `describe_scene` — they may have been created off-screen. Use `set_viewport` with `scrollToContent: true`.
+- **Arrow not connecting?** Verify element IDs with `get_element`. Make sure `startElementId`/`endElementId` (MCP) or `start.id`/`end.id` (REST) match existing element IDs.
+- **Canvas in a bad state?** `snapshot_scene` first, then `clear_canvas` and rebuild. Or `restore_snapshot` to go back.
+- **Element won't update?** It may be locked — call `unlock_elements` first.
+- **Layout looking wrong after import?** Use `describe_scene` to inspect actual positions, then batch-update positions.
 
-Both are normalized to tuples automatically.
-
-## Workflow: Share Diagram (excalidraw.com URL)
-
-1. Create your diagram using any of the above workflows.
-2. `export_to_excalidraw_url` — uploads encrypted scene, returns a shareable URL.
-3. Share the URL — anyone can open it in excalidraw.com to view and edit.
-
-## Workflow: Viewport Control
-
-- `set_viewport` with `scrollToContent: true` — auto-fit all elements (zoom-to-fit).
-- `set_viewport` with `scrollToElementId: "my-element"` — center view on a specific element.
-- `set_viewport` with `zoom: 1.5, offsetX: 100, offsetY: 200` — manual camera control.
+---
 
 ## References
 

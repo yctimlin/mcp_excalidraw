@@ -178,18 +178,12 @@ const convertElementsPreservingImageProps = (
   if (elements.length === 0) return []
 
   const validatedElements = validateAndFixBindings(elements)
+  const imageElements = validatedElements.filter(isImageElement).map(normalizeImageElement)
   const nonImageElements = validatedElements.filter(el => !isImageElement(el))
+  // convertToExcalidrawElements may expand labeled shapes into [shape, textElement],
+  // so we cannot assume a 1:1 mapping — return all converted elements directly.
   const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
-  let nonImageIndex = 0
-
-  return validatedElements.map(element => {
-    if (isImageElement(element)) {
-      return normalizeImageElement(element)
-    }
-    const convertedElement = convertedNonImageElements[nonImageIndex]
-    nonImageIndex += 1
-    return convertedElement
-  })
+  return [...convertedNonImageElements, ...imageElements]
 }
 
 function App(): JSX.Element {
@@ -304,7 +298,6 @@ function App(): JSX.Element {
 
     try {
       const currentElements = excalidrawAPI.getSceneElements()
-      console.log('Current elements:', currentElements);
 
       switch (data.type) {
         case 'initial_elements':
@@ -419,7 +412,6 @@ function App(): JSX.Element {
           break
 
         case 'export_image_request':
-          console.log('Received image export request', data)
           if (data.requestId) {
             try {
               const elements = excalidrawAPI.getSceneElements()
@@ -497,7 +489,6 @@ function App(): JSX.Element {
                 }
                 reader.readAsDataURL(blob)
               }
-              console.log('Image export completed for request', data.requestId)
             } catch (exportError) {
               console.error('Image export failed:', exportError)
               await fetch('/api/export/image/result', {

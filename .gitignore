@@ -14,6 +14,8 @@ public/dist/
 # Editor artifacts
 .cursor/
 .claude/
+.agent/
+.agents/
 
 # Development artifacts
 *.excalidraw

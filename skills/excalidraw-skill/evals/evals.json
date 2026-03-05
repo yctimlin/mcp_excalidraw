@@ -1,0 +1,23 @@
+{
+  "skill_name": "excalidraw-skill",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Draw a CI/CD pipeline architecture diagram on the Excalidraw canvas with these components: GitHub (source), GitHub Actions (CI), Docker Registry (artifact store), and Kubernetes Cluster (deployment target). Use arrows to show the flow from left to right. Make sure labels fit inside each box and nothing overlaps.",
+      "expected_output": "A clean diagram with 4 labeled boxes, left-to-right flow arrows connecting them, no overlapping elements, and all text fully visible inside shapes.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Convert this Mermaid flowchart to an Excalidraw diagram:\n```\ngraph TD\n  A[User] -->|HTTP Request| B[Load Balancer]\n  B --> C[Web Server 1]\n  B --> D[Web Server 2]\n  C --> E[(Database)]\n  D --> E\n```\nAfter converting, take a screenshot and verify the layout looks clean.",
+      "expected_output": "A valid Excalidraw diagram with all 5 nodes and arrows matching the Mermaid structure, verified with a screenshot.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Create a simple diagram on the Excalidraw canvas with two rectangles: 'Auth Service' and 'User DB', connected by an arrow labeled 'queries'. Then refine it: add a third box 'Redis Cache' positioned between the two services, connect Auth Service to Redis Cache with a 'cache hit' arrow. Verify visually that all labels are visible and no arrows cross awkwardly.",
+      "expected_output": "A 3-element diagram with Auth Service → Redis Cache → (and both connected back to) User DB, with clean arrows, visible labels, and a screenshot confirming the final state.",
+      "files": []
+    }
+  ]
+}

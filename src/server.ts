@@ -47,6 +47,10 @@ const staticDir = path.join(__dirname, '../dist');
 app.use(express.static(staticDir));
 // Also serve frontend assets
 app.use(express.static(path.join(__dirname, '../dist/frontend')));
+// Serve Excalidraw fonts so the font subsetting worker can fetch them for export
+app.use('/assets/fonts', express.static(
+  path.join(__dirname, '../node_modules/@excalidraw/excalidraw/dist/prod/fonts')
+));
 
 // WebSocket connections
 const clients = new Set<WebSocket>();
@@ -768,6 +772,8 @@ interface PendingExport {
   resolve: (data: { format: string; data: string }) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
+  collectionTimeout: ReturnType<typeof setTimeout> | null;
+  bestResult: { format: string; data: string } | null;
 }
 const pendingExports = new Map<string, PendingExport>();
 
@@ -793,19 +799,38 @@ app.post('/api/export/image', (req: Request, res: Response) => {
 
     const exportPromise = new Promise<{ format: string; data: string }>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        const pending = pendingExports.get(requestId);
         pendingExports.delete(requestId);
-        reject(new Error('Export timed out after 30 seconds'));
+        // If we collected any result during the window, use it
+        if (pending?.bestResult) {
+          resolve(pending.bestResult);
+        } else {
+          reject(new Error('Export timed out after 30 seconds'));
+        }
       }, 30000);
 
-      pendingExports.set(requestId, { resolve, reject, timeout });
+      pendingExports.set(requestId, { resolve, reject, timeout, collectionTimeout: null, bestResult: null });
     });
 
+    // Re-broadcast current elements so all connected clients (including stale ones)
+    // sync to the canonical server state before exporting
+    const filesObj: Record<string, ExcalidrawFile> = {};
+    files.forEach((f, id) => { filesObj[id] = f; });
     broadcast({
-      type: 'export_image_request',
-      requestId,
-      format,
-      background: background ?? true
-    });
+      type: 'initial_elements',
+      elements: Array.from(elements.values()),
+      ...(files.size > 0 ? { files: filesObj } : {})
+    } as InitialElementsMessage & { files?: Record<string, ExcalidrawFile> });
+
+    // Give browsers time to process the reload before requesting export
+    setTimeout(() => {
+      broadcast({
+        type: 'export_image_request',
+        requestId,
+        format,
+        background: background ?? true
+      });
+    }, 800);
 
     exportPromise
       .then(result => {
@@ -850,14 +875,26 @@ app.post('/api/export/image/result', (req: Request, res: Response) => {
 
     if (error) {
       // Don't reject on error — another WebSocket client may still succeed.
-      // The timeout will handle the case where ALL clients fail.
       logger.warn(`Export error from one client (requestId=${requestId}): ${error}`);
       return res.json({ success: true });
     }
 
-    clearTimeout(pending.timeout);
-    pendingExports.delete(requestId);
-    pending.resolve({ format, data });
+    // Keep the largest response (most complete canvas state wins)
+    if (!pending.bestResult || data.length > pending.bestResult.data.length) {
+      pending.bestResult = { format, data };
+    }
+
+    // Start a short collection window on the first response, then resolve with best
+    if (!pending.collectionTimeout) {
+      pending.collectionTimeout = setTimeout(() => {
+        const p = pendingExports.get(requestId);
+        if (p?.bestResult) {
+          clearTimeout(p.timeout);
+          pendingExports.delete(requestId);
+          p.resolve(p.bestResult);
+        }
+      }, 3000);
+    }
 
     res.json({ success: true });
   } catch (error) {

@@ -7,6 +7,18 @@ export default defineConfig({
   build: {
     outDir: '../dist/frontend',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Excalidraw's font subsetting worker looks for these files by their
+        // original (unhashed) names. Preserve them so the 404 doesn't break export.
+        chunkFileNames: (chunkInfo) => {
+          if (chunkInfo.name.startsWith('subset-')) {
+            return 'assets/[name].js'
+          }
+          return 'assets/[name]-[hash].js'
+        },
+      },
+    },
   },
   server: {
     port: 5173,
