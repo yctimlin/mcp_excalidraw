@@ -59,8 +59,13 @@ const clients = new Set<WebSocket>();
 function broadcast(message: WebSocketMessage): void {
   const data = JSON.stringify(message);
   clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+    try {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    } catch (err) {
+      logger.warn('Failed to send to client, removing');
+      clients.delete(client);
     }
   });
 }
@@ -130,6 +135,25 @@ const CreateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Arrow binding properties (preserved for Excalidraw frontend)
+  startBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  endBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  boundElements: z.array(z.object({
+    id: z.string(),
+    type: z.enum(['arrow', 'text']),
+  })).nullable().optional(),
   // Image-specific properties
   fileId: z.string().optional(),
   status: z.string().optional(),
@@ -168,6 +192,25 @@ const UpdateElementSchema = z.object({
   startArrowhead: z.string().nullable().optional(),
   endArrowhead: z.string().nullable().optional(),
   elbowed: z.boolean().optional(),
+  // Arrow binding properties (preserved for Excalidraw frontend)
+  startBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  endBinding: z.object({
+    elementId: z.string(),
+    focus: z.number().optional(),
+    gap: z.number().optional(),
+    fixedPoint: z.any().nullable().optional(),
+    mode: z.string().optional(),
+  }).nullable().optional(),
+  boundElements: z.array(z.object({
+    id: z.string(),
+    type: z.enum(['arrow', 'text']),
+  })).nullable().optional(),
   // Image-specific properties
   fileId: z.string().optional(),
   status: z.string().optional(),
@@ -210,6 +253,11 @@ app.post('/api/elements', (req: Request, res: Response) => {
       updatedAt: new Date().toISOString(),
       version: 1
     };
+
+    // Resolve arrow bindings against existing elements
+    if (element.type === 'arrow' || element.type === 'line') {
+      resolveArrowBindings([element]);
+    }
 
     elements.set(id, element);
 
@@ -541,6 +589,12 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         focus: 0,
         gap: GAP
       };
+      // Add boundElements to the source shape so Excalidraw knows the connection
+      const startBound = (startEl.boundElements as any[] || []);
+      if (!startBound.some((b: any) => b.id === el.id)) {
+        startBound.push({ id: el.id, type: 'arrow' });
+      }
+      (startEl as any).boundElements = startBound;
     }
     if (endEl) {
       (el as any).endBinding = {
@@ -548,6 +602,12 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         focus: 0,
         gap: GAP
       };
+      // Add boundElements to the target shape so Excalidraw knows the connection
+      const endBound = (endEl.boundElements as any[] || []);
+      if (!endBound.some((b: any) => b.id === el.id)) {
+        endBound.push({ id: el.id, type: 'arrow' });
+      }
+      (endEl as any).boundElements = endBound;
     }
   }
 }
