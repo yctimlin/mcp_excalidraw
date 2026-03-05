@@ -172,6 +172,39 @@ const normalizeImageElement = (element: Partial<ExcalidrawElement>): Partial<Exc
   }
 }
 
+// Helper: restore startBinding/endBinding/boundElements after convertToExcalidrawElements strips them
+const restoreBindings = (
+  convertedElements: readonly any[],
+  originalElements: Partial<ExcalidrawElement>[]
+): any[] => {
+  const originalMap = new Map<string, any>();
+  for (const el of originalElements) {
+    if (el.id) originalMap.set(el.id, el);
+  }
+
+  return convertedElements.map((el: any) => {
+    const orig = originalMap.get(el.id);
+    if (!orig) return el;
+
+    const patched = { ...el };
+
+    if (orig.startBinding && !el.startBinding) {
+      patched.startBinding = orig.startBinding;
+    }
+    if (orig.endBinding && !el.endBinding) {
+      patched.endBinding = orig.endBinding;
+    }
+    if (orig.boundElements && (!el.boundElements || el.boundElements.length === 0)) {
+      patched.boundElements = orig.boundElements;
+    }
+    if (orig.elbowed !== undefined && el.elbowed === undefined) {
+      patched.elbowed = orig.elbowed;
+    }
+
+    return patched;
+  });
+};
+
 const convertElementsPreservingImageProps = (
   elements: Partial<ExcalidrawElement>[]
 ): Partial<ExcalidrawElement>[] => {
@@ -183,7 +216,8 @@ const convertElementsPreservingImageProps = (
   // convertToExcalidrawElements may expand labeled shapes into [shape, textElement],
   // so we cannot assume a 1:1 mapping — return all converted elements directly.
   const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
-  return [...convertedNonImageElements, ...imageElements]
+  const restoredNonImageElements = restoreBindings(convertedNonImageElements, nonImageElements)
+  return [...restoredNonImageElements, ...imageElements]
 }
 
 function App(): JSX.Element {
@@ -324,7 +358,8 @@ function App(): JSX.Element {
         case 'element_created':
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
-            const hasBindings = (cleanedNewElement as any).start || (cleanedNewElement as any).end
+            const hasBindings = (cleanedNewElement as any).start || (cleanedNewElement as any).end ||
+              (cleanedNewElement as any).startBinding || (cleanedNewElement as any).endBinding
             if (hasBindings) {
               // Bound arrow: re-convert all elements together so bindings resolve
               const allElements = [...currentElements, cleanedNewElement] as any[]
@@ -373,7 +408,9 @@ function App(): JSX.Element {
         case 'elements_batch_created':
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
-            const hasBoundArrows = cleanedBatchElements.some((el: any) => el.start || el.end)
+            const hasBoundArrows = cleanedBatchElements.some((el: any) =>
+              el.start || el.end || el.startBinding || el.endBinding
+            )
             if (hasBoundArrows) {
               // Convert ALL elements together so arrow bindings resolve to target shapes
               const allElements = [...currentElements, ...cleanedBatchElements] as any[]
