@@ -70,6 +70,12 @@ function broadcast(message: WebSocketMessage): void {
   });
 }
 
+function normalizeLineBreakMarkup(text: string): string {
+  return text
+    .replace(/<\s*b\s*r\s*\/?\s*>/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 // WebSocket connection handling
 wss.on('connection', (ws: WebSocket) => {
   clients.add(ws);
@@ -174,6 +180,7 @@ const UpdateElementSchema = z.object({
   roughness: z.number().optional(),
   opacity: z.number().optional(),
   text: z.string().optional(),
+  originalText: z.string().optional(),
   label: z.object({
     text: z.string()
   }).optional(),
@@ -309,6 +316,30 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
       updatedAt: new Date().toISOString(),
       version: (existingElement.version || 0) + 1
     };
+
+    // Keep Excalidraw text source in sync when clients update text via REST.
+    // If originalText lags behind text, rendered wrapping/position can drift.
+    const hasTextUpdate = Object.prototype.hasOwnProperty.call(req.body, 'text');
+    const hasOriginalTextUpdate = Object.prototype.hasOwnProperty.call(req.body, 'originalText');
+    if (updatedElement.type === EXCALIDRAW_ELEMENT_TYPES.TEXT && hasTextUpdate && !hasOriginalTextUpdate) {
+      const incomingText = updates.text ?? '';
+      const existingText = typeof existingElement.text === 'string' ? existingElement.text : '';
+      const existingOriginalText = typeof (existingElement as any).originalText === 'string'
+        ? (existingElement as any).originalText as string
+        : '';
+      const existingOriginalHasBr = /<\s*b\s*r\s*\/?\s*>/i.test(existingOriginalText);
+      const normalizedExistingText = normalizeLineBreakMarkup(existingText);
+      const normalizedExistingOriginalText = normalizeLineBreakMarkup(existingOriginalText);
+
+      // Handle common cleanup flow: caller normalizes the rendered text value.
+      // In this case, prefer normalized originalText so words aren't split by stale wraps.
+      if (existingOriginalHasBr && incomingText === normalizedExistingText && normalizedExistingOriginalText) {
+        updatedElement.text = normalizedExistingOriginalText;
+        (updatedElement as any).originalText = normalizedExistingOriginalText;
+      } else {
+        (updatedElement as any).originalText = incomingText;
+      }
+    }
 
     elements.set(id, updatedElement);
     
