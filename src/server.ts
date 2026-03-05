@@ -140,14 +140,14 @@ const CreateElementSchema = z.object({
     elementId: z.string(),
     focus: z.number().optional(),
     gap: z.number().optional(),
-    fixedPoint: z.any().nullable().optional(),
+    fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
     mode: z.string().optional(),
   }).nullable().optional(),
   endBinding: z.object({
     elementId: z.string(),
     focus: z.number().optional(),
     gap: z.number().optional(),
-    fixedPoint: z.any().nullable().optional(),
+    fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
     mode: z.string().optional(),
   }).nullable().optional(),
   boundElements: z.array(z.object({
@@ -197,14 +197,14 @@ const UpdateElementSchema = z.object({
     elementId: z.string(),
     focus: z.number().optional(),
     gap: z.number().optional(),
-    fixedPoint: z.any().nullable().optional(),
+    fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
     mode: z.string().optional(),
   }).nullable().optional(),
   endBinding: z.object({
     elementId: z.string(),
     focus: z.number().optional(),
     gap: z.number().optional(),
-    fixedPoint: z.any().nullable().optional(),
+    fixedPoint: z.tuple([z.number(), z.number()]).nullable().optional(),
     mode: z.string().optional(),
   }).nullable().optional(),
   boundElements: z.array(z.object({
@@ -590,7 +590,7 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         gap: GAP
       };
       // Add boundElements to the source shape so Excalidraw knows the connection
-      const startBound = (startEl.boundElements as any[] || []);
+      const startBound = Array.isArray(startEl.boundElements) ? [...startEl.boundElements] : [];
       if (!startBound.some((b: any) => b.id === el.id)) {
         startBound.push({ id: el.id, type: 'arrow' });
       }
@@ -603,7 +603,7 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
         gap: GAP
       };
       // Add boundElements to the target shape so Excalidraw knows the connection
-      const endBound = (endEl.boundElements as any[] || []);
+      const endBound = Array.isArray(endEl.boundElements) ? [...endEl.boundElements] : [];
       if (!endBound.some((b: any) => b.id === el.id)) {
         endBound.push({ id: el.id, type: 'arrow' });
       }
