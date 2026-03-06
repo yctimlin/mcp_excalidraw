@@ -160,8 +160,8 @@ const recenterBoundShapeTextElements = (
       return element
     }
 
-    const textElement = element as any
-    const container = elementMap.get(textElement.containerId) as any
+    const textElement = element as ExcalidrawElement & { type: 'text'; containerId: string; autoResize?: boolean }
+    const container = elementMap.get(textElement.containerId) as (ExcalidrawElement & { x: number; y: number; width: number; height: number }) | undefined
     if (!container || !isShapeContainerType(container.type)) {
       return element
     }

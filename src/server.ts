@@ -324,8 +324,8 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     if (updatedElement.type === EXCALIDRAW_ELEMENT_TYPES.TEXT && hasTextUpdate && !hasOriginalTextUpdate) {
       const incomingText = updates.text ?? '';
       const existingText = typeof existingElement.text === 'string' ? existingElement.text : '';
-      const existingOriginalText = typeof (existingElement as any).originalText === 'string'
-        ? (existingElement as any).originalText as string
+      const existingOriginalText = typeof existingElement.originalText === 'string'
+        ? existingElement.originalText
         : '';
       const existingOriginalHasBr = /<\s*b\s*r\s*\/?\s*>/i.test(existingOriginalText);
       const normalizedExistingText = normalizeLineBreakMarkup(existingText);
@@ -335,9 +335,9 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
       // In this case, prefer normalized originalText so words aren't split by stale wraps.
       if (existingOriginalHasBr && incomingText === normalizedExistingText && normalizedExistingOriginalText) {
         updatedElement.text = normalizedExistingOriginalText;
-        (updatedElement as any).originalText = normalizedExistingOriginalText;
+        updatedElement.originalText = normalizedExistingOriginalText;
       } else {
-        (updatedElement as any).originalText = incomingText;
+        updatedElement.originalText = incomingText;
       }
     }
 

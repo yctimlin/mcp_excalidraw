@@ -102,8 +102,10 @@ npm run build
 
 Terminal 1: start the canvas
 ```bash
-HOST=0.0.0.0 PORT=3000 npm run canvas
+PORT=3000 npm run canvas
 ```
+
+> **Security note:** The server defaults to binding on `localhost` only. If you need to expose it on a network interface (e.g. Docker, remote access), set `HOST=0.0.0.0` — but ensure you have network-level access controls in place, as the API has no built-in authentication.
 
 Open `http://localhost:3000`.
 
