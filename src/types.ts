@@ -131,6 +131,7 @@ export interface ServerElement extends Omit<ExcalidrawElementBase, 'id'> {
   source?: string;
   syncTimestamp?: string;
   text?: string;
+  originalText?: string;
   fontSize?: number;
   fontFamily?: string | number;
   label?: {

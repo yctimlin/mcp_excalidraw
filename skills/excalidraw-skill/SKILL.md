@@ -17,7 +17,7 @@ Two modes are available. Try MCP first — it has more capabilities.
 > The Excalidraw canvas server is not running. To set up:
 > 1. `git clone https://github.com/yctimlin/mcp_excalidraw && cd mcp_excalidraw`
 > 2. `npm ci && npm run build`
-> 3. `HOST=0.0.0.0 PORT=3000 npm run canvas`
+> 3. `PORT=3000 npm run canvas`
 > 4. Open `http://localhost:3000` in a browser
 > 5. (Recommended) Install the MCP server:
 >    `claude mcp add excalidraw -s user -e EXPRESS_SERVER_URL=http://localhost:3000 -- node /path/to/mcp_excalidraw/dist/index.js`
@@ -64,6 +64,45 @@ The canvas uses a 2D coordinate grid: **(0, 0) is the origin**, **x increases ri
 
 ---
 
+## Layout Anti-Patterns (Critical for Complex Diagrams)
+
+These are the most common mistakes that produce unreadable diagrams. Avoid all of them.
+
+### 1. Do NOT use `label.text` (or `text`) on large background zone rectangles
+
+When you put a label on a background rectangle, Excalidraw creates a bound text element centered in the middle of that shape — right where your service boxes will be placed. The text overlaps everything inside the zone and cannot be repositioned.
+
+**Wrong:**
+```json
+{"id": "vpc-zone", "type": "rectangle", "x": 50, "y": 50, "width": 800, "height": 400, "text": "VPC (10.0.0.0/16)"}
+```
+
+**Right — use a free-standing text element anchored at the top of the zone:**
+```json
+{"id": "vpc-zone", "type": "rectangle", "x": 50, "y": 50, "width": 800, "height": 400, "backgroundColor": "#e3f2fd"},
+{"id": "vpc-label", "type": "text", "x": 70, "y": 60, "width": 300, "height": 30, "text": "VPC (10.0.0.0/16)", "fontSize": 18, "fontWeight": "bold"}
+```
+
+The free-standing text element sits at the top corner of the zone and doesn't interfere with elements placed inside.
+
+### 2. Avoid cross-zone arrows in complex diagrams
+
+An arrow from an element in one layout zone to an element in a distant zone will draw a long diagonal line crossing through everything in between. In a multi-zone infra diagram this produces an unreadable tangle of spaghetti.
+
+**Design rule:** Keep arrows within the same zone or tier. To show cross-zone relationships, use annotation text or separate the zones so their edges are adjacent (no elements between them), and route the arrow along the edge.
+
+If you must connect across zones, use an elbowed arrow that travels along the perimeter — never through the middle of another zone.
+
+### 3. Use arrow labels sparingly
+
+Arrow labels are placed at the midpoint of the arrow. On short arrows, they overlap the shapes at both ends. On crowded diagrams, they collide with nearby elements.
+
+- Only add an arrow label when the relationship name is genuinely essential (e.g., protocol, port number, data direction).
+- If you're adding a label to every arrow, reconsider — it usually adds visual noise, not clarity.
+- Keep arrow labels to ≤ 12 characters. Prefer omitting them entirely on dense diagrams.
+
+---
+
 ## Quality: Why It Matters (and How to Check)
 
 Excalidraw diagrams are visual communication. If text is cut off, elements overlap, or arrows cross through unrelated shapes, the diagram becomes confusing and unprofessional — it defeats the whole purpose of drawing it. So after every batch of elements, verify before adding more.
@@ -78,6 +117,7 @@ After each `batch_create_elements` / `POST /api/elements/batch`, take a screensh
 4. **Arrow-label overlap** — Arrow labels sit at the midpoint. If they overlap a shape, shorten the label or adjust the arrow path.
 5. **Spacing** — At least 40px gap between elements. Cramped layouts are hard to read.
 6. **Readability** — Font size ≥ 16 for body text, ≥ 20 for titles.
+7. **Zone label placement** — If you used `text`/`label.text` on a background zone rectangle, the zone label will be centered in the middle of the zone, overlapping everything inside. Fix: delete the bound text element and add a free-standing text element at the top of the zone instead (see Layout Anti-Patterns above).
 
 If you find any issue: **stop, fix it, re-screenshot, then continue.** Say "I see [issue], fixing it" rather than glossing over problems. Only proceed once all checks pass.
 
@@ -254,6 +294,7 @@ curl -X POST http://localhost:3000/api/elements/from-mermaid \
 - **Canvas in a bad state?** `snapshot_scene` first, then `clear_canvas` and rebuild. Or `restore_snapshot` to go back.
 - **Element won't update?** It may be locked — call `unlock_elements` first.
 - **Layout looking wrong after import?** Use `describe_scene` to inspect actual positions, then batch-update positions.
+- **Duplicate text elements / element count doubling?** The frontend has an auto-sync timer that periodically sends the full Excalidraw scene back to the server (overwriting). Excalidraw internally generates a bound text element for every shape that has `label.text`. If you clear and re-send elements, Excalidraw may re-inject its cached bound texts, causing duplicates. To clean up: (1) use `query_elements` / `GET /api/elements` to find elements of `type: "text"` with a `containerId`; (2) delete the unwanted ones with `delete_element`; (3) wait a few seconds for auto-sync to settle before exporting. The safest approach is to **never put labels on background zone rectangles** — use free-standing text elements instead.
 
 ---
 
