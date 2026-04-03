@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mcp-excalidraw": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@yctimlin/mcp-excalidraw"
+      ]
+    }
+  }
+}

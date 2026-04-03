@@ -1,0 +1,24 @@
+{
+  "name": "mcp-excalidraw",
+  "version": "0.1.0",
+  "description": "Create and edit Excalidraw diagrams from Codex via MCP",
+  "author": {
+    "name": "yctimlin",
+    "url": "https://github.com/yctimlin/mcp_excalidraw"
+  },
+  "homepage": "https://github.com/yctimlin/mcp_excalidraw",
+  "repository": "https://github.com/yctimlin/mcp_excalidraw",
+  "keywords": [
+    "mcp",
+    "codex"
+  ],
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Excalidraw MCP",
+    "shortDescription": "Create and edit Excalidraw diagrams from Codex via MCP",
+    "longDescription": "MCP server and Claude Code skill for Excalidraw. Programmatic canvas toolkit to create, edit, and export diagrams.",
+    "category": "Design",
+    "websiteURL": "https://github.com/yctimlin/mcp_excalidraw"
+  }
+}
