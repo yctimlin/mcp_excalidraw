@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "Excalidraw MCP",
     "shortDescription": "Create and edit Excalidraw diagrams from Codex via MCP",
-    "longDescription": "MCP server and Claude Code skill for Excalidraw. Programmatic canvas toolkit to create, edit, and export diagrams.",
+    "longDescription": "MCP server and Codex skill for Excalidraw. Programmatic canvas toolkit to create, edit, and export diagrams.",
     "category": "Design",
     "websiteURL": "https://github.com/yctimlin/mcp_excalidraw"
   }
