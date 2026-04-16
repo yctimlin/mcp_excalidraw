@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import { randomUUID } from 'crypto';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -23,7 +24,8 @@ import {
   SyncStatusMessage,
   InitialElementsMessage,
   Snapshot,
-  normalizeFontFamily
+  normalizeFontFamily,
+  validateElement
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
@@ -38,9 +40,51 @@ const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
+// ─── Security configuration ──────────────────────────────────────────────────
+const CANVAS_API_TOKEN = process.env.CANVAS_API_TOKEN || '';
+
+if (!CANVAS_API_TOKEN) {
+  console.warn(
+    '[SECURITY] CANVAS_API_TOKEN is not set. The canvas API is unauthenticated. ' +
+    'Set CANVAS_API_TOKEN to enable bearer-token protection.'
+  );
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!CANVAS_API_TOKEN) { next(); return; }
+  const authHeader = req.headers['authorization'];
+  if (authHeader !== `Bearer ${CANVAS_API_TOKEN}`) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+}
+
+// Memory store caps
+const MAX_ELEMENTS = 10_000;
+const MAX_FILES = 100;
+const MAX_SNAPSHOTS = 500;
+
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGIN || false,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+}));
 app.use(express.json({ limit: '10mb' }));
+
+// Content-Security-Policy — applied to all responses
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; " +
+    "font-src 'self' data:; " +
+    "connect-src 'self' ws: wss:;"
+  );
+  next();
+});
 
 // Serve static files from the build directory
 const staticDir = path.join(__dirname, '../dist');
@@ -77,7 +121,16 @@ function normalizeLineBreakMarkup(text: string): string {
 }
 
 // WebSocket connection handling
-wss.on('connection', (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket, req) => {
+  if (CANVAS_API_TOKEN) {
+    const urlStr = req.url ?? '/';
+    const token = new URL(urlStr, 'http://localhost').searchParams.get('token');
+    if (token !== CANVAS_API_TOKEN) {
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
+  }
+
   clients.add(ws);
   logger.info('New WebSocket connection established');
 
@@ -227,7 +280,7 @@ const UpdateElementSchema = z.object({
 // API Routes
 
 // Get all elements
-app.get('/api/elements', (req: Request, res: Response) => {
+app.get('/api/elements', requireAuth, (req: Request, res: Response) => {
   try {
     const elementsArray = Array.from(elements.values());
     res.json({
@@ -239,14 +292,17 @@ app.get('/api/elements', (req: Request, res: Response) => {
     logger.error('Error fetching elements:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Create new element
-app.post('/api/elements', (req: Request, res: Response) => {
+app.post('/api/elements', requireAuth, (req: Request, res: Response) => {
   try {
+    if (elements.size >= MAX_ELEMENTS) {
+      return res.status(507).json({ success: false, error: `Element store is full (max ${MAX_ELEMENTS}).` });
+    }
     const params = CreateElementSchema.parse(req.body);
     logger.info('Creating element via API', { type: params.type });
 
@@ -283,13 +339,13 @@ app.post('/api/elements', (req: Request, res: Response) => {
     logger.error('Error creating element:', error);
     res.status(400).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Update element
-app.put('/api/elements/:id', (req: Request, res: Response) => {
+app.put('/api/elements/:id', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const updates = UpdateElementSchema.parse({ id, ...req.body });
@@ -358,13 +414,13 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     logger.error('Error updating element:', error);
     res.status(400).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Clear all elements (must be before /:id route)
-app.delete('/api/elements/clear', (req: Request, res: Response) => {
+app.delete('/api/elements/clear', requireAuth, (req: Request, res: Response) => {
   try {
     const count = elements.size;
     elements.clear();
@@ -385,13 +441,13 @@ app.delete('/api/elements/clear', (req: Request, res: Response) => {
     logger.error('Error clearing canvas:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Delete element
-app.delete('/api/elements/:id', (req: Request, res: Response) => {
+app.delete('/api/elements/:id', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -426,13 +482,13 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
     logger.error('Error deleting element:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Query elements with filters
-app.get('/api/elements/search', (req: Request, res: Response) => {
+app.get('/api/elements/search', requireAuth, (req: Request, res: Response) => {
   try {
     const { type, ...filters } = req.query;
     let results = Array.from(elements.values());
@@ -460,13 +516,13 @@ app.get('/api/elements/search', (req: Request, res: Response) => {
     logger.error('Error querying elements:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Get element by ID
-app.get('/api/elements/:id', (req: Request, res: Response) => {
+app.get('/api/elements/:id', requireAuth, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -494,7 +550,7 @@ app.get('/api/elements/:id', (req: Request, res: Response) => {
     logger.error('Error fetching element:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
@@ -616,7 +672,7 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
 }
 
 // Batch create elements
-app.post('/api/elements/batch', (req: Request, res: Response) => {
+app.post('/api/elements/batch', requireAuth, (req: Request, res: Response) => {
   try {
     const { elements: elementsToCreate } = req.body;
 
@@ -625,6 +681,10 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
         success: false,
         error: 'Expected an array of elements'
       });
+    }
+
+    if (elements.size + elementsToCreate.length > MAX_ELEMENTS) {
+      return res.status(507).json({ success: false, error: `Element store is full (max ${MAX_ELEMENTS}).` });
     }
 
     const createdElements: ServerElement[] = [];
@@ -667,13 +727,13 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
     logger.error('Error batch creating elements:', error);
     res.status(400).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Convert Mermaid diagram to Excalidraw elements
-app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
+app.post('/api/elements/from-mermaid', requireAuth, (req: Request, res: Response) => {
   try {
     const { mermaidDiagram, config } = req.body;
 
@@ -708,13 +768,13 @@ app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
     logger.error('Error processing Mermaid diagram:', error);
     res.status(400).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Sync elements from frontend (overwrite sync)
-app.post('/api/elements/sync', (req: Request, res: Response) => {
+app.post('/api/elements/sync', requireAuth, (req: Request, res: Response) => {
   try {
     const { elements: frontendElements, timestamp } = req.body;
 
@@ -744,6 +804,9 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
 
     frontendElements.forEach((element: any, index: number) => {
       try {
+        // Validate element structure before storing
+        validateElement(element);
+
         // Ensure element has ID, generate one if missing
         const elementId = element.id || generateId();
 
@@ -791,7 +854,7 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
     logger.error('Sync error:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message,
+      error: 'Internal server error.',
       details: 'Internal server error during sync operation'
     });
   }
@@ -799,16 +862,19 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
 
 // ─── Files API (for image elements) ───────────────────────────
 // GET all files
-app.get('/api/files', (_req: Request, res: Response) => {
+app.get('/api/files', requireAuth, (_req: Request, res: Response) => {
   const filesObj: Record<string, ExcalidrawFile> = {};
   files.forEach((f, id) => { filesObj[id] = f; });
   res.json({ files: filesObj });
 });
 
 // POST add/update files (batch)
-app.post('/api/files', (req: Request, res: Response) => {
+app.post('/api/files', requireAuth, (req: Request, res: Response) => {
   const body = req.body;
   const fileList: ExcalidrawFile[] = Array.isArray(body) ? body : (body?.files || []);
+  if (files.size + fileList.length > MAX_FILES) {
+    return res.status(507).json({ success: false, error: `File store is full (max ${MAX_FILES}).` });
+  }
   for (const f of fileList) {
     if (f.id && f.dataURL) {
       files.set(f.id, { id: f.id, dataURL: f.dataURL, mimeType: f.mimeType || 'image/png', created: f.created || Date.now() });
@@ -820,7 +886,7 @@ app.post('/api/files', (req: Request, res: Response) => {
 });
 
 // DELETE a file
-app.delete('/api/files/:id', (req: Request, res: Response) => {
+app.delete('/api/files/:id', requireAuth, (req: Request, res: Response) => {
   const id = req.params.id as string;
   if (files.delete(id)) {
     broadcast({ type: 'file_deleted', fileId: id });
@@ -840,7 +906,7 @@ interface PendingExport {
 }
 const pendingExports = new Map<string, PendingExport>();
 
-app.post('/api/export/image', (req: Request, res: Response) => {
+app.post('/api/export/image', requireAuth, (req: Request, res: Response) => {
   try {
     const { format, background } = req.body;
 
@@ -906,20 +972,20 @@ app.post('/api/export/image', (req: Request, res: Response) => {
       .catch(error => {
         res.status(500).json({
           success: false,
-          error: (error as Error).message
+          error: 'Internal server error.'
         });
       });
   } catch (error) {
     logger.error('Error initiating image export:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Image export: result (Frontend -> Express -> MCP)
-app.post('/api/export/image/result', (req: Request, res: Response) => {
+app.post('/api/export/image/result', requireAuth, (req: Request, res: Response) => {
   try {
     const { requestId, format, data, error } = req.body;
 
@@ -964,7 +1030,7 @@ app.post('/api/export/image/result', (req: Request, res: Response) => {
     logger.error('Error processing export result:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
@@ -977,7 +1043,7 @@ interface PendingViewport {
 }
 const pendingViewports = new Map<string, PendingViewport>();
 
-app.post('/api/viewport', (req: Request, res: Response) => {
+app.post('/api/viewport', requireAuth, (req: Request, res: Response) => {
   try {
     const { scrollToContent, scrollToElementId, zoom, offsetX, offsetY } = req.body;
 
@@ -1016,20 +1082,20 @@ app.post('/api/viewport', (req: Request, res: Response) => {
       .catch(error => {
         res.status(500).json({
           success: false,
-          error: (error as Error).message
+          error: 'Internal server error.'
         });
       });
   } catch (error) {
     logger.error('Error initiating viewport change:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Viewport control: result (Frontend -> Express -> MCP)
-app.post('/api/viewport/result', (req: Request, res: Response) => {
+app.post('/api/viewport/result', requireAuth, (req: Request, res: Response) => {
   try {
     const { requestId, success, message, error } = req.body;
 
@@ -1061,13 +1127,13 @@ app.post('/api/viewport/result', (req: Request, res: Response) => {
     logger.error('Error processing viewport result:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Snapshots: save
-app.post('/api/snapshots', (req: Request, res: Response) => {
+app.post('/api/snapshots', requireAuth, (req: Request, res: Response) => {
   try {
     const { name } = req.body;
 
@@ -1078,17 +1144,23 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
       });
     }
 
+    if (snapshots.size >= MAX_SNAPSHOTS) {
+      return res.status(507).json({ success: false, error: `Snapshot store is full (max ${MAX_SNAPSHOTS}).` });
+    }
+
+    const id = randomUUID();
     const snapshot: Snapshot = {
       name,
       elements: Array.from(elements.values()),
       createdAt: new Date().toISOString()
     };
 
-    snapshots.set(name, snapshot);
-    logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
+    snapshots.set(id, snapshot);
+    logger.info(`Snapshot saved: id="${id}" name="${name}" with ${snapshot.elements.length} elements`);
 
     res.json({
       success: true,
+      id,
       name,
       elementCount: snapshot.elements.length,
       createdAt: snapshot.createdAt
@@ -1097,15 +1169,16 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
     logger.error('Error saving snapshot:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
 // Snapshots: list
-app.get('/api/snapshots', (req: Request, res: Response) => {
+app.get('/api/snapshots', requireAuth, (req: Request, res: Response) => {
   try {
-    const list = Array.from(snapshots.values()).map(s => ({
+    const list = Array.from(snapshots.entries()).map(([id, s]) => ({
+      id,
       name: s.name,
       elementCount: s.elements.length,
       createdAt: s.createdAt
@@ -1120,21 +1193,21 @@ app.get('/api/snapshots', (req: Request, res: Response) => {
     logger.error('Error listing snapshots:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
 
-// Snapshots: get by name
-app.get('/api/snapshots/:name', (req: Request, res: Response) => {
+// Snapshots: get by UUID id
+app.get('/api/snapshots/:id', requireAuth, (req: Request, res: Response) => {
   try {
-    const { name } = req.params;
-    const snapshot = snapshots.get(name!);
+    const { id } = req.params;
+    const snapshot = snapshots.get(id!);
 
     if (!snapshot) {
       return res.status(404).json({
         success: false,
-        error: `Snapshot "${name}" not found`
+        error: 'Snapshot not found.'
       });
     }
 
@@ -1146,7 +1219,7 @@ app.get('/api/snapshots/:name', (req: Request, res: Response) => {
     logger.error('Error fetching snapshot:', error);
     res.status(500).json({
       success: false,
-      error: (error as Error).message
+      error: 'Internal server error.'
     });
   }
 });
@@ -1173,7 +1246,7 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Sync status endpoint
-app.get('/api/sync/status', (req: Request, res: Response) => {
+app.get('/api/sync/status', requireAuth, (req: Request, res: Response) => {
   res.json({
     success: true,
     elementCount: elements.size,

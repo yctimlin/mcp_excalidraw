@@ -68,7 +68,9 @@ USER nodejs
 # Set environment variables with defaults
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV HOST=0.0.0.0
+# Bind to localhost by default. Override with -e HOST=0.0.0.0 only if CANVAS_API_TOKEN is
+# configured and you understand the network exposure implications.
+ENV HOST=127.0.0.1
 
 # Expose port
 EXPOSE 3000
