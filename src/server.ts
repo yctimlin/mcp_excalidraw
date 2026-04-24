@@ -443,10 +443,19 @@ app.get('/api/elements/search', (req: Request, res: Response) => {
     }
 
     // Filter by bounding box if specified
-    if (x_min !== undefined) results = results.filter(el => (el as any).x >= Number(x_min));
-    if (x_max !== undefined) results = results.filter(el => (el as any).x <= Number(x_max));
-    if (y_min !== undefined) results = results.filter(el => (el as any).y >= Number(y_min));
-    if (y_max !== undefined) results = results.filter(el => (el as any).y <= Number(y_max));
+    if (x_min !== undefined || x_max !== undefined || y_min !== undefined || y_max !== undefined) {
+      const xMin = x_min !== undefined ? Number(x_min) : -Infinity;
+      const xMax = x_max !== undefined ? Number(x_max) : Infinity;
+      const yMin = y_min !== undefined ? Number(y_min) : -Infinity;
+      const yMax = y_max !== undefined ? Number(y_max) : Infinity;
+
+      results = results.filter(el =>
+        el.x >= xMin &&
+        el.x <= xMax &&
+        el.y >= yMin &&
+        el.y <= yMax
+      );
+    }
 
     // Apply additional exact-match filters
     if (Object.keys(filters).length > 0) {
