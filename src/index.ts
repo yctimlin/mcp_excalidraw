@@ -263,7 +263,13 @@ const DistributeElementsSchema = z.object({
 
 const QuerySchema = z.object({
   type: z.enum(Object.values(EXCALIDRAW_ELEMENT_TYPES) as [ExcalidrawElementType, ...ExcalidrawElementType[]]).optional(),
-  filter: z.record(z.any()).optional()
+  filter: z.record(z.any()).optional(),
+  bbox: z.object({
+    x_min: z.number().optional(),
+    x_max: z.number().optional(),
+    y_min: z.number().optional(),
+    y_max: z.number().optional()
+  }).optional()
 });
 
 const ResourceSchema = z.object({
@@ -442,13 +448,23 @@ const tools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        type: { 
-          type: 'string', 
-          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES) 
+        type: {
+          type: 'string',
+          enum: Object.values(EXCALIDRAW_ELEMENT_TYPES)
         },
-        filter: { 
+        filter: {
           type: 'object',
           additionalProperties: true
+        },
+        bbox: {
+          type: 'object',
+          description: 'Bounding box filter — only return elements whose origin (x, y) falls within the given coordinate range',
+          properties: {
+            x_min: { type: 'number' },
+            x_max: { type: 'number' },
+            y_min: { type: 'number' },
+            y_max: { type: 'number' }
+          }
         }
       }
     }
@@ -982,8 +998,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       
       case 'query_elements': {
         const params = QuerySchema.parse(args || {});
-        const { type, filter } = params;
-        
+        const { type, filter, bbox } = params;
+
         try {
           // Build query parameters
           const queryParams = new URLSearchParams();
@@ -992,6 +1008,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             Object.entries(filter).forEach(([key, value]) => {
               queryParams.set(key, String(value));
             });
+          }
+          if (bbox) {
+            if (bbox.x_min !== undefined) queryParams.set('x_min', String(bbox.x_min));
+            if (bbox.x_max !== undefined) queryParams.set('x_max', String(bbox.x_max));
+            if (bbox.y_min !== undefined) queryParams.set('y_min', String(bbox.y_min));
+            if (bbox.y_max !== undefined) queryParams.set('y_max', String(bbox.y_max));
           }
           
           // Query elements from HTTP server

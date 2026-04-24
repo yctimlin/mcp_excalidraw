@@ -434,7 +434,7 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
 // Query elements with filters
 app.get('/api/elements/search', (req: Request, res: Response) => {
   try {
-    const { type, ...filters } = req.query;
+    const { type, x_min, x_max, y_min, y_max, ...filters } = req.query;
     let results = Array.from(elements.values());
 
     // Filter by type if specified
@@ -442,7 +442,13 @@ app.get('/api/elements/search', (req: Request, res: Response) => {
       results = results.filter(element => element.type === type);
     }
 
-    // Apply additional filters
+    // Filter by bounding box if specified
+    if (x_min !== undefined) results = results.filter(el => (el as any).x >= Number(x_min));
+    if (x_max !== undefined) results = results.filter(el => (el as any).x <= Number(x_max));
+    if (y_min !== undefined) results = results.filter(el => (el as any).y >= Number(y_min));
+    if (y_max !== undefined) results = results.filter(el => (el as any).y <= Number(y_max));
+
+    // Apply additional exact-match filters
     if (Object.keys(filters).length > 0) {
       results = results.filter(element => {
         return Object.entries(filters).every(([key, value]) => {

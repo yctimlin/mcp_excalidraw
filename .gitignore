@@ -20,4 +20,6 @@ public/dist/
 # Development artifacts
 *.excalidraw
 
+.DS_Store
+
 docs/
