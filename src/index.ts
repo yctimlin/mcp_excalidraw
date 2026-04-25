@@ -2269,8 +2269,15 @@ if (process.env.DEBUG === 'true') {
   logger.debug('Debug mode enabled');
 }
 
-// Start the server if this file is run directly
-if (fileURLToPath(import.meta.url) === process.argv[1]) {
+// Start the server if this file is run directly. realpath both sides so a
+// symlinked clone still matches: import.meta.url is canonicalized but
+// process.argv[1] keeps the literal launcher path, so === silently fails
+// and the script exits 0 before runServer() is ever called.
+const entryPath = fileURLToPath(import.meta.url);
+const argvPath = process.argv[1];
+const isDirectRun = entryPath === argvPath ||
+  (argvPath && fs.realpathSync(entryPath) === fs.realpathSync(argvPath));
+if (isDirectRun) {
   runServer().catch(error => {
     logger.error('Failed to start server:', error);
     process.exit(1);
