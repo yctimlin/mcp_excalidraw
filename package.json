@@ -1,6 +1,6 @@
 {
   "name": "mcp-excalidraw-server",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "description": "Advanced MCP server for Excalidraw with real-time canvas, WebSocket sync, and comprehensive diagram management",
   "main": "dist/index.js",
   "type": "module",
