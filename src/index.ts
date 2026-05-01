@@ -2291,8 +2291,36 @@ if (process.env.DEBUG === 'true') {
   logger.debug('Debug mode enabled');
 }
 
-// Start the server if this file is run directly
-if (fileURLToPath(import.meta.url) === process.argv[1]) {
+function getErrorCode(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+  }
+
+  return undefined;
+}
+
+function resolveEntrypointPath(filePath: string | undefined): string | null {
+  if (!filePath) return null;
+
+  try {
+    return fs.realpathSync(filePath);
+  } catch (error) {
+    const code = getErrorCode(error);
+    if (code !== 'ENOENT') {
+      logger.warn(`fs.realpathSync failed for "${filePath}", falling back to path.resolve.`, {
+        code,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+    return path.resolve(filePath);
+  }
+}
+
+// Start the server if this file is run directly.
+// npm/npx commonly invoke package bins through symlinks; compare real paths so
+// the stdio transport still starts from those standard install paths.
+if (resolveEntrypointPath(fileURLToPath(import.meta.url)) === resolveEntrypointPath(process.argv[1])) {
   runServer().catch(error => {
     logger.error('Failed to start server:', error);
     process.exit(1);
