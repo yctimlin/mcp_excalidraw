@@ -146,6 +146,10 @@ const isImageElement = (element: Partial<ExcalidrawElement>): boolean => {
   return element.type === 'image'
 }
 
+const isFreedrawElement = (element: Partial<ExcalidrawElement>): boolean => {
+  return element.type === 'freedraw'
+}
+
 const isShapeContainerType = (type: string | undefined): boolean => {
   return type === 'rectangle' || type === 'ellipse' || type === 'diamond'
 }
@@ -216,6 +220,33 @@ const normalizeImageElement = (element: Partial<ExcalidrawElement>): Partial<Exc
   }
 }
 
+const normalizeFreedrawElement = (element: Partial<ExcalidrawElement>): Partial<ExcalidrawElement> => {
+  const freedraw = element as any
+  return {
+    ...freedraw,
+    angle: freedraw.angle || 0,
+    backgroundColor: freedraw.backgroundColor || 'transparent',
+    fillStyle: freedraw.fillStyle || 'solid',
+    strokeWidth: freedraw.strokeWidth || 1,
+    strokeStyle: freedraw.strokeStyle || 'solid',
+    roughness: freedraw.roughness ?? 1,
+    opacity: freedraw.opacity ?? 100,
+    groupIds: freedraw.groupIds || [],
+    roundness: null,
+    seed: freedraw.seed || Math.floor(Math.random() * 1000000),
+    version: freedraw.version || 1,
+    versionNonce: freedraw.versionNonce || Math.floor(Math.random() * 1000000),
+    isDeleted: freedraw.isDeleted ?? false,
+    boundElements: freedraw.boundElements || null,
+    link: freedraw.link || null,
+    locked: freedraw.locked || false,
+    points: freedraw.points || [],
+    pressures: freedraw.pressures || [],
+    simulatePressure: freedraw.simulatePressure ?? true,
+    lastCommittedPoint: freedraw.lastCommittedPoint || null,
+  }
+}
+
 // Helper: restore startBinding/endBinding/boundElements after convertToExcalidrawElements strips them
 const restoreBindings = (
   convertedElements: readonly any[],
@@ -256,12 +287,13 @@ const convertElementsPreservingImageProps = (
 
   const validatedElements = validateAndFixBindings(elements)
   const imageElements = validatedElements.filter(isImageElement).map(normalizeImageElement)
-  const nonImageElements = validatedElements.filter(el => !isImageElement(el))
+  const freedrawElements = validatedElements.filter(isFreedrawElement).map(normalizeFreedrawElement)
+  const nonImageElements = validatedElements.filter(el => !isImageElement(el) && !isFreedrawElement(el))
   // convertToExcalidrawElements may expand labeled shapes into [shape, textElement],
   // so we cannot assume a 1:1 mapping — return all converted elements directly.
   const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
   const restoredNonImageElements = restoreBindings(convertedNonImageElements, nonImageElements)
-  return recenterBoundShapeTextElements([...restoredNonImageElements, ...imageElements])
+  return recenterBoundShapeTextElements([...restoredNonImageElements, ...imageElements, ...freedrawElements])
 }
 
 function App(): JSX.Element {
