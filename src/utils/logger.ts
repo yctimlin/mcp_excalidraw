@@ -1,14 +1,14 @@
 import winston from 'winston';
 import * as path from 'path';
 import * as fs from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 
 /**
- * Wählt einen plattformkompatiblen Default-Log-Pfad. MCP-Server werden im
- * Arbeitsverzeichnis ihres Aufrufers gestartet — ein relativer Pfad würde
- * dazu führen, dass Log-Dateien in fremden Projekt-/Cloud-Ordnern landen.
+ * Choose a platform-compatible default log path. MCP servers are launched in
+ * the caller's working directory, so a relative path would scatter log files
+ * across unrelated project and cloud-synced folders.
  *
- * Override via Env-Var LOG_FILE_PATH bleibt möglich.
+ * LOG_FILE_PATH can still override this default.
  */
 function defaultLogPath(): string {
   if (process.platform === 'darwin') {
@@ -18,19 +18,33 @@ function defaultLogPath(): string {
     const base = process.env.LOCALAPPDATA || path.join(homedir(), 'AppData', 'Local');
     return path.join(base, 'Excalidraw-MCP', 'excalidraw.log');
   }
-  // Linux + andere POSIX: XDG-Konvention
+  // Linux and other POSIX platforms: follow the XDG state convention.
   const xdgState = process.env.XDG_STATE_HOME || path.join(homedir(), '.local', 'state');
   return path.join(xdgState, 'excalidraw-mcp', 'excalidraw.log');
 }
 
 const LOG_FILE_PATH = process.env.LOG_FILE_PATH || defaultLogPath();
 
-// Sicherstellen, dass das Log-Verzeichnis existiert — Winston wirft sonst beim Start.
-try {
-  fs.mkdirSync(path.dirname(LOG_FILE_PATH), { recursive: true });
-} catch {
-  // Wenn das fehlschlägt, fällt der File-Transport auf Default-Behavior zurück.
+function ensureWritableLogFile(filePath: string): string {
+  const logDir = path.dirname(filePath);
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.accessSync(logDir, fs.constants.W_OK);
+  return filePath;
 }
+
+function resolveLogFilePath(): string {
+  try {
+    return ensureWritableLogFile(LOG_FILE_PATH);
+  } catch (error) {
+    if (process.env.LOG_FILE_PATH) {
+      throw error;
+    }
+  }
+
+  return ensureWritableLogFile(path.join(tmpdir(), 'excalidraw-mcp.log'));
+}
+
+const RESOLVED_LOG_FILE_PATH = resolveLogFilePath();
 
 const logger: winston.Logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -54,7 +68,7 @@ const logger: winston.Logger = winston.createLogger({
     }),
 
     new winston.transports.File({
-      filename: LOG_FILE_PATH,    // all levels to file
+      filename: RESOLVED_LOG_FILE_PATH,    // all levels to file
       level: 'debug'
     })
   ]
