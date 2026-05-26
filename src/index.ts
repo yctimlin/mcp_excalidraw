@@ -1828,7 +1828,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         // Wrap user-supplied text in delimiters so the model treats it as data, not instructions.
         const safeText = (s: string | undefined): string =>
-          s ? `<untrusted-canvas-content>${s}</untrusted-canvas-content>` : '';
+          s ? `<untrusted-canvas-content>${s.replace(/<\/untrusted-canvas-content>/g, '')}</untrusted-canvas-content>` : '';
 
         const elementDescs: string[] = [];
         for (const el of sorted) {
