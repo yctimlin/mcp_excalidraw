@@ -38,7 +38,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
 
 // ─── Security configuration ──────────────────────────────────────────────────
 const CANVAS_API_TOKEN = process.env.CANVAS_API_TOKEN || '';
@@ -49,6 +48,26 @@ if (!CANVAS_API_TOKEN) {
     'Set CANVAS_API_TOKEN to enable bearer-token protection.'
   );
 }
+
+// WebSocket auth uses the `Sec-WebSocket-Protocol` handshake header rather than a
+// query-string token so the credential is not written to server/proxy access logs
+// or leaked via Referer. Clients send two subprotocols: `bearer.<token>` and a
+// real subprotocol (here, `excalidraw`). The server selects `excalidraw` for the
+// handshake response so the credential is never echoed back to the wire.
+const WS_SUBPROTOCOL = 'excalidraw';
+const WS_BEARER_PREFIX = 'bearer.';
+
+const wss = new WebSocketServer({
+  server,
+  handleProtocols: (protocols: Set<string>): string | false => {
+    if (!CANVAS_API_TOKEN) {
+      return protocols.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false;
+    }
+    const offered = `${WS_BEARER_PREFIX}${CANVAS_API_TOKEN}`;
+    if (!protocols.has(offered)) return false;
+    return protocols.has(WS_SUBPROTOCOL) ? WS_SUBPROTOCOL : false;
+  },
+});
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!CANVAS_API_TOKEN) { next(); return; }
@@ -120,15 +139,16 @@ function normalizeLineBreakMarkup(text: string): string {
     .replace(/\n{3,}/g, '\n\n');
 }
 
-// WebSocket connection handling
-wss.on('connection', (ws: WebSocket, req) => {
-  if (CANVAS_API_TOKEN) {
-    const urlStr = req.url ?? '/';
-    const token = new URL(urlStr, 'http://localhost').searchParams.get('token');
-    if (token !== CANVAS_API_TOKEN) {
-      ws.close(1008, 'Unauthorized');
-      return;
-    }
+// WebSocket connection handling. The handshake-level `handleProtocols` callback
+// (see WebSocketServer init above) is the authentication gate when
+// CANVAS_API_TOKEN is set: it rejects any handshake that does not present the
+// `bearer.<token>` subprotocol. We assert the negotiated subprotocol here as a
+// belt-and-braces check so any future regression in the handshake path closes
+// the socket instead of silently allowing unauthenticated traffic.
+wss.on('connection', (ws: WebSocket) => {
+  if (CANVAS_API_TOKEN && ws.protocol !== WS_SUBPROTOCOL) {
+    ws.close(1008, 'Unauthorized');
+    return;
   }
 
   clients.add(ws);
