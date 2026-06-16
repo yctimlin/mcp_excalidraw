@@ -1,6 +1,4 @@
 // src/excalidash.ts
-import logger from './utils/logger.js';
-
 const BASE = (process.env.EXCALIDASH_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const TOKEN = process.env.EXCALIDASH_TOKEN || '';
 
