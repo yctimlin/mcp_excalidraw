@@ -31,6 +31,7 @@ import {
 import fetch from 'node-fetch';
 import { sceneStore, DEFAULT_APP_STATE } from './sceneStore.js';
 import * as excalidash from './excalidash.js';
+import { toExcalidrawElements } from './toExcalidraw.js';
 
 // Load environment variables
 dotenv.config();
@@ -56,7 +57,9 @@ const PINNED_DRAWING_ID = process.env.EXCALIDASH_DRAWING_ID || '';
 if (PINNED_DRAWING_ID) sceneStore.drawingId = PINNED_DRAWING_ID;
 
 async function persistScene(): Promise<void> {
-  const elements = sceneStore.all();
+  // Convert the MCP's label/start/end shorthand into native Excalidraw structures
+  // (bound text elements + arrow bindings) so ExcaliDash renders them correctly.
+  const elements = toExcalidrawElements(sceneStore.all());
   try {
     if (!sceneStore.drawingId) {
       const created = await excalidash.createDrawing(sceneStore.name || AUTO_CREATE_NAME, elements, DEFAULT_APP_STATE, {});
