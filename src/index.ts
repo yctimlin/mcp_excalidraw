@@ -67,6 +67,7 @@ async function persistScene(): Promise<void> {
     }
   } catch (err) {
     logger.warn(`persistScene failed: ${(err as Error).message}`);
+    throw err;
   }
 }
 
@@ -1413,7 +1414,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           version: 1
         }));
 
-        const canvasElements = await batchCreateElementsOnCanvas(elementsToCreate);
+        await batchCreateElementsOnCanvas(elementsToCreate);
 
         // Note: file/image attachments are not supported in ExcaliDash mode
 
