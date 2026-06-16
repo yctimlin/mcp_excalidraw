@@ -15,7 +15,7 @@
     "build:types": "npx tsc --emitDeclarationOnly",
     "dev": "concurrently \"npm run dev:server\" \"vite\"",
     "dev:server": "npx tsc --watch",
-    "production": "npm run build && npm run canvas",
+    "production": "npm run build:server && node dist/index.js",
     "prepublishOnly": "npm run build",
     "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
     "type-check": "npx tsc --noEmit"
