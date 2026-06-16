@@ -749,6 +749,36 @@ const tools: Tool[] = [
         }
       }
     }
+  },
+  {
+    name: 'new_drawing',
+    description: 'Start a new, empty drawing in ExcaliDash. Clears the canvas and resets the active drawing. The drawing is created in ExcaliDash on the first element.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the new drawing' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'list_drawings',
+    description: 'List all drawings stored in ExcaliDash with their id, version, and last-updated time.',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'open_drawing',
+    description: 'Open an existing ExcaliDash drawing by id. Loads its elements onto the canvas; further changes update this drawing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The drawing ID' }
+      },
+      required: ['id']
+    }
   }
 ];
 
@@ -1910,6 +1940,55 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           content: [{
             type: 'text',
             text: 'Viewport control is not supported in ExcaliDash mode.'
+          }]
+        };
+      }
+
+      case 'new_drawing': {
+        const params = z.object({ name: z.string() }).parse(args);
+
+        sceneStore.clear();
+        sceneStore.drawingId = null;
+        sceneStore.name = params.name;
+
+        return {
+          content: [{
+            type: 'text',
+            text: `New drawing "${params.name}" started. It will be created in ExcaliDash on the first element.`
+          }]
+        };
+      }
+
+      case 'list_drawings': {
+        const items = await excalidash.listDrawings();
+
+        if (items.length === 0) {
+          return {
+            content: [{ type: 'text', text: 'No drawings yet.' }]
+          };
+        }
+
+        const text = items
+          .map(d => `- ${d.name}  (id: ${d.id}, v${d.version}, ${d.updatedAt})`)
+          .join('\n');
+
+        return {
+          content: [{ type: 'text', text }]
+        };
+      }
+
+      case 'open_drawing': {
+        const params = z.object({ id: z.string() }).parse(args);
+
+        const d = await excalidash.getDrawing(params.id);
+        sceneStore.load(d.elements);
+        sceneStore.drawingId = d.id;
+        sceneStore.name = d.name;
+
+        return {
+          content: [{
+            type: 'text',
+            text: `Opened "${d.name}" (${d.elements.length} elements). Further changes update this drawing.`
           }]
         };
       }
