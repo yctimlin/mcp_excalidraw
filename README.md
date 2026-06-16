@@ -136,6 +136,35 @@ The MCP server runs over stdio and can be configured with any MCP-compatible cli
 
 ---
 
+## ExcaliDash Mode (this fork)
+
+> **This fork targets [ExcaliDash](https://github.com/excalidash/excalidash) instead of the bundled yctimlin canvas server.** The `npm run canvas` script and the local canvas server (`src/server.ts`) are no longer used.
+
+Set these environment variables on the machine running the MCP server:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `EXCALIDASH_URL` | **Yes** | Base URL of the ExcaliDash API, e.g. `https://board.notsg.space/api`. Include the `/api` suffix — ExcaliDash's frontend proxies `/api/` to its backend. |
+| `EXCALIDASH_TOKEN` | No | Bearer JWT for ExcaliDash when authentication is enabled. Obtain via `POST ${EXCALIDASH_URL}/auth/login` with `{ email, password }`. Omit if auth is disabled. |
+| `EXCALIDASH_DRAWING_ID` | No | Pin all AI output to an existing ExcaliDash drawing ID. If unset, a new drawing is created on first element. |
+| `EXCALIDASH_DRAWING_NAME` | No | Name used when auto-creating the drawing (default: `AI Drawing`). |
+
+### Canvas-only tools (stubbed in this mode)
+
+The following tools are not available when targeting ExcaliDash and will return a stub response. Use ExcaliDash's own UI and built-in version history instead:
+
+- `create_from_mermaid`, `export_to_image`, `get_canvas_screenshot`, `set_viewport`, `snapshot_scene`, `restore_snapshot`
+
+### ExcaliDash gallery tools
+
+These new tools target the ExcaliDash drawing gallery:
+
+- `new_drawing` — create a new drawing in ExcaliDash
+- `list_drawings` — list drawings available in the gallery
+- `open_drawing` — switch the active drawing by ID
+
+---
+
 ### Claude Desktop
 
 Config location:

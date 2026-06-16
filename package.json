@@ -9,7 +9,6 @@
   },
   "scripts": {
     "start": "npm run build:server && node dist/index.js",
-    "canvas": "npm run build:server && node dist/server.js",
     "build": "npm run build:frontend && npm run build:server",
     "build:frontend": "vite build",
     "build:server": "npx tsc",
