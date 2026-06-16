@@ -29,6 +29,8 @@ import {
   normalizeFontFamily
 } from './types.js';
 import fetch from 'node-fetch';
+import { sceneStore, DEFAULT_APP_STATE } from './sceneStore.js';
+import * as excalidash from './excalidash.js';
 
 // Load environment variables
 dotenv.config();
@@ -48,138 +50,48 @@ function sanitizeFilePath(filePath: string): string {
   return resolved;
 }
 
-// Express server configuration
-const EXPRESS_SERVER_URL = process.env.EXPRESS_SERVER_URL || 'http://127.0.0.1:3000';
-const ENABLE_CANVAS_SYNC = process.env.ENABLE_CANVAS_SYNC !== 'false'; // Default to true
+// Push the full in-memory scene to ExcaliDash. Creates a drawing on first push, updates after.
+const AUTO_CREATE_NAME = process.env.EXCALIDASH_DRAWING_NAME || 'AI Drawing';
+const PINNED_DRAWING_ID = process.env.EXCALIDASH_DRAWING_ID || '';
+if (PINNED_DRAWING_ID) sceneStore.drawingId = PINNED_DRAWING_ID;
 
-// API Response types
-interface ApiResponse {
-  success: boolean;
-  element?: ServerElement;
-  elements?: ServerElement[];
-  message?: string;
-  error?: string;
-  count?: number;
-}
-
-interface SyncResponse {
-  element?: ServerElement;
-  elements?: ServerElement[];
-}
-
-// Helper functions to sync with Express server (canvas)
-async function syncToCanvas(operation: string, data: any): Promise<SyncResponse | null> {
-  if (!ENABLE_CANVAS_SYNC) {
-    logger.debug('Canvas sync disabled, skipping');
-    return null;
-  }
-
+async function persistScene(): Promise<void> {
+  const elements = sceneStore.all();
   try {
-    let url: string;
-    let options: any;
-    
-    switch (operation) {
-      case 'create':
-        url = `${EXPRESS_SERVER_URL}/api/elements`;
-        options = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        };
-        break;
-        
-      case 'update':
-        url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
-        options = {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
-        };
-        break;
-        
-      case 'delete':
-        url = `${EXPRESS_SERVER_URL}/api/elements/${data.id}`;
-        options = { method: 'DELETE' };
-        break;
-        
-      case 'batch_create':
-        url = `${EXPRESS_SERVER_URL}/api/elements/batch`;
-        options = {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ elements: data })
-        };
-        break;
-        
-      default:
-        logger.warn(`Unknown sync operation: ${operation}`);
-        return null;
+    if (!sceneStore.drawingId) {
+      const created = await excalidash.createDrawing(sceneStore.name || AUTO_CREATE_NAME, elements, DEFAULT_APP_STATE, {});
+      sceneStore.drawingId = created.id;
+      logger.info(`Created ExcaliDash drawing ${created.id}`);
+    } else {
+      await excalidash.updateDrawing(sceneStore.drawingId, elements, DEFAULT_APP_STATE, {});
     }
-
-    logger.debug(`Syncing to canvas: ${operation}`, { url, data });
-    const response = await fetch(url, options);
-
-    // Parse JSON response regardless of HTTP status
-    const result = await response.json() as ApiResponse;
-
-    if (!response.ok) {
-      logger.warn(`Canvas sync returned error status: ${response.status}`, result);
-      throw new Error(result.error || `Canvas sync failed: ${response.status} ${response.statusText}`);
-    }
-
-    logger.debug(`Canvas sync successful: ${operation}`, result);
-    return result as SyncResponse;
-    
-  } catch (error) {
-    logger.warn(`Canvas sync failed for ${operation}:`, (error as Error).message);
-    // Don't throw - we want MCP operations to work even if canvas is unavailable
-    return null;
+  } catch (err) {
+    logger.warn(`persistScene failed: ${(err as Error).message}`);
   }
 }
 
-// Helper to sync element creation to canvas
 async function createElementOnCanvas(elementData: ServerElement): Promise<ServerElement | null> {
-  const result = await syncToCanvas('create', elementData);
-  return result?.element || elementData;
+  sceneStore.add(elementData);
+  await persistScene();
+  return elementData;
 }
-
-// Helper to sync element update to canvas  
 async function updateElementOnCanvas(elementData: Partial<ServerElement> & { id: string }): Promise<ServerElement | null> {
-  const result = await syncToCanvas('update', elementData);
-  return result?.element || null;
+  const updated = sceneStore.update(elementData.id, elementData);
+  await persistScene();
+  return updated;
 }
-
-// Helper to sync element deletion to canvas
 async function deleteElementOnCanvas(elementId: string): Promise<any> {
-  const result = await syncToCanvas('delete', { id: elementId });
-  return result;
+  const ok = sceneStore.remove(elementId);
+  await persistScene();
+  return { success: ok };
 }
-
-// Helper to sync batch creation to canvas
 async function batchCreateElementsOnCanvas(elementsData: ServerElement[]): Promise<ServerElement[] | null> {
-  const result = await syncToCanvas('batch_create', elementsData);
-  return result?.elements || elementsData;
+  sceneStore.addMany(elementsData);
+  await persistScene();
+  return elementsData;
 }
-
-// Helper to fetch element from canvas
 async function getElementFromCanvas(elementId: string): Promise<ServerElement | null> {
-  if (!ENABLE_CANVAS_SYNC) {
-    logger.debug('Canvas sync disabled, skipping fetch');
-    return null;
-  }
-
-  try {
-    const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/${elementId}`);
-    if (!response.ok) {
-      logger.warn(`Failed to fetch element ${elementId}: ${response.status}`);
-      return null;
-    }
-    const data = await response.json() as { element?: ServerElement };
-    return data.element || null;
-  } catch (error) {
-    logger.error('Error fetching element from canvas:', error);
-    return null;
-  }
+  return sceneStore.get(elementId);
 }
 
 // In-memory storage for scene state
@@ -981,8 +893,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         // Delete element directly on HTTP server (no local storage)
         const canvasResult = await deleteElementOnCanvas(id);
 
-        if (!canvasResult || !(canvasResult as ApiResponse).success) {
-          throw new Error('Failed to delete element: HTTP server unavailable or element not found');
+        if (!canvasResult || !canvasResult.success) {
+          throw new Error('Failed to delete element: element not found');
         }
 
         const result = { id, deleted: true, syncedToCanvas: true };
@@ -1001,32 +913,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const { type, filter, bbox } = params;
 
         try {
-          // Build query parameters
-          const queryParams = new URLSearchParams();
-          if (type) queryParams.set('type', type);
-          if (filter) {
-            Object.entries(filter).forEach(([key, value]) => {
-              queryParams.set(key, String(value));
-            });
-          }
-          if (bbox) {
-            if (bbox.x_min !== undefined) queryParams.set('x_min', String(bbox.x_min));
-            if (bbox.x_max !== undefined) queryParams.set('x_max', String(bbox.x_max));
-            if (bbox.y_min !== undefined) queryParams.set('y_min', String(bbox.y_min));
-            if (bbox.y_max !== undefined) queryParams.set('y_max', String(bbox.y_max));
-          }
-          
-          // Query elements from HTTP server
-          const url = `${EXPRESS_SERVER_URL}/api/elements/search?${queryParams}`;
-          const response = await fetch(url);
-          
-          if (!response.ok) {
-            throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
-          }
-          
-          const data = await response.json() as ApiResponse;
-          const results = data.elements || [];
-          
+          // Filter the in-memory scene
+          const results = sceneStore.all().filter(el => {
+            if (type && el.type !== type) return false;
+            if (filter) {
+              for (const [key, value] of Object.entries(filter)) {
+                if ((el as any)[key] !== value) return false;
+              }
+            }
+            if (bbox) {
+              if (bbox.x_min !== undefined && el.x < bbox.x_min) return false;
+              if (bbox.x_max !== undefined && el.x > bbox.x_max) return false;
+              if (bbox.y_min !== undefined && el.y < bbox.y_min) return false;
+              if (bbox.y_max !== undefined && el.y > bbox.y_max) return false;
+            }
+            return true;
+          });
+
           return {
             content: [{ type: 'text', text: JSON.stringify(results, null, 2) }]
           };
@@ -1051,19 +954,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             break;
           case 'library':
           case 'elements':
-            try {
-              // Get elements from HTTP server
-              const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
-              if (!response.ok) {
-                throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
-              }
-              const data = await response.json() as ApiResponse;
-              result = {
-                elements: data.elements || []
-              };
-            } catch (error) {
-              throw new Error(`Failed to get elements: ${(error as Error).message}`);
-            }
+            result = {
+              elements: sceneStore.all()
+            };
             break;
           case 'theme':
             result = {
@@ -1335,57 +1228,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       }
       
       case 'create_from_mermaid': {
-        const params = z.object({
-          mermaidDiagram: z.string(),
-          config: z.object({
-            startOnLoad: z.boolean().optional(),
-            flowchart: z.object({
-              curve: z.enum(['linear', 'basis']).optional()
-            }).optional(),
-            themeVariables: z.object({
-              fontSize: z.string().optional()
-            }).optional(),
-            maxEdges: z.number().optional(),
-            maxTextSize: z.number().optional()
-          }).optional()
-        }).parse(args);
-        
-        logger.info('Creating Excalidraw elements from Mermaid diagram via MCP', {
-          diagramLength: params.mermaidDiagram.length,
-          hasConfig: !!params.config
-        });
-
-        try {
-          // Send the Mermaid diagram to the frontend via the API
-          // The frontend will use mermaid-to-excalidraw to convert it
-          const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/from-mermaid`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              mermaidDiagram: params.mermaidDiagram,
-              config: params.config
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP server error: ${response.status} ${response.statusText}`);
-          }
-
-          const result = await response.json() as ApiResponse;
-          
-          logger.info('Mermaid diagram sent to frontend for conversion', {
-            success: result.success
-          });
-
-          return {
-            content: [{
-              type: 'text',
-              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.`
-            }]
-          };
-        } catch (error) {
-          throw new Error(`Failed to process Mermaid diagram: ${(error as Error).message}`);
-        }
+        return {
+          content: [{
+            type: 'text',
+            text: 'create_from_mermaid is not supported in ExcaliDash mode. Build the diagram with batch_create_elements instead.'
+          }]
+        };
       }
       
       case 'batch_create_elements': {
@@ -1466,20 +1314,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'clear_canvas': {
         logger.info('Clearing canvas via MCP');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, {
-          method: 'DELETE'
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to clear canvas: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json() as ApiResponse;
+        sceneStore.clear();
+        await persistScene();
 
         return {
           content: [{
             type: 'text',
-            text: `Canvas cleared.\n\n${JSON.stringify(data, null, 2)}`
+            text: 'Canvas cleared.'
           }]
         };
       }
@@ -1491,23 +1332,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         logger.info('Exporting scene via MCP');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch elements: ${response.status} ${response.statusText}`);
-        }
+        const sceneElements = sceneStore.all();
 
-        const data = await response.json() as ApiResponse;
-        const sceneElements = data.elements || [];
-
-        // Fetch files for image elements
-        let sceneFiles: Record<string, any> = {};
-        try {
-          const filesResponse = await fetch(`${EXPRESS_SERVER_URL}/api/files`);
-          if (filesResponse.ok) {
-            const filesData = await filesResponse.json() as any;
-            sceneFiles = filesData.files || {};
-          }
-        } catch { /* files endpoint may not exist */ }
+        // No file-attachment support in ExcaliDash mode
+        const sceneFiles: Record<string, any> = {};
 
         const excalidrawScene: any = {
           type: 'excalidraw',
@@ -1573,7 +1401,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         // If replace mode, clear first
         if (params.mode === 'replace') {
-          await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE' });
+          sceneStore.clear();
         }
 
         // Batch create the imported elements
@@ -1587,77 +1415,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
 
         const canvasElements = await batchCreateElementsOnCanvas(elementsToCreate);
 
-        // Import files if present (for image elements)
-        let importedFileCount = 0;
-        const importFiles = sceneData.files;
-        if (importFiles && typeof importFiles === 'object') {
-          const fileList = Object.values(importFiles);
-          if (fileList.length > 0) {
-            try {
-              await fetch(`${EXPRESS_SERVER_URL}/api/files`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(fileList)
-              });
-              importedFileCount = fileList.length;
-            } catch { /* best effort */ }
-          }
-        }
+        // Note: file/image attachments are not supported in ExcaliDash mode
 
         return {
           content: [{
             type: 'text',
-            text: `Imported ${elementsToCreate.length} elements${importedFileCount > 0 ? ` and ${importedFileCount} files` : ''} (mode: ${params.mode})\n\n✅ Synced to canvas`
+            text: `Imported ${elementsToCreate.length} elements (mode: ${params.mode})\n\n✅ Synced to ExcaliDash`
           }]
         };
       }
 
       case 'export_to_image': {
-        const params = z.object({
-          format: z.enum(['png', 'svg']),
-          filePath: z.string().optional(),
-          background: z.boolean().optional()
-        }).parse(args);
-
-        logger.info('Exporting to image via MCP', { format: params.format });
-
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/export/image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            format: params.format,
-            background: params.background ?? true
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json() as ApiResponse;
-          throw new Error(errorData.error || `Export failed: ${response.status}`);
-        }
-
-        const result = await response.json() as { success: boolean; format: string; data: string };
-
-        if (params.filePath) {
-          const safeImagePath = sanitizeFilePath(params.filePath);
-          if (params.format === 'svg') {
-            fs.writeFileSync(safeImagePath, result.data, 'utf-8');
-          } else {
-            fs.writeFileSync(safeImagePath, Buffer.from(result.data, 'base64'));
-          }
-          return {
-            content: [{
-              type: 'text',
-              text: `Image exported to ${safeImagePath} (format: ${params.format})`
-            }]
-          };
-        }
-
         return {
           content: [{
             type: 'text',
-            text: params.format === 'svg'
-              ? result.data
-              : `Base64 ${params.format} data (${result.data.length} chars). Use filePath to save to disk.`
+            text: 'export_to_image is not supported in ExcaliDash mode (no headless canvas renderer). Use ExcaliDash to export images from the UI.'
           }]
         };
       }
@@ -1710,51 +1482,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       }
 
       case 'snapshot_scene': {
-        const params = z.object({ name: z.string() }).parse(args);
-        logger.info('Saving snapshot via MCP', { name: params.name });
-
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: params.name })
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to save snapshot: ${response.status} ${response.statusText}`);
-        }
-
-        const result = await response.json() as any;
-
         return {
           content: [{
             type: 'text',
-            text: `Snapshot "${params.name}" saved (${result.elementCount} elements)\n\n${JSON.stringify(result, null, 2)}`
+            text: 'snapshot_scene is not supported in ExcaliDash mode. ExcaliDash automatically creates a version snapshot on every save — use its built-in version history to view or restore prior states.'
           }]
         };
       }
 
       case 'restore_snapshot': {
-        const params = z.object({ name: z.string() }).parse(args);
-        logger.info('Restoring snapshot via MCP', { name: params.name });
-
-        // Fetch the snapshot
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots/${encodeURIComponent(params.name)}`);
-        if (!response.ok) {
-          throw new Error(`Snapshot "${params.name}" not found`);
-        }
-
-        const data = await response.json() as { success: boolean; snapshot: { name: string; elements: ServerElement[]; createdAt: string } };
-
-        // Clear current canvas
-        await fetch(`${EXPRESS_SERVER_URL}/api/elements/clear`, { method: 'DELETE' });
-
-        // Restore elements
-        const canvasElements = await batchCreateElementsOnCanvas(data.snapshot.elements);
-
         return {
           content: [{
             type: 'text',
-            text: `Snapshot "${params.name}" restored (${data.snapshot.elements.length} elements)\n\n✅ Canvas updated`
+            text: 'restore_snapshot is not supported in ExcaliDash mode. Use ExcaliDash\'s built-in version history to restore a previous version of the drawing.'
           }]
         };
       }
@@ -1762,13 +1502,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'describe_scene': {
         logger.info('Describing scene via MCP');
 
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch elements: ${response.status}`);
-        }
-
-        const data = await response.json() as ApiResponse;
-        const allElements = data.elements || [];
+        const allElements = sceneStore.all();
 
         if (allElements.length === 0) {
           return {
@@ -1871,40 +1605,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       }
 
       case 'get_canvas_screenshot': {
-        const params = z.object({
-          background: z.boolean().optional()
-        }).parse(args || {});
-
-        logger.info('Taking canvas screenshot via MCP');
-
-        const response = await fetch(`${EXPRESS_SERVER_URL}/api/export/image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            format: 'png',
-            background: params.background ?? true
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json() as ApiResponse;
-          throw new Error(errorData.error || `Screenshot failed: ${response.status}`);
-        }
-
-        const result = await response.json() as { success: boolean; format: string; data: string };
-
         return {
-          content: [
-            {
-              type: 'image' as const,
-              data: result.data,
-              mimeType: 'image/png'
-            },
-            {
-              type: 'text',
-              text: 'Canvas screenshot captured. This is what the diagram currently looks like.'
-            }
-          ]
+          content: [{
+            type: 'text',
+            text: 'get_canvas_screenshot is not supported in ExcaliDash mode (no headless canvas renderer). Use ExcaliDash to export images from the UI.'
+          }]
         };
       }
 
@@ -1917,13 +1622,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'export_to_excalidraw_url': {
         logger.info('Exporting to excalidraw.com URL');
 
-        // 1. Fetch current scene elements
-        const urlExportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/elements`);
-        if (!urlExportResponse.ok) {
-          throw new Error(`Failed to fetch elements: ${urlExportResponse.status}`);
-        }
-        const urlExportData = await urlExportResponse.json() as ApiResponse;
-        const urlExportElements = urlExportData.elements || [];
+        // 1. Read current scene elements from the in-memory store
+        const urlExportElements = sceneStore.all();
 
         if (urlExportElements.length === 0) {
           throw new Error('Canvas is empty — nothing to export');
@@ -2205,33 +1905,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       }
 
       case 'set_viewport': {
-        const viewportParams = z.object({
-          scrollToContent: z.boolean().optional(),
-          scrollToElementId: z.string().optional(),
-          zoom: z.number().min(0.1).max(10).optional(),
-          offsetX: z.number().optional(),
-          offsetY: z.number().optional()
-        }).parse(args || {});
-
-        logger.info('Setting viewport via MCP', viewportParams);
-
-        const viewportResponse = await fetch(`${EXPRESS_SERVER_URL}/api/viewport`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(viewportParams)
-        });
-
-        if (!viewportResponse.ok) {
-          const viewportError = await viewportResponse.json() as ApiResponse;
-          throw new Error(viewportError.error || `Viewport request failed: ${viewportResponse.status}`);
-        }
-
-        const viewportResult = await viewportResponse.json() as { success: boolean; message?: string };
-
         return {
           content: [{
             type: 'text',
-            text: `Viewport updated successfully.\n\n${JSON.stringify(viewportResult, null, 2)}`
+            text: 'Viewport control is not supported in ExcaliDash mode.'
           }]
         };
       }
