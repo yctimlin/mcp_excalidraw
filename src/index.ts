@@ -810,13 +810,18 @@ const tools: Tool[] = [
   },
   {
     name: 'set_viewport',
-    description: 'Control the canvas viewport (camera). Auto-fit all elements, center on a specific element, or set zoom/scroll directly. Requires the canvas frontend open in a browser.',
+    description: 'Control the canvas viewport (camera). Auto-fit all elements, zoom-to-fit a subset of elements, center on a specific element, or set zoom/scroll directly. Requires the canvas frontend open in a browser.',
     inputSchema: {
       type: 'object',
       properties: {
         scrollToContent: {
           type: 'boolean',
           description: 'Auto-fit all elements in view (zoom-to-fit)'
+        },
+        scrollToElementIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Zoom-to-fit the bounding box of multiple elements by ID'
         },
         scrollToElementId: {
           type: 'string',
@@ -2207,6 +2212,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'set_viewport': {
         const viewportParams = z.object({
           scrollToContent: z.boolean().optional(),
+          scrollToElementIds: z.array(z.string()).optional(),
           scrollToElementId: z.string().optional(),
           zoom: z.number().min(0.1).max(10).optional(),
           offsetX: z.number().optional(),

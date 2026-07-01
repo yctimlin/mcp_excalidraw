@@ -65,6 +65,13 @@ interface WebSocketMessage {
   source?: string;
   mermaidDiagram?: string;
   config?: MermaidConfig;
+  requestId?: string;
+  scrollToContent?: boolean;
+  scrollToElementId?: string;
+  scrollToElementIds?: string[];
+  zoom?: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 interface ApiResponse {
@@ -632,6 +639,15 @@ function App(): JSX.Element {
                 if (allElements.length > 0) {
                   excalidrawAPI.scrollToContent(allElements, { fitToViewport: true, animate: true })
                 }
+              } else if (data.scrollToElementIds?.length) {
+                const allElements = excalidrawAPI.getSceneElements()
+                const targetElements = allElements.filter(el =>
+                  data.scrollToElementIds!.includes(el.id)
+                )
+                if (targetElements.length === 0) {
+                  throw new Error(`No elements found for IDs: ${data.scrollToElementIds.join(', ')}`)
+                }
+                excalidrawAPI.scrollToContent(targetElements, { fitToViewport: true, animate: true })
               } else if (data.scrollToElementId) {
                 const allElements = excalidrawAPI.getSceneElements()
                 const targetElement = allElements.find(el => el.id === data.scrollToElementId)

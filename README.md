@@ -64,7 +64,7 @@ Excalidraw now has an [official MCP](https://github.com/excalidraw/excalidraw-mc
 | **Mermaid conversion** | No | `create_from_mermaid` |
 | **Shareable URLs** | Yes | Yes — `export_to_excalidraw_url` |
 | **Design guide** | `read_me` cheat sheet | `read_diagram_guide` (colors, sizing, layout, anti-patterns) |
-| **Viewport control** | Camera animations | `set_viewport` (zoom-to-fit, center on element, manual zoom) |
+| **Viewport control** | Camera animations | `set_viewport` (zoom-to-fit, center on element(s), manual zoom) |
 | **Live canvas UI** | Rendered inline in chat | Standalone Excalidraw app synced via WebSocket |
 | **Multi-agent** | Single user | Multiple agents can draw on the same canvas concurrently |
 | **Works without MCP** | No | Yes — REST API fallback via agent skill |
@@ -79,7 +79,7 @@ Excalidraw now has an [official MCP](https://github.com/excalidraw/excalidraw-mc
 - **Closed feedback loop**: AI can now inspect the canvas (`describe_scene`) and see it (`get_canvas_screenshot` returns an image) — enabling iterative refinement
 - **Design guide**: `read_diagram_guide` returns best-practice color palettes, sizing rules, layout patterns, and anti-patterns — dramatically improves AI-generated diagram quality
 - **Shareable URLs**: `export_to_excalidraw_url` encrypts and uploads the scene to excalidraw.com, returns a shareable link anyone can open
-- **Viewport control**: `set_viewport` with `scrollToContent`, `scrollToElementId`, or manual zoom/offset — agents can auto-fit diagrams after creation
+- **Viewport control**: `set_viewport` with `scrollToContent`, `scrollToElementIds`, `scrollToElementId`, or manual zoom/offset — agents can auto-fit diagrams after creation
 - **File I/O**: export/import full `.excalidraw` JSON files
 - **Snapshots**: save and restore named canvas states
 - **Skill fallback**: Agent skill auto-detects MCP vs REST API mode, gracefully falls back to HTTP endpoints when MCP server isn't configured
