@@ -271,6 +271,7 @@ export interface SetViewportMessage extends WebSocketMessage {
   scrollToContent?: boolean;
   scrollToElementId?: string;
   scrollToElementIds?: string[];
+  viewportZoomFactor?: number;
   zoom?: number;
   offsetX?: number;
   offsetY?: number;

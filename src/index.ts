@@ -823,6 +823,10 @@ const tools: Tool[] = [
           items: { type: 'string' },
           description: 'Zoom-to-fit the bounding box of multiple elements by ID'
         },
+        viewportZoomFactor: {
+          type: 'number',
+          description: 'Optional fit-to-viewport zoom factor for scrollToContent or scrollToElementIds; lower values leave more padding'
+        },
         scrollToElementId: {
           type: 'string',
           description: 'Center the view on a specific element by ID'
@@ -2213,6 +2217,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         const viewportParams = z.object({
           scrollToContent: z.boolean().optional(),
           scrollToElementIds: z.array(z.string()).optional(),
+          viewportZoomFactor: z.number().optional(),
           scrollToElementId: z.string().optional(),
           zoom: z.number().min(0.1).max(10).optional(),
           offsetX: z.number().optional(),

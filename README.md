@@ -79,7 +79,7 @@ Excalidraw now has an [official MCP](https://github.com/excalidraw/excalidraw-mc
 - **Closed feedback loop**: AI can now inspect the canvas (`describe_scene`) and see it (`get_canvas_screenshot` returns an image) — enabling iterative refinement
 - **Design guide**: `read_diagram_guide` returns best-practice color palettes, sizing rules, layout patterns, and anti-patterns — dramatically improves AI-generated diagram quality
 - **Shareable URLs**: `export_to_excalidraw_url` encrypts and uploads the scene to excalidraw.com, returns a shareable link anyone can open
-- **Viewport control**: `set_viewport` with `scrollToContent`, `scrollToElementIds`, `scrollToElementId`, or manual zoom/offset — agents can auto-fit diagrams after creation
+- **Viewport control**: `set_viewport` with `scrollToContent`, `scrollToElementIds`, optional `viewportZoomFactor`, `scrollToElementId`, or manual zoom/offset — agents can auto-fit diagrams after creation
 - **File I/O**: export/import full `.excalidraw` JSON files
 - **Snapshots**: save and restore named canvas states
 - **Skill fallback**: Agent skill auto-detects MCP vs REST API mode, gracefully falls back to HTTP endpoints when MCP server isn't configured
@@ -437,6 +437,15 @@ See `skills/excalidraw-skill/SKILL.md` and `skills/excalidraw-skill/references/c
 | **Resources** | `get_resource` |
 
 Full schemas are discoverable via `tools/list` or in `skills/excalidraw-skill/references/cheatsheet.md`.
+
+Viewport group focus can tune framing with `viewportZoomFactor`:
+
+```json
+{
+  "scrollToElementIds": ["id1", "id2", "id3"],
+  "viewportZoomFactor": 0.85
+}
+```
 
 ## Testing
 

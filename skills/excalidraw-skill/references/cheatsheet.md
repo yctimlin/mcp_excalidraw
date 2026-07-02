@@ -59,7 +59,7 @@
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `set_viewport` | Control camera: zoom-to-fit, center on element(s), manual zoom/scroll (needs browser) | (optional) `scrollToContent`, `scrollToElementIds`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
+| `set_viewport` | Control camera: zoom-to-fit, center on element(s), manual zoom/scroll (needs browser) | (optional) `scrollToContent`, `scrollToElementIds`, `viewportZoomFactor`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
 
 ### Design Guide
 
@@ -109,7 +109,7 @@ Notes:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/viewport` | Set viewport/camera; body may include `scrollToContent`, `scrollToElementIds`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` (needs frontend) |
+| `POST` | `/api/viewport` | Set viewport/camera; body may include `scrollToContent`, `scrollToElementIds`, `viewportZoomFactor`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` (needs frontend) |
 | `POST` | `/api/viewport/result` | Frontend posts viewport result back |
 
 ### Snapshots

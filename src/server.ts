@@ -995,7 +995,7 @@ const pendingViewports = new Map<string, PendingViewport>();
 
 app.post('/api/viewport', (req: Request, res: Response) => {
   try {
-    const { scrollToContent, scrollToElementIds, scrollToElementId, zoom, offsetX, offsetY } = req.body;
+    const { scrollToContent, scrollToElementIds, scrollToElementId, viewportZoomFactor, zoom, offsetX, offsetY } = req.body;
 
     if (clients.size === 0) {
       return res.status(503).json({
@@ -1021,6 +1021,7 @@ app.post('/api/viewport', (req: Request, res: Response) => {
       scrollToContent,
       scrollToElementIds,
       scrollToElementId,
+      viewportZoomFactor,
       zoom,
       offsetX,
       offsetY

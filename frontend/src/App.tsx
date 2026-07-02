@@ -69,6 +69,7 @@ interface WebSocketMessage {
   scrollToContent?: boolean;
   scrollToElementId?: string;
   scrollToElementIds?: string[];
+  viewportZoomFactor?: number;
   zoom?: number;
   offsetX?: number;
   offsetY?: number;
@@ -637,7 +638,11 @@ function App(): JSX.Element {
               if (data.scrollToContent) {
                 const allElements = excalidrawAPI.getSceneElements()
                 if (allElements.length > 0) {
-                  excalidrawAPI.scrollToContent(allElements, { fitToViewport: true, animate: true })
+                  excalidrawAPI.scrollToContent(allElements, {
+                    fitToViewport: true,
+                    viewportZoomFactor: data.viewportZoomFactor,
+                    animate: true
+                  })
                 }
               } else if (data.scrollToElementIds?.length) {
                 const allElements = excalidrawAPI.getSceneElements()
@@ -647,7 +652,11 @@ function App(): JSX.Element {
                 if (targetElements.length === 0) {
                   throw new Error(`No elements found for IDs: ${data.scrollToElementIds.join(', ')}`)
                 }
-                excalidrawAPI.scrollToContent(targetElements, { fitToViewport: true, animate: true })
+                excalidrawAPI.scrollToContent(targetElements, {
+                  fitToViewport: true,
+                  viewportZoomFactor: data.viewportZoomFactor,
+                  animate: true
+                })
               } else if (data.scrollToElementId) {
                 const allElements = excalidrawAPI.getSceneElements()
                 const targetElement = allElements.find(el => el.id === data.scrollToElementId)

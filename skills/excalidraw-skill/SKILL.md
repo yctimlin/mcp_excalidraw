@@ -289,7 +289,7 @@ curl -X POST http://127.0.0.1:3000/api/elements/from-mermaid \
 
 ## Error Recovery
 
-- **Elements not appearing?** Check `describe_scene` — they may have been created off-screen. Use `set_viewport` with `scrollToContent: true`, or `scrollToElementIds` to focus on a specific zone/subgraph without fitting the whole canvas.
+- **Elements not appearing?** Check `describe_scene` — they may have been created off-screen. Use `set_viewport` with `scrollToContent: true`, or `scrollToElementIds` plus optional `viewportZoomFactor` to focus on a specific zone/subgraph without fitting the whole canvas.
 - **Arrow not connecting?** Verify element IDs with `get_element`. Make sure `startElementId`/`endElementId` (MCP) or `start.id`/`end.id` (REST) match existing element IDs.
 - **Canvas in a bad state?** `snapshot_scene` first, then `clear_canvas` and rebuild. Or `restore_snapshot` to go back.
 - **Element won't update?** It may be locked — call `unlock_elements` first.
