@@ -778,6 +778,19 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       });
     }
 
+    // Guard: a full-scene sync of ZERO elements is never legitimate — both the
+    // frontend Clear button and the MCP clear tool delete via DELETE endpoints.
+    // Empty syncs come from stale/empty tabs and would wipe the whole store
+    // (observed: a cleared tab auto-syncing empty every second, erasing every
+    // scene other clients pushed). Reject with 409 so honest clients can react.
+    if (frontendElements.length === 0) {
+      logger.warn('Rejected empty full-scene sync (use DELETE endpoints to clear)');
+      return res.status(409).json({
+        success: false,
+        error: 'Empty sync rejected: full-scene sync with 0 elements would wipe the store; use the DELETE endpoints to clear intentionally'
+      });
+    }
+
     // Record element count before sync
     const beforeCount = elements.size;
 

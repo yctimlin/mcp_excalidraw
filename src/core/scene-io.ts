@@ -9,6 +9,7 @@ import {
 } from './canvas-client.js';
 import { sanitizeFilePath } from './normalize.js';
 import { isObsidianExcalidrawMd, extractSceneJsonFromObsidianMd } from './obsidian-md.js';
+import { toPortableElements } from '../utils/portable-export.js';
 
 export interface ExportedScene {
   scene: Record<string, any>;
@@ -17,7 +18,10 @@ export interface ExportedScene {
 
 // Build a .excalidraw scene JSON from the current canvas state
 export async function buildSceneFile(): Promise<ExportedScene> {
-  const sceneElements = await getElements();
+  // Convert to standard Excalidraw form: expand `label` props into bound
+  // text elements and give unmeasured (zero-size) text estimated
+  // dimensions — otherwise external viewers render the file without text.
+  const sceneElements = toPortableElements(await getElements());
 
   // Fetch files for image elements
   let sceneFiles: Record<string, any> = {};
