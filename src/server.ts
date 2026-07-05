@@ -28,6 +28,8 @@ import {
 } from './types.js';
 import { z } from 'zod';
 import WebSocket from 'ws';
+import { isMainModule } from './core/entry.js';
+import { writePidFile, removePidFile } from './core/pidfile.js';
 
 // Load environment variables
 dotenv.config();
@@ -1184,7 +1186,12 @@ app.get('/health', (req: Request, res: Response) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     elements_count: elements.size,
-    websocket_clients: clients.size
+    websocket_clients: clients.size,
+    // Identity for `stop`: it must only ever signal a process that both
+    // identifies as this service AND self-reports its pid — never a pid
+    // from a stale pidfile or an unrelated app squatting on the port.
+    service: 'mcp-excalidraw-canvas',
+    pid: process.pid
   });
 });
 
@@ -1274,13 +1281,42 @@ async function startServer(): Promise<void> {
     }
   }
 
+  // Only the process that actually wrote the pidfile may remove it —
+  // a concurrent-start loser exiting on EADDRINUSE must not delete the
+  // winner's pidfile.
+  let ownsPidFile = false;
+
   server.listen(PORT, HOST, () => {
     const hostForUrl = formatHostForUrl(HOST);
     logger.info(`POC server running on http://${hostForUrl}:${PORT}`);
     logger.info(`WebSocket server running on ws://${hostForUrl}:${PORT}`);
+
+    // Written only after listen succeeds so stale files can't shadow a
+    // server that never came up; lets `excalidraw-canvas stop` find us.
+    writePidFile(PORT, process.pid);
+    ownsPidFile = true;
+  });
+
+  const shutdown = (signal: NodeJS.Signals): void => {
+    logger.info(`Received ${signal}, shutting down canvas server`);
+    if (ownsPidFile) removePidFile(PORT);
+    server.close(() => process.exit(0));
+    // Force-exit if open sockets keep the server from closing promptly
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('exit', () => {
+    if (ownsPidFile) removePidFile(PORT);
   });
 }
 
-void startServer();
+// Start the canvas server only when this file is the process entry point
+// (`node dist/server.js`, `npm run canvas`, or spawned by the CLI/MCP
+// auto-start). Importing this module must never start the server.
+if (isMainModule(import.meta.url)) {
+  void startServer();
+}
 
+export { startServer };
 export default app;
