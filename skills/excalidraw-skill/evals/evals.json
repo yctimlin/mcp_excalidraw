@@ -18,6 +18,12 @@
       "prompt": "Create a simple diagram on the Excalidraw canvas with two rectangles: 'Auth Service' and 'User DB', connected by an arrow labeled 'queries'. Then refine it: add a third box 'Redis Cache' positioned between the two services, connect Auth Service to Redis Cache with a 'cache hit' arrow. Verify visually that all labels are visible and no arrows cross awkwardly.",
       "expected_output": "A 3-element diagram with Auth Service → Redis Cache → (and both connected back to) User DB, with clean arrows, visible labels, and a screenshot confirming the final state.",
       "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Without using any MCP tools (assume none are configured), use only the CLI (`npx -y mcp-excalidraw-server <command>`) to: (1) build a three-tier diagram with boxes 'Frontend', 'API', and 'Postgres' connected by arrows, (2) query for all rectangles and confirm the count is 3, (3) save a snapshot named 'v1', (4) export the scene to /tmp/three-tier.excalidraw, and (5) report the canvas status including how many browser tabs are connected.",
+      "expected_output": "All five steps completed via CLI commands only: elements created with bound arrows (the canvas server auto-starts), a query result showing 3 rectangles, a saved snapshot 'v1', a valid .excalidraw file at /tmp/three-tier.excalidraw, and a status report with element and browser-client counts.",
+      "files": []
     }
   ]
 }
