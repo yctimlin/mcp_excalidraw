@@ -1,53 +1,56 @@
 ---
 name: excalidraw-skill
-description: Programmatic canvas toolkit for creating, editing, and refining Excalidraw diagrams via MCP tools with real-time canvas sync. Use when an agent needs to (1) draw or lay out diagrams on a live canvas, (2) iteratively refine diagrams using describe_scene and get_canvas_screenshot to see its own work, (3) export/import .excalidraw files or PNG/SVG images, (4) save/restore canvas snapshots, (5) convert Mermaid to Excalidraw, or (6) perform element-level CRUD, alignment, distribution, grouping, duplication, and locking. Requires a running canvas server (EXPRESS_SERVER_URL, default http://127.0.0.1:3000).
+description: Excalidraw canvas toolkit for creating, editing, and refining diagrams on a live canvas. Use when an agent needs to (1) draw or lay out diagrams, (2) iteratively refine them by describing the scene and screenshotting its own work, (3) export/import .excalidraw files or PNG/SVG images, (4) save/restore canvas snapshots, (5) convert Mermaid to Excalidraw, or (6) perform element-level CRUD, alignment, distribution, grouping, duplication, and locking. Primary interface is the bundled CLI (npx -y mcp-excalidraw-server <command>) which auto-starts the canvas server; MCP tools and a REST API are equivalent alternatives.
 ---
 
 # Excalidraw Skill
 
-## Step 0: Determine Connection Mode
+## Step 0: Pick an Interface
 
-Two modes are available. Try MCP first — it has more capabilities.
+Three interfaces drive the same live canvas. Pick the first one that applies:
 
-**MCP mode** (preferred): If `excalidraw/batch_create_elements` and other `excalidraw/*` tools appear in your tool list, use them directly. MCP tools handle label and arrow binding format automatically.
+1. **MCP tools** — if `excalidraw/*` tools (e.g. `batch_create_elements`) are in your tool list, prefer them: results land directly in your context, and screenshots come back as images without touching disk.
+2. **CLI** (default when no MCP tools are present):
+   ```bash
+   npx -y mcp-excalidraw-server <command>
+   ```
+   No setup needed — any canvas-touching command **auto-starts the canvas server** on `http://127.0.0.1:3000` (first `npx` run downloads the package). If the CLI is installed globally (`npm i -g mcp-excalidraw-server`), the shorter alias `excalidraw-canvas <command>` works too.
+3. **REST API** (last resort, e.g. from application code): HTTP endpoints on `http://127.0.0.1:3000` — see `references/cheatsheet.md` for payloads. The server must already be running.
 
-**REST API mode** (fallback): If MCP tools aren't available, use HTTP endpoints at `http://127.0.0.1:3000`. See the cheatsheet for REST payloads. Note the format differences in the table below — REST and MCP accept slightly different field names.
+The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Remind the user to open that URL in a browser — screenshots, image export, mermaid conversion, and viewport control need an open tab (CLI exits with code 4 when it's missing).
 
-**Neither works?** Tell the user:
-> The Excalidraw canvas server is not running. To set up:
-> 1. `git clone https://github.com/yctimlin/mcp_excalidraw && cd mcp_excalidraw`
-> 2. `npm ci && npm run build`
-> 3. `PORT=3000 npm run canvas`
-> 4. Open `http://127.0.0.1:3000` in a browser
-> 5. (Recommended) Install the MCP server:
->    `claude mcp add excalidraw -s user -e EXPRESS_SERVER_URL=http://127.0.0.1:3000 -- node /path/to/mcp_excalidraw/dist/index.js`
+### CLI Quick Reference
 
-### MCP vs REST API Quick Reference
+Results are JSON on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required.
 
-| Operation | MCP Tool | REST API Equivalent |
-|-----------|----------|-------------------|
-| Create elements | `batch_create_elements` | `POST /api/elements/batch` |
-| Get all elements | `query_elements` | `GET /api/elements` |
-| Get one element | `get_element` | `GET /api/elements/:id` |
-| Update element | `update_element` | `PUT /api/elements/:id` |
-| Delete element | `delete_element` | `DELETE /api/elements/:id` |
-| Clear canvas | `clear_canvas` | `DELETE /api/elements/clear` |
-| Describe scene | `describe_scene` | `GET /api/elements` (parse manually) |
-| Export scene | `export_scene` | `GET /api/elements` (save to file) |
-| Import scene | `import_scene` | `POST /api/elements/sync` |
-| Snapshot | `snapshot_scene` | `POST /api/snapshots` |
-| Restore snapshot | `restore_snapshot` | `GET /api/snapshots/:name` then `POST /api/elements/sync` |
-| Screenshot | `get_canvas_screenshot` | `POST /api/export/image` (needs browser) |
-| Viewport | `set_viewport` | `POST /api/viewport` (needs browser) |
-| Export image | `export_to_image` | `POST /api/export/image` (needs browser) |
-| Export URL | `export_to_excalidraw_url` | Only via MCP |
+| Task | Command |
+|------|---------|
+| Start / stop / inspect server | `start`, `stop`, `status` |
+| Create elements (batch) | `add elements.json` or `echo '[...]' \| add` or `add --one '{...}'` |
+| Multi-op patch in one call | `apply patch.json` — `{"create":[...],"update":[{"id":"a","set":{...}}],"delete":[...]}` |
+| Read one / query many | `get <id>`, `query [--type t] [--bbox x0,y0,x1,y1] [--filter k=v] [--filter-json '{...}']` |
+| Update / delete | `update <id> --set '{...}'`, `delete <id> [...]` |
+| Understand the scene | `describe` (plain-text summary: ids, positions, labels, connections) |
+| See the scene | `screenshot [--out f.png]` (PNG without `--out` → temp file path in JSON; SVG without `--out` → raw SVG) |
+| Layout operations | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate --ids a,b,c [--to left\|horizontal\|...]` |
+| Scene files | `export [--out scene.excalidraw]`, `import [scene.excalidraw|-] [--replace]` |
+| Mermaid → canvas | `mermaid [diagram.mmd|-]` (or stdin) |
+| Snapshots | `snapshot save\|list\|restore <name>` |
+| Share link | `share` (encrypted upload → excalidraw.com URL) |
+| Wipe canvas | `clear --yes` |
+| Install / upgrade this skill | `install-skill --dir <skills-root>` (agent chooses project/global root) |
 
-### Format Differences Between Modes (Critical)
+### Element Format (CLI and MCP)
 
-1. **Labels**: MCP accepts `"text": "My Label"` on shapes (auto-converts). REST requires `"label": {"text": "My Label"}`.
-2. **Arrow binding**: MCP accepts `startElementId`/`endElementId`. REST requires `"start": {"id": "..."}` / `"end": {"id": "..."}`.
-3. **fontFamily**: Must be a string (e.g. `"1"`) or omit entirely. Never pass a number.
-4. **Updating labels via REST**: Re-include `"label"` in the PUT body to ensure it renders correctly after updates.
+The CLI and MCP tools accept the same agent-friendly format and normalize it automatically:
+
+- **Labels**: put `"text": "My Label"` on any shape — converted to Excalidraw's bound-label format for you.
+- **Arrow binding**: `"startElementId": "a"` / `"endElementId": "b"` — arrows auto-route to element edges.
+- **fontFamily**: pass a string name (`"helvetica"`, `"cascadia"`, `"excalifont"`, ...) or string number `"1"`–`"8"`.
+- **points**: both `[[x,y], ...]` tuples and `[{"x":..,"y":..}]` objects are accepted.
+- **Patch updates**: in `apply`, update entries can use either direct fields (`{"id":"a","x":120}`) or a `set` object (`{"id":"a","set":{"x":120}}`). Do not mix both forms in one update entry.
+
+**Raw REST is stricter**: labels must be `"label": {"text": "..."}`, bindings must be `"start": {"id": "..."}` / `"end": {"id": "..."}`. Only worry about this when POSTing to the API directly.
 
 ---
 
@@ -57,10 +60,15 @@ The canvas uses a 2D coordinate grid: **(0, 0) is the origin**, **x increases ri
 
 **General spacing guidelines:**
 - Vertical spacing between tiers: 80–120px (enough that arrows don't crowd labels)
-- Horizontal spacing between siblings: 40–60px minimum
-- Shape width: `max(160, labelCharCount * 9)` to prevent text truncation
+- Horizontal spacing between siblings: 40–60px minimum; give labeled arrows 120px+
+- Shape width: `max(160, labelCharCount * 12)` to keep the label on one line
 - Shape height: 60px single-line, 80px two-line labels
 - Background/zone padding: 50px on all sides around contained elements
+
+**Styling for a professional look:**
+- `"fillStyle": "solid"` on shapes gives crisp flat fills — the default is a sketchy hachure pattern
+- Pair pastel `backgroundColor` fills with their darker `strokeColor` (palette in the cheatsheet)
+- `"strokeStyle": "dashed"` on zone borders and async arrows reads as "boundary / background"
 
 ---
 
@@ -80,7 +88,7 @@ When you put a label on a background rectangle, Excalidraw creates a bound text 
 **Right — use a free-standing text element anchored at the top of the zone:**
 ```json
 {"id": "vpc-zone", "type": "rectangle", "x": 50, "y": 50, "width": 800, "height": 400, "backgroundColor": "#e3f2fd"},
-{"id": "vpc-label", "type": "text", "x": 70, "y": 60, "width": 300, "height": 30, "text": "VPC (10.0.0.0/16)", "fontSize": 18, "fontWeight": "bold"}
+{"id": "vpc-label", "type": "text", "x": 70, "y": 60, "width": 300, "height": 30, "text": "VPC (10.0.0.0/16)", "fontSize": 18}
 ```
 
 The free-standing text element sits at the top corner of the zone and doesn't interfere with elements placed inside.
@@ -109,7 +117,7 @@ Excalidraw diagrams are visual communication. If text is cut off, elements overl
 
 ### Quality Checklist
 
-After each `batch_create_elements` / `POST /api/elements/batch`, take a screenshot and check:
+After each `add` / `apply` / `batch_create_elements`, take a screenshot and check:
 
 1. **Text truncation** — Is all label text fully visible? Truncated text means the shape is too small. Increase `width` and/or `height`.
 2. **Overlap** — Do any shapes share the same space? Background zones must fully contain children with padding.
@@ -127,55 +135,32 @@ If you find any issue: **stop, fix it, re-screenshot, then continue.** Say "I se
 
 ### Mermaid vs. Direct Creation — Which to Use?
 
-**Use `create_from_mermaid`** when: the user already has a Mermaid diagram, or the structure maps cleanly to a flowchart/sequence/ER diagram with standard Mermaid syntax. It's fast and handles conversion automatically, though you get less control over exact layout.
+**Use `mermaid` / `create_from_mermaid`** when: the user already has a Mermaid diagram, or the structure maps cleanly to a flowchart/sequence/ER diagram with standard Mermaid syntax. It's fast and handles conversion automatically, though you get less control over exact layout.
 
-**Use `batch_create_elements` directly** when: you need precise layout control, the diagram type doesn't map to Mermaid well (e.g., custom architecture, annotated cloud diagrams), or you want elements positioned in a specific coordinate grid.
+**Create elements directly** when: you need precise layout control, the diagram type doesn't map to Mermaid well (e.g., custom architecture, annotated cloud diagrams), or you want elements positioned in a specific coordinate grid.
 
-### MCP Mode
+### Steps (CLI shown; MCP tools are 1:1 — see cheatsheet)
 
-1. Call `read_diagram_guide` for design best practices (colors, fonts, anti-patterns).
-2. Plan your coordinate grid on paper/in comments — map out tiers and x-positions before writing JSON.
-3. Optional: `clear_canvas` to start fresh.
-4. Use `batch_create_elements` — create shapes and arrows in one call. Custom `id` fields (e.g. `"id": "auth-svc"`) make later updates easy.
-5. Set shape widths using `max(160, labelLength * 9)`. Use `text` field for labels.
-6. Bind arrows with `startElementId` / `endElementId` — they auto-route to element edges.
-7. `set_viewport` with `scrollToContent: true` to auto-fit.
-8. `get_canvas_screenshot` → run Quality Checklist → fix issues before next iteration.
-
-**MCP element + arrow example:**
-```json
-{"elements": [
-  {"id": "lb", "type": "rectangle", "x": 300, "y": 50, "width": 180, "height": 60, "text": "Load Balancer"},
-  {"id": "svc-a", "type": "rectangle", "x": 100, "y": 200, "width": 160, "height": 60, "text": "Web Server 1"},
-  {"id": "svc-b", "type": "rectangle", "x": 450, "y": 200, "width": 160, "height": 60, "text": "Web Server 2"},
-  {"id": "db", "type": "rectangle", "x": 275, "y": 350, "width": 210, "height": 60, "text": "PostgreSQL"},
-  {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-a"},
-  {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-b"},
-  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-a", "endElementId": "db"},
-  {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-b", "endElementId": "db"}
-]}
-```
-
-### REST API Mode
-
-1. Plan your coordinate grid first.
-2. Optional: `curl -X DELETE http://127.0.0.1:3000/api/elements/clear`
-3. Create elements using `POST /api/elements/batch`. Use `"label": {"text": "..."}` for labels.
-4. Bind arrows with `"start": {"id": "..."}` / `"end": {"id": "..."}`.
-5. Verify with `POST /api/export/image` → save PNG → run Quality Checklist.
-
-**REST API element + arrow example:**
-```bash
-curl -X POST http://127.0.0.1:3000/api/elements/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "elements": [
-      {"id": "svc-a", "type": "rectangle", "x": 100, "y": 100, "width": 160, "height": 60, "label": {"text": "Service A"}},
-      {"id": "svc-b", "type": "rectangle", "x": 400, "y": 100, "width": 160, "height": 60, "label": {"text": "Service B"}},
-      {"type": "arrow", "x": 0, "y": 0, "start": {"id": "svc-a"}, "end": {"id": "svc-b"}, "label": {"text": "calls"}}
-    ]
-  }'
-```
+1. Plan your coordinate grid — map out tiers and x-positions before writing JSON. (MCP mode: call `read_diagram_guide` for colors/sizing; the same guidance lives in `references/cheatsheet.md`.)
+2. Optional fresh start: `npx -y mcp-excalidraw-server clear --yes`
+3. Create shapes and arrows in one call. Custom `id` fields (e.g. `"id": "auth-svc"`) make later updates easy:
+   ```bash
+   npx -y mcp-excalidraw-server add - <<'EOF'
+   [
+     {"id": "lb", "type": "rectangle", "x": 300, "y": 50, "width": 180, "height": 60, "text": "Load Balancer"},
+     {"id": "svc-a", "type": "rectangle", "x": 100, "y": 200, "width": 160, "height": 60, "text": "Web Server 1"},
+     {"id": "svc-b", "type": "rectangle", "x": 450, "y": 200, "width": 160, "height": 60, "text": "Web Server 2"},
+     {"id": "db", "type": "rectangle", "x": 275, "y": 350, "width": 210, "height": 60, "text": "PostgreSQL"},
+     {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-a"},
+     {"type": "arrow", "x": 0, "y": 0, "startElementId": "lb", "endElementId": "svc-b"},
+     {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-a", "endElementId": "db"},
+     {"type": "arrow", "x": 0, "y": 0, "startElementId": "svc-b", "endElementId": "db"}
+   ]
+   EOF
+   ```
+   (The `-` positional is optional — with no file argument, `add` reads stdin.)
+4. Set shape widths using `max(160, labelLength * 12)`.
+5. `screenshot` → view the file → run the Quality Checklist → fix issues before the next batch.
 
 ---
 
@@ -209,95 +194,72 @@ The intermediate waypoint `[50, -40]` lifts the arrow upward. `roundness: {type:
 
 **Rule:** If an arrow would pass through an unrelated shape, add a waypoint to route around it.
 
-**Points format**: Both `[[x, y], ...]` tuples and `[{"x": ..., "y": ...}]` objects are accepted; both are normalized automatically.
-
 ---
 
 ## Workflow: Iterative Refinement
 
-Using `describe_scene` and `get_canvas_screenshot` together is what makes this skill powerful.
+Pairing `describe` with `screenshot` is what makes this skill powerful.
 
-- **`describe_scene`** → returns structured text: element IDs, types, positions, labels, connections. Use this when you need to know *what's on the canvas* before making programmatic updates (find IDs, understand bounding boxes).
-- **`get_canvas_screenshot`** → returns a PNG image of the actual rendered canvas. Use this for *visual quality verification* — it shows you exactly what the user sees, including truncation, overlap, and arrow routing.
+- **`describe`** (`describe_scene` in MCP) → structured text: element IDs, types, positions, labels, connections. Use it to know *what's on the canvas* before making programmatic updates (find IDs, understand bounding boxes).
+- **`screenshot`** (`get_canvas_screenshot` in MCP) → PNG of the actual rendered canvas. Use it for *visual quality verification* — it shows exactly what the user sees, including truncation, overlap, and arrow routing. The CLI prints the saved file path as JSON; read/view that file.
 
-**Feedback loop (MCP):**
+**Feedback loop:**
 ```
-batch_create_elements
-  → get_canvas_screenshot → "text truncated on auth-svc"
-  → update_element (increase width) → get_canvas_screenshot → "overlap between auth-svc and rate-limiter"
-  → update_element (reposition) → get_canvas_screenshot → "all checks pass"
+add elements
+  → screenshot → view → "text truncated on auth-svc"
+  → update auth-svc --set '{"width": 220}' → screenshot → "overlap between auth-svc and rate-limiter"
+  → update rate-limiter --set '{"x": 520}' → screenshot → "all checks pass"
   → proceed
 ```
-
-**Feedback loop (REST):**
-```
-POST /api/elements/batch
-  → POST /api/export/image → save PNG → evaluate
-  → PUT /api/elements/:id (fix issues) → re-screenshot → evaluate
-  → proceed
-```
-
----
 
 ## Workflow: Refine an Existing Diagram
 
-1. `describe_scene` to understand current state — note element IDs and positions.
+1. `describe` to understand current state — note element IDs and positions.
 2. Identify elements by `id` or label text (not by x/y coordinates — they change).
-3. `update_element` to resize/recolor/move; `delete_element` to remove.
-4. `get_canvas_screenshot` to confirm the change looks right.
-5. If updates fail: check the ID exists with `get_element`; check it's not locked with `unlock_elements`.
-
----
+3. `update <id> --set '{...}'` to resize/recolor/move; `delete <id>` to remove; or bundle everything in one `apply` patch. **Bound arrows re-route automatically when you move or resize their endpoints** — no need to delete and recreate them.
+4. `screenshot` to confirm the change looks right.
+5. If updates fail: check the ID exists with `get <id>`; unlock with `arrange unlock --ids <id>` if locked.
 
 ## Workflow: Mermaid Conversion
 
-For converting existing Mermaid diagrams to Excalidraw:
-
-**MCP mode:**
-```
-create_from_mermaid(mermaidDiagram: "graph TD\n  A --> B\n  B --> C")
-```
-After conversion, call `set_viewport` with `scrollToContent: true` and `get_canvas_screenshot` to verify layout. If the auto-layout is poor (nodes crowded, edges crossing), identify problem elements with `describe_scene` and reposition with `update_element`.
-
-**REST mode:**
 ```bash
-curl -X POST http://127.0.0.1:3000/api/elements/from-mermaid \
-  -H "Content-Type: application/json" \
-  -d '{"mermaid": "graph TD\n  A --> B\n  B --> C"}'
+echo 'graph TD
+  A[Client] --> B[API]
+  B --> C[(DB)]' | npx -y mcp-excalidraw-server mermaid
 ```
-
----
+Requires an open browser tab (conversion runs in the frontend; exit code 4 tells you to open the canvas URL). Afterwards `screenshot` to verify layout. If the auto-layout is poor (nodes crowded, edges crossing), find problem elements with `describe` and reposition them with `update`.
 
 ## Workflow: File I/O
 
-- Export to `.excalidraw`: `export_scene` with optional `filePath`
-- Import from `.excalidraw`: `import_scene` with `mode: "replace"` or `"merge"`
-- Export to image: `export_to_image` with `format: "png"` or `"svg"` (requires browser open)
-- Share link: `export_to_excalidraw_url` — encrypts scene, returns shareable excalidraw.com URL
-- CLI export: `node scripts/export-elements.cjs --out diagram.elements.json`
-- CLI import: `node scripts/import-elements.cjs --in diagram.elements.json --mode batch|sync`
+- Export scene: `export --out diagram.excalidraw` (no `--out` → JSON to stdout)
+- Import scene: `import diagram.excalidraw` (append) or `import diagram.excalidraw --replace`
+- Image: `screenshot --out diagram.png` / `screenshot --format svg --out diagram.svg` (browser tab required)
+- Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL
+
+This is how diagrams live in a repo: commit the `.excalidraw` file, and re-`import` + edit + `export` it when the architecture changes.
 
 ## Workflow: Snapshots
 
-1. `snapshot_scene` with a name before risky changes.
-2. Make changes, evaluate with `describe_scene` / `get_canvas_screenshot`.
-3. `restore_snapshot` to roll back if needed.
+1. `snapshot save <name>` before risky changes.
+2. Make changes, evaluate with `describe` / `screenshot`.
+3. `snapshot restore <name>` to roll back if needed. `snapshot list` shows what's saved.
 
 ## Workflow: Duplication
 
-`duplicate_elements` with `elementIds` and optional `offsetX`/`offsetY` (default: 20, 20). Useful for repeated patterns or copying layouts.
+`arrange duplicate --ids a,b --offset 40,40` (default offset 20,20). Useful for repeated patterns or copying layouts.
 
 ## Error Recovery
 
-- **Elements not appearing?** Check `describe_scene` — they may have been created off-screen. Use `set_viewport` with `scrollToContent: true`.
-- **Arrow not connecting?** Verify element IDs with `get_element`. Make sure `startElementId`/`endElementId` (MCP) or `start.id`/`end.id` (REST) match existing element IDs.
-- **Canvas in a bad state?** `snapshot_scene` first, then `clear_canvas` and rebuild. Or `restore_snapshot` to go back.
-- **Element won't update?** It may be locked — call `unlock_elements` first.
-- **Layout looking wrong after import?** Use `describe_scene` to inspect actual positions, then batch-update positions.
-- **Duplicate text elements / element count doubling?** The frontend has an auto-sync timer that periodically sends the full Excalidraw scene back to the server (overwriting). Excalidraw internally generates a bound text element for every shape that has `label.text`. If you clear and re-send elements, Excalidraw may re-inject its cached bound texts, causing duplicates. To clean up: (1) use `query_elements` / `GET /api/elements` to find elements of `type: "text"` with a `containerId`; (2) delete the unwanted ones with `delete_element`; (3) wait a few seconds for auto-sync to settle before exporting. The safest approach is to **never put labels on background zone rectangles** — use free-standing text elements instead.
+- **Exit code 3 (canvas unreachable)?** Auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`) or a non-loopback `EXPRESS_SERVER_URL` is set. Run `start` explicitly or fix the env.
+- **Exit code 4 (browser required)?** Open `http://127.0.0.1:3000` in a browser, then retry — screenshots, image export, viewport, and mermaid conversion render in the frontend.
+- **Elements not appearing?** Check `describe` — they may be off-screen. In MCP mode, `set_viewport` with `scrollToContent: true`; in a browser, press the zoom-to-fit button.
+- **Arrow not connecting?** Verify element IDs with `get <id>`. Make sure `startElementId`/`endElementId` match existing element IDs.
+- **Canvas in a bad state?** `snapshot save` first, then `clear --yes` and rebuild. Or `snapshot restore` to go back.
+- **Element won't update?** It may be locked — `arrange unlock --ids <id>` first.
+- **Duplicate text elements / element count doubling?** The frontend auto-sync timer periodically writes the full Excalidraw scene back to the server. Excalidraw internally generates a bound text element for every shape with a label; clearing and re-sending elements can re-inject cached bound texts. Clean up: `query --type text` to find elements with a `containerId`, `delete` the unwanted ones, wait a few seconds for auto-sync to settle. The safest prevention: **never put labels on background zone rectangles** — use free-standing text elements.
 
 ---
 
 ## References
 
-- `references/cheatsheet.md`: Complete MCP tool list (26 tools) + REST API endpoints + payload shapes.
+- `references/cheatsheet.md`: full CLI reference, the 26 MCP tools, REST API endpoints + payload shapes, and the diagram design guide (colors, sizing).

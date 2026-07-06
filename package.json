@@ -1,14 +1,16 @@
 {
   "name": "mcp-excalidraw-server",
-  "version": "1.0.7",
-  "description": "Advanced MCP server for Excalidraw with real-time canvas, WebSocket sync, and comprehensive diagram management",
+  "version": "1.1.0",
+  "description": "Excalidraw toolkit for AI coding agents — agent skill, CLI, and MCP server with a live canvas",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "mcp-excalidraw-server": "dist/index.js"
+    "mcp-excalidraw-server": "dist/bin.js",
+    "excalidraw-canvas": "dist/bin.js"
   },
   "scripts": {
     "start": "npm run build:server && node dist/index.js",
+    "cli": "node dist/bin.js",
     "canvas": "npm run build:server && node dist/server.js",
     "build": "npm run build:frontend && npm run build:server",
     "build:frontend": "vite build",
@@ -18,6 +20,7 @@
     "dev:server": "npx tsc --watch",
     "production": "npm run build && npm run canvas",
     "prepublishOnly": "npm run build",
+    "sync:skills": "node scripts/sync-skills.mjs",
     "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
     "type-check": "npx tsc --noEmit"
   },
@@ -29,7 +32,6 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "mermaid": "^11.12.1",
-    "node-fetch": "^3.3.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "winston": "^3.11.0",
@@ -62,7 +64,11 @@
     "websocket",
     "visualization",
     "claude",
-    "ai-tools"
+    "ai-tools",
+    "claude-skill",
+    "agent-skills",
+    "cli",
+    "ai-agents"
   ],
   "author": {
     "name": "yctimlin",
@@ -87,6 +93,7 @@
   "files": [
     "src/**/*",
     "dist/**/*",
+    "skills/**/*",
     "*.d.ts",
     "README.md",
     "LICENSE"

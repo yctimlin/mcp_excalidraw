@@ -48,6 +48,9 @@ USER nodejs
 ENV NODE_ENV=production
 ENV EXPRESS_SERVER_URL=http://127.0.0.1:3000
 ENV ENABLE_CANVAS_SYNC=true
+# This image has no frontend build — auto-starting a canvas here would serve
+# a blank UI. The canvas runs as its own service (see docker-compose.yml).
+ENV EXCALIDRAW_NO_AUTOSTART=1
 
 # Run MCP server (stdin/stdout protocol)
 CMD ["node", "dist/index.js"]
