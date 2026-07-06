@@ -32,7 +32,7 @@ const COMMANDS: Record<string, Command> = {
   arrange: { handler: arrange, summary: 'Align, distribute, group, lock, duplicate elements', usage: 'arrange align|distribute|group|ungroup|lock|unlock|duplicate --ids a,b,c [--to left|horizontal|...]' },
   share: { handler: scene.share, summary: 'Export to a shareable excalidraw.com URL', usage: 'share' },
   clear: { handler: scene.clear, summary: 'Clear the whole canvas', usage: 'clear --yes' },
-  'install-skill': { handler: installSkill, summary: 'Install the bundled agent skill', usage: 'install-skill [--target claude|codex|<dir>]' }
+  'install-skill': { handler: installSkill, summary: 'Install the bundled agent skill', usage: 'install-skill [--dir <skills-root>] [--target claude|codex|<skills-root>] [--print-source]' }
 };
 
 function printHelp(): void {

@@ -20,10 +20,21 @@ function findSkillSource(): string {
   return source;
 }
 
-function resolveTarget(target: string): string {
-  if (target === 'claude') return path.join(os.homedir(), '.claude', 'skills', SKILL_NAME);
-  if (target === 'codex') return path.join(os.homedir(), '.codex', 'skills', SKILL_NAME);
-  return path.join(path.resolve(target), SKILL_NAME);
+function expandHome(input: string): string {
+  if (input === '~') return os.homedir();
+  if (input.startsWith(`~${path.sep}`)) return path.join(os.homedir(), input.slice(2));
+  return input;
+}
+
+function resolveSkillsRoot(target: string): string {
+  if (target === 'claude') return path.join(os.homedir(), '.claude', 'skills');
+  if (target === 'codex') return path.join(os.homedir(), '.codex', 'skills');
+  return path.resolve(expandHome(target));
+}
+
+function resolveTarget(target: string): { root: string; target: string; mode: string } {
+  const root = resolveSkillsRoot(target);
+  return { root, target: path.join(root, SKILL_NAME), mode: `target:${target}` };
 }
 
 function countFiles(dir: string): number {
@@ -36,10 +47,34 @@ function countFiles(dir: string): number {
 }
 
 export async function installSkill(argv: string[]): Promise<void> {
-  const { flags } = parseArgs(argv, { target: { takesValue: true } });
-  const targetSpec = (flags.target as string | undefined) ?? 'claude';
+  const { flags } = parseArgs(argv, {
+    dir: { takesValue: true },
+    target: { takesValue: true },
+    'print-source': { takesValue: false }
+  });
   const source = findSkillSource();
-  const target = resolveTarget(targetSpec);
+
+  if (flags['print-source'] === true) {
+    printJson({
+      success: true,
+      skill: SKILL_NAME,
+      source,
+      files: countFiles(source)
+    });
+    return;
+  }
+
+  if (flags.dir !== undefined && flags.target !== undefined) {
+    throw new CliUsageError('Use either --dir <skills-root> or --target <alias|skills-root>, not both');
+  }
+
+  const explicitDir = flags.dir as string | undefined;
+  const targetSpec = (flags.target as string | undefined) ?? 'claude';
+  const explicitRoot = explicitDir ? path.resolve(expandHome(explicitDir)) : undefined;
+  const resolved = explicitRoot
+    ? { root: explicitRoot, target: path.join(explicitRoot, SKILL_NAME), mode: 'dir' }
+    : resolveTarget(targetSpec);
+  const { root, target, mode } = resolved;
 
   // Replace, never overlay: stale files from older skill versions (e.g. the
   // pre-1.1 scripts/*.cjs helpers) must not survive an upgrade.
@@ -55,9 +90,8 @@ export async function installSkill(argv: string[]): Promise<void> {
   }
 
   // Stage into a sibling temp dir, then swap
-  const parent = path.dirname(target);
-  fs.mkdirSync(parent, { recursive: true });
-  const staging = fs.mkdtempSync(path.join(parent, `.${SKILL_NAME}-staging-`));
+  fs.mkdirSync(root, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(root, `.${SKILL_NAME}-staging-`));
 
   try {
     fs.cpSync(source, staging, { recursive: true });
@@ -74,6 +108,8 @@ export async function installSkill(argv: string[]): Promise<void> {
   printJson({
     success: true,
     skill: SKILL_NAME,
+    mode,
+    root,
     target,
     files: countFiles(target)
   });

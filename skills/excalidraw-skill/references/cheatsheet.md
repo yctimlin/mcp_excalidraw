@@ -57,7 +57,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Command | Description |
 |---------|-------------|
-| `install-skill [--target claude\|codex\|<dir>]` | Install this skill (replaces any existing copy) |
+| `install-skill --dir <skills-root>` | Install this skill into an agent-chosen project/global skills root (replaces any existing copy) |
 | `help [command]`, `--version` | Usage and version |
 
 ## MCP Tools (26 total)

@@ -87,7 +87,7 @@ Current package version: **1.1.0**. The current release line is **v1.1 — CLI-F
 - **First-class CLI**: every capability is now a composable command — `npx -y mcp-excalidraw-server add|query|describe|screenshot|export|import|mermaid|snapshot|arrange|share|...` — JSON on stdout, meaningful exit codes. Also installed as the `excalidraw-canvas` alias.
 - **Zero-setup**: canvas-driving CLI commands and the MCP server **auto-start the canvas server** if it isn't running (closes #66). Opt out with `EXCALIDRAW_NO_AUTOSTART=1`.
 - **`apply`**: multi-op patches (`{"create":[...],"update":[{"id":"a","set":{...}}],"delete":[...]}`) in a single invocation.
-- **`install-skill`**: `npx -y mcp-excalidraw-server install-skill` drops the agent skill into `~/.claude/skills` (or `--target codex|<dir>`), cleanly replacing older versions.
+- **`install-skill`**: `npx -y mcp-excalidraw-server install-skill --dir <skills-root>` copies the portable agent skill into the directory your agent chooses (project or global), cleanly replacing older versions.
 - **Skill is now CLI-first** and no longer needs a cloned repo or configured MCP server to work.
 - **Typed queries**: `query --filter locked=true --filter label.text=API` — booleans, numbers, and nested keys work.
 - **Internals**: shared core library (`src/core/`) behind both the CLI and MCP server; canvas `groupIds` are the source of truth for grouping (ungroup now works across restarts); `node-fetch` dropped; MCP version metadata derived from `package.json`; canvas server writes a pidfile and shuts down cleanly.
@@ -96,19 +96,19 @@ Current package version: **1.1.0**. The current release line is **v1.1 — CLI-F
 
 The only prerequisite is **Node.js ≥ 18**.
 
-### Easiest: let Claude Code or Codex install it
+### Easiest: let your agent install it
 
-Copy this into Claude Code or Codex CLI — it installs, verifies, and draws a test diagram:
+Copy this into your coding agent — it installs the portable skill into the project/global skill directory that agent already knows how to use, then verifies it by drawing a test diagram:
 
 ```text
 Install the Excalidraw canvas toolkit so you can draw diagrams for me:
 
-1. Run: npx -y mcp-excalidraw-server install-skill
-   (add --target codex if you are Codex CLI; the default installs to ~/.claude/skills)
-2. Read the installed SKILL.md so you know the drawing workflow.
-3. Start the canvas with: npx -y mcp-excalidraw-server start
+1. Choose the right skill directory for this agent and scope (project or global).
+2. Run: npx -y mcp-excalidraw-server install-skill --dir <that-skills-directory>
+3. Read the installed excalidraw-skill/SKILL.md so you know the drawing workflow.
+4. Start the canvas with: npx -y mcp-excalidraw-server start
    then tell me to open http://127.0.0.1:3000 in my browser (screenshots need an open tab).
-4. Draw a small test diagram — two labeled boxes connected by an arrow — take a
+5. Draw a small test diagram — two labeled boxes connected by an arrow — take a
    screenshot, and show me the result to confirm everything works.
 ```
 
@@ -116,8 +116,9 @@ Install the Excalidraw canvas toolkit so you can draw diagrams for me:
 
 | You are... | Install with | Then |
 |---|---|---|
-| **Claude Code user** | `npx -y mcp-excalidraw-server install-skill` | Ask Claude Code to draw — the skill handles the rest |
-| **Codex CLI user** | `npx -y mcp-excalidraw-server install-skill --target codex` | Ask Codex to draw — the skill handles the rest |
+| **Modern coding agent** | `npx -y mcp-excalidraw-server install-skill --dir <skills-root>` | Let the agent choose project/global scope and its skill root |
+| **Claude Code shortcut** | `npx -y mcp-excalidraw-server install-skill` | Installs to `~/.claude/skills` for backward compatibility |
+| **Codex shortcut** | `npx -y mcp-excalidraw-server install-skill --target codex` | Installs to `~/.codex/skills` for backward compatibility |
 | **MCP client user** (Claude Desktop, Cursor, ...) | Add the npx config below | See [Configure MCP Clients](#configure-mcp-clients) |
 | **CLI user / scripting** | Nothing — `npx -y mcp-excalidraw-server <command>` | See [CLI Reference](#cli-reference) |
 | **Contributor / from source** | `git clone` + `npm ci` + `npm run build` | See [Quick Start (From Source / Docker)](#quick-start-from-source--docker) |
@@ -152,8 +153,8 @@ npx -y mcp-excalidraw-server export --out docs/architecture.excalidraw
 Give your agent the full playbook:
 
 ```bash
-npx -y mcp-excalidraw-server install-skill            # → ~/.claude/skills (Claude Code)
-npx -y mcp-excalidraw-server install-skill --target codex   # → ~/.codex/skills
+npx -y mcp-excalidraw-server install-skill --dir <skills-root>
+npx -y mcp-excalidraw-server install-skill --print-source  # inspect bundled source path
 ```
 
 > **Security note:** The canvas server binds `127.0.0.1` only by default. If you expose it on a network interface (`HOST=0.0.0.0`), put network-level access controls in front — the API has no built-in authentication.
@@ -163,10 +164,10 @@ npx -y mcp-excalidraw-server install-skill --target codex   # → ~/.codex/skill
 The skill at `skills/excalidraw-skill/` teaches agents the full workflow — layout planning, the screenshot-verify-fix quality loop, arrow routing, anti-patterns, snapshots, and file I/O. It works through the CLI (preferred, zero setup), MCP tools (if configured), or raw REST — in that order.
 
 ```bash
-npx -y mcp-excalidraw-server install-skill [--target claude|codex|<dir>]
+npx -y mcp-excalidraw-server install-skill --dir <skills-root>
 ```
 
-Then invoke it in Claude Code with `/excalidraw-skill` (or let the agent trigger it by task description). Re-running `install-skill` upgrades in place — it replaces the target directory, so files removed upstream don't linger.
+The command copies the bundled `excalidraw-skill/` directory into `<skills-root>/excalidraw-skill`. Let your agent choose whether that root should be project-level or global. Re-running `install-skill` upgrades in place — it replaces the target directory, so files removed upstream don't linger.
 
 Where the skill shines:
 
@@ -196,7 +197,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate` | Layout ops (`--ids a,b,c`, `--to left\|horizontal\|...`) |
 | `share` | Encrypted upload → shareable excalidraw.com URL |
 | `clear --yes` | Wipe the canvas |
-| `install-skill [--target ...]` | Install the agent skill |
+| `install-skill [--dir <skills-root>]` | Install the portable agent skill |
 
 Labels and arrow bindings use the agent-friendly format everywhere in the CLI: `"text"` on any shape, `"startElementId"`/`"endElementId"` on arrows — normalization is automatic.
 
@@ -277,7 +278,7 @@ Config location:
 claude mcp add excalidraw --scope user -- npx -y mcp-excalidraw-server
 ```
 
-> Tip: for coding agents, the skill + CLI often beats MCP config entirely — `npx -y mcp-excalidraw-server install-skill` and you're done.
+> Tip: for coding agents, the skill + CLI often beats MCP config entirely — let the agent pick its skill root, then run `npx -y mcp-excalidraw-server install-skill --dir <skills-root>`.
 
 **Local (node)** - User-level (available across all projects):
 ```bash
@@ -519,11 +520,11 @@ The canvas is in-memory by design (restart = blank canvas). Persist by exporting
 
 ### Does it need an API key or cloud service?
 
-No. Everything runs locally under MIT license. The only outbound call is the optional `share` upload to excalidraw.com.
+No API key is required. Core drawing runs locally under MIT license. The only outbound call is the optional `share` upload to excalidraw.com.
 
 ### Can I use it without configuring MCP?
 
-Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-server install-skill` and the agent drives everything through the CLI. MCP configuration is only needed for chat clients like Claude Desktop.
+Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-server install-skill --dir <skills-root>` and the agent drives everything through the CLI. MCP configuration is only needed for chat clients like Claude Desktop.
 
 ## Troubleshooting
 
