@@ -69,6 +69,21 @@ const sceneState: SceneState = {
   groups: new Map()
 };
 
+let canvasEnsurePromise: Promise<unknown> | null = null;
+
+async function ensureCanvasReadyForMcpTool(): Promise<void> {
+  if (!canvasEnsurePromise) {
+    canvasEnsurePromise = ensureCanvasRunning().finally(() => {
+      canvasEnsurePromise = null;
+    });
+  }
+  await canvasEnsurePromise;
+}
+
+function toolNeedsCanvasBeforeDispatch(name: string): boolean {
+  return name !== 'read_diagram_guide' && name !== 'get_resource';
+}
+
 // Points schema: accept both {x, y} objects and [x, y] tuples
 const PointObjectSchema = z.object({ x: z.number(), y: z.number() });
 const PointTupleSchema = z.tuple([z.number(), z.number()]);
@@ -632,6 +647,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
   try {
     const { name, arguments: args } = request.params;
     logger.info(`Handling tool call: ${name}`);
+
+    if (toolNeedsCanvasBeforeDispatch(name)) {
+      await ensureCanvasReadyForMcpTool();
+    }
     
     switch (name) {
       case 'create_element': {
@@ -760,6 +779,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           case 'library':
           case 'elements':
             try {
+              await ensureCanvasReadyForMcpTool();
               // Get elements from HTTP server
               result = {
                 elements: await getElements()
@@ -1212,12 +1232,11 @@ async function runServer(): Promise<void> {
     await server.connect(transport);
     logger.info('Excalidraw MCP server running on stdio');
 
-    // Auto-start the local canvas server (issue #66). Fired AFTER the stdio
-    // transport is connected and deliberately not awaited — the MCP handshake
-    // must never wait on canvas startup. Failure is non-fatal: tools degrade
-    // exactly as they always did when the canvas was down.
+    // Kick off auto-start after the stdio transport is connected so the MCP
+    // handshake stays fast. Canvas-backed tools await the same promise before
+    // touching HTTP, which avoids a first-tool race.
     if (ENABLE_CANVAS_SYNC && !EXCALIDRAW_NO_AUTOSTART) {
-      void ensureCanvasRunning().catch(error => {
+      void ensureCanvasReadyForMcpTool().catch(error => {
         logger.warn('Canvas auto-start failed:', (error as Error).message);
       });
     }

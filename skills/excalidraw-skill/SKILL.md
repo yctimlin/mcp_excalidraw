@@ -27,14 +27,14 @@ Results are JSON on stdout — except `describe` (plain text) and raw-content ou
 |------|---------|
 | Start / stop / inspect server | `start`, `stop`, `status` |
 | Create elements (batch) | `add elements.json` or `echo '[...]' \| add` or `add --one '{...}'` |
-| Multi-op patch in one call | `apply patch.json` — `{"create":[...],"update":[...],"delete":[...]}` |
+| Multi-op patch in one call | `apply patch.json` — `{"create":[...],"update":[{"id":"a","set":{...}}],"delete":[...]}` |
 | Read one / query many | `get <id>`, `query [--type t] [--bbox x0,y0,x1,y1] [--filter k=v] [--filter-json '{...}']` |
 | Update / delete | `update <id> --set '{...}'`, `delete <id> [...]` |
 | Understand the scene | `describe` (plain-text summary: ids, positions, labels, connections) |
 | See the scene | `screenshot [--out f.png]` (PNG without `--out` → temp file path in JSON; SVG without `--out` → raw SVG) |
 | Layout operations | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate --ids a,b,c [--to left\|horizontal\|...]` |
-| Scene files | `export [--out scene.excalidraw]`, `import scene.excalidraw [--replace]` |
-| Mermaid → canvas | `mermaid diagram.mmd` (or stdin) |
+| Scene files | `export [--out scene.excalidraw]`, `import [scene.excalidraw|-] [--replace]` |
+| Mermaid → canvas | `mermaid [diagram.mmd|-]` (or stdin) |
 | Snapshots | `snapshot save\|list\|restore <name>` |
 | Share link | `share` (encrypted upload → excalidraw.com URL) |
 | Wipe canvas | `clear --yes` |
@@ -47,6 +47,7 @@ The CLI and MCP tools accept the same agent-friendly format and normalize it aut
 - **Arrow binding**: `"startElementId": "a"` / `"endElementId": "b"` — arrows auto-route to element edges.
 - **fontFamily**: pass a string name (`"helvetica"`, `"cascadia"`, `"excalifont"`, ...) or string number `"1"`–`"8"`.
 - **points**: both `[[x,y], ...]` tuples and `[{"x":..,"y":..}]` objects are accepted.
+- **Patch updates**: in `apply`, update entries can use either direct fields (`{"id":"a","x":120}`) or a `set` object (`{"id":"a","set":{"x":120}}`). Do not mix both forms in one update entry.
 
 **Raw REST is stricter**: labels must be `"label": {"text": "..."}`, bindings must be `"start": {"id": "..."}` / `"end": {"id": "..."}`. Only worry about this when POSTing to the API directly.
 

@@ -49,7 +49,7 @@ Two processes, one product:
 - **Canvas server**: Excalidraw web UI + REST API + WebSocket real-time sync (default `http://127.0.0.1:3000`)
 - **A thin front-end of your choice**: the CLI, the MCP stdio server, or raw HTTP — all drive the same canvas
 
-Since v1.1 the canvas server starts itself: any CLI command (and the MCP server on launch) auto-spawns it if nothing is listening. Set `EXCALIDRAW_NO_AUTOSTART=1` to opt out.
+Since v1.1 the canvas server starts itself: canvas-driving CLI commands (and the MCP server on launch) auto-spawn it if nothing is listening. `status` only inspects the current server state. Set `EXCALIDRAW_NO_AUTOSTART=1` to opt out.
 
 ## How We Differ from the Official Excalidraw MCP
 
@@ -74,35 +74,24 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 ## What's New
 
+Current package version: **1.1.0**. The current release line is **v1.1 — CLI-First**.
+
 ### v1.1 — CLI-First
 
 - **First-class CLI**: every capability is now a composable command — `npx -y mcp-excalidraw-server add|query|describe|screenshot|export|import|mermaid|snapshot|arrange|share|...` — JSON on stdout, meaningful exit codes. Also installed as the `excalidraw-canvas` alias.
-- **Zero-setup**: CLI commands and the MCP server **auto-start the canvas server** if it isn't running (closes #66). Opt out with `EXCALIDRAW_NO_AUTOSTART=1`.
-- **`apply`**: multi-op patches (`{"create":[...],"update":[...],"delete":[...]}`) in a single invocation.
+- **Zero-setup**: canvas-driving CLI commands and the MCP server **auto-start the canvas server** if it isn't running (closes #66). Opt out with `EXCALIDRAW_NO_AUTOSTART=1`.
+- **`apply`**: multi-op patches (`{"create":[...],"update":[{"id":"a","set":{...}}],"delete":[...]}`) in a single invocation.
 - **`install-skill`**: `npx -y mcp-excalidraw-server install-skill` drops the agent skill into `~/.claude/skills` (or `--target codex|<dir>`), cleanly replacing older versions.
 - **Skill is now CLI-first** and no longer needs a cloned repo or configured MCP server to work.
 - **Typed queries**: `query --filter locked=true --filter label.text=API` — booleans, numbers, and nested keys work.
-- **Internals**: shared core library (`src/core/`) behind both the CLI and MCP server; canvas `groupIds` are the source of truth for grouping (ungroup now works across restarts); `node-fetch` dropped; MCP version metadata derived from package.json; canvas server writes a pidfile and shuts down cleanly.
-
-### v2.0 — Canvas Toolkit (MCP)
-
-- 13 new MCP tools (26 total), closed feedback loop (`describe_scene` + `get_canvas_screenshot`), design guide, shareable URLs, viewport control, file I/O, snapshots, skill REST fallback.
-
-<details>
-<summary>v1.x</summary>
-
-- Agent skill: `skills/excalidraw-skill/` (portable instructions + helper scripts)
-- Better testing loop: MCP Inspector CLI examples + browser screenshot checks (`agent-browser`)
-- Bugfixes: batch create preserves element ids; frontend entrypoint fixed
-
-</details>
+- **Internals**: shared core library (`src/core/`) behind both the CLI and MCP server; canvas `groupIds` are the source of truth for grouping (ungroup now works across restarts); `node-fetch` dropped; MCP version metadata derived from `package.json`; canvas server writes a pidfile and shuts down cleanly.
 
 ## Quick Start (CLI — recommended)
 
 Prereq: Node >= 18. No clone, no config:
 
 ```bash
-# start the canvas (auto-starts on first command anyway) and open it
+# start the canvas (drawing commands auto-start it too) and open it
 npx -y mcp-excalidraw-server start
 open http://127.0.0.1:3000   # browser tab enables screenshots & mermaid
 
@@ -118,6 +107,7 @@ npx -y mcp-excalidraw-server describe
 npx -y mcp-excalidraw-server screenshot --out diagram.png
 
 # diagrams as repo artifacts
+mkdir -p docs
 npx -y mcp-excalidraw-server export --out docs/architecture.excalidraw
 ```
 
@@ -150,19 +140,19 @@ Where the skill shines:
 
 `npx -y mcp-excalidraw-server <command>` or (after `npm i -g mcp-excalidraw-server`) `excalidraw-canvas <command>`.
 
-Conventions: JSON results on stdout — except `describe` (plain text by design) and raw-content output when `--out` is omitted (`export` prints the scene JSON, `screenshot --format svg` prints SVG). Diagnostics on stderr. Exit codes: `0` ok, `1` error, `2` usage, `3` canvas unreachable, `4` browser tab required. Canvas URL from `EXPRESS_SERVER_URL` or `--url`. Explicit `start` overrides the `EXCALIDRAW_NO_AUTOSTART=1` opt-out (it's user intent, not auto-start).
+Conventions: JSON results on stdout — except `describe` (plain text by design) and raw-content output when `--out` is omitted (`export` prints the scene JSON, `screenshot --format svg` prints SVG). Diagnostics on stderr. Exit codes: `0` ok, `1` error, `2` usage, `3` canvas unreachable, `4` browser tab required. Canvas URL from `EXPRESS_SERVER_URL` or `--url`. Canvas-driving commands auto-start the server; `status` only reports current state. Explicit `start` overrides the `EXCALIDRAW_NO_AUTOSTART=1` opt-out (it's user intent, not auto-start).
 
 | Command | Description |
 |---------|-------------|
 | `start` / `stop` / `status` | Manage the canvas server (detached; `stop` identity-checks the live server via `/health` before signaling) |
 | `add [file\|-]` | Batch-create elements from a JSON array (file or stdin); `--one '{...}'` for a single element |
-| `apply [file\|-]` | One-call multi-op patch: `{"create":[...],"update":[...],"delete":["id"]}` |
+| `apply [file\|-]` | One-call multi-op patch: `{"create":[...],"update":[{"id":"a","set":{...}}],"delete":["id"]}` |
 | `get <id>` / `delete <id...>` | Read / remove elements |
 | `update <id> --set '{...}'` | Update an element |
 | `query` | `--type`, `--bbox x0,y0,x1,y1`, `--filter k=v` (typed, nested keys), `--filter-json '{...}'` |
 | `describe` | AI-readable scene summary (plain text) |
 | `screenshot` | `--out f.png`, `--format png\|svg`, `--no-background` (browser tab required) |
-| `export [--out f.excalidraw]` / `import [file] [--replace]` | Scene file I/O |
+| `export [--out f.excalidraw]` / `import [file\|-] [--replace]` | Scene file I/O |
 | `mermaid [file\|-]` | Mermaid → canvas (browser tab required) |
 | `snapshot save\|list\|restore <name>` | Named snapshots |
 | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate` | Layout ops (`--ids a,b,c`, `--to left\|horizontal\|...`) |
@@ -415,6 +405,7 @@ MCP server image: `ghcr.io/yctimlin/mcp_excalidraw:latest` (stdio; point `EXPRES
 ### CLI Smoke Test
 
 ```bash
+npx -y mcp-excalidraw-server start
 npx -y mcp-excalidraw-server status
 npx -y mcp-excalidraw-server add --one '{"type":"rectangle","x":100,"y":100,"width":300,"height":200}'
 npx -y mcp-excalidraw-server describe
@@ -464,7 +455,7 @@ agent-browser screenshot /tmp/canvas.png
 
 ## Troubleshooting
 
-- **CLI exit code 3** (canvas unreachable): auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`) or `EXPRESS_SERVER_URL` points at a non-loopback host. Run `start` explicitly or fix the env.
+- **CLI exit code 3** (canvas unreachable): the server is not running for an inspecting command such as `status`, auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`), or `EXPRESS_SERVER_URL` points at a non-loopback host. Run `start` explicitly or fix the env.
 - **CLI exit code 4** (browser required): screenshots, image export, viewport, and mermaid conversion render in the frontend — open `http://127.0.0.1:3000` in a browser and retry.
 - **Canvas not updating**: confirm `EXPRESS_SERVER_URL` points at the running canvas server (`status` shows the URL in use).
 - **Updates/deletes fail after batch creation**: ensure you are on a build that includes the batch id preservation fix (merged via PR #34).

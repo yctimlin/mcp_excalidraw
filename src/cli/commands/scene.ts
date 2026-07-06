@@ -15,6 +15,11 @@ import { describeScene } from '../../core/describe.js';
 import { exportToExcalidrawUrl } from '../../core/share-url.js';
 import { EXPRESS_SERVER_URL } from '../../core/config.js';
 
+async function readTextFileOrStdin(inputPath: string | undefined): Promise<string> {
+  if (!inputPath || inputPath === '-') return await readStdin();
+  return fs.readFileSync(path.resolve(inputPath), 'utf-8');
+}
+
 export async function describe(argv: string[]): Promise<void> {
   parseArgs(argv, {});
   await ensureCanvasRunning();
@@ -84,9 +89,7 @@ export async function importCmd(argv: string[]): Promise<void> {
   // Read the file here rather than via importScene's filePath: that path is
   // sandboxed to EXCALIDRAW_EXPORT_DIR for the MCP server, but a user-invoked
   // CLI should import from wherever it is pointed.
-  const data = positionals[0]
-    ? fs.readFileSync(path.resolve(positionals[0]), 'utf-8')
-    : await readStdin();
+  const data = await readTextFileOrStdin(positionals[0]);
   if (!data.trim()) {
     throw new CliUsageError('No scene provided (pass a .excalidraw file or pipe JSON to stdin)');
   }
@@ -98,9 +101,7 @@ export async function importCmd(argv: string[]): Promise<void> {
 export async function mermaid(argv: string[]): Promise<void> {
   const { positionals } = parseArgs(argv, {});
 
-  const diagram = positionals[0]
-    ? fs.readFileSync(positionals[0], 'utf-8')
-    : await readStdin();
+  const diagram = await readTextFileOrStdin(positionals[0]);
   if (!diagram.trim()) {
     throw new CliUsageError('No Mermaid diagram provided (pass a file or pipe to stdin)');
   }

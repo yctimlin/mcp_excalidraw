@@ -353,6 +353,15 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     };
     broadcast(message);
 
+    // Moving/resizing a shape must drag its bound arrows along
+    const geometryChanged = ['x', 'y', 'width', 'height']
+      .some(key => Object.prototype.hasOwnProperty.call(req.body, key));
+    if (geometryChanged && updatedElement.type !== 'arrow' && updatedElement.type !== 'line') {
+      for (const arrow of rerouteBoundArrows(id)) {
+        broadcast({ type: 'element_updated', element: arrow } as ElementUpdatedMessage);
+      }
+    }
+
     res.json({
       success: true,
       element: updatedElement
@@ -631,6 +640,25 @@ function resolveArrowBindings(batchElements: ServerElement[]): void {
     // Excalidraw's frontend `convertToExcalidrawElements` method looks for these exact properties
     // to calculate mathematically sound `startBinding`, `endBinding`, `focus`, `gap`, and `boundElements`.
   }
+}
+
+// After a shape's geometry changes, recompute every arrow bound to it so the
+// visual connection follows the shape — bindings are otherwise only resolved
+// at creation time, which left arrows floating at stale coordinates when
+// update/align/distribute moved their endpoints. Returns the re-routed arrows.
+function rerouteBoundArrows(movedId: string): ServerElement[] {
+  const rerouted: ServerElement[] = [];
+  elements.forEach(el => {
+    if (el.type !== 'arrow' && el.type !== 'line') return;
+    const startRef = (el as any).start as { id: string } | undefined;
+    const endRef = (el as any).end as { id: string } | undefined;
+    if (startRef?.id !== movedId && endRef?.id !== movedId) return;
+    resolveArrowBindings([el]);
+    el.updatedAt = new Date().toISOString();
+    el.version = (el.version || 0) + 1;
+    rerouted.push(el);
+  });
+  return rerouted;
 }
 
 // Batch create elements

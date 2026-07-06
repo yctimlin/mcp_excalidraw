@@ -14,6 +14,25 @@ import { ServerElement } from '../../types.js';
 
 // apply: primary mutation command — {create:[], update:[], delete:[]} in one
 // invocation; a bare JSON array is shorthand for {create: [...]}.
+function normalizePatchUpdate(update: any): { id: string; updates: Record<string, unknown> } {
+  if (!update || typeof update !== 'object' || Array.isArray(update)) {
+    throw new CliUsageError('Every update entry must be an object with an "id"');
+  }
+  if (!update.id) throw new CliUsageError('Every update entry needs an "id"');
+
+  const { id, set, ...rest } = update;
+  if (set === undefined) {
+    return { id, updates: rest };
+  }
+  if (!set || typeof set !== 'object' || Array.isArray(set)) {
+    throw new CliUsageError('Update entry "set" must be an object');
+  }
+  if (Object.keys(rest).length > 0) {
+    throw new CliUsageError('Use either direct update fields or "set", not both');
+  }
+  return { id, updates: set };
+}
+
 export async function apply(argv: string[]): Promise<void> {
   const { positionals } = parseArgs(argv, {});
   const input = await readJsonInput(positionals[0], 'patch');
@@ -34,11 +53,10 @@ export async function apply(argv: string[]): Promise<void> {
 
   const updated: ServerElement[] = [];
   for (const update of patch.update || []) {
-    if (!update.id) throw new CliUsageError('Every update entry needs an "id"');
-    const { id, ...rest } = update;
+    const { id, updates } = normalizePatchUpdate(update);
     // Fetch the real type so text→label conversion skips text elements
     const existing = await getElementStrict(id);
-    updated.push(await updateElementStrict(prepareElementUpdate(id, rest, existing.type)));
+    updated.push(await updateElementStrict(prepareElementUpdate(id, updates, existing.type)));
   }
 
   const deleted: string[] = [];
