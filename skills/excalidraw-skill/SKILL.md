@@ -59,10 +59,15 @@ The canvas uses a 2D coordinate grid: **(0, 0) is the origin**, **x increases ri
 
 **General spacing guidelines:**
 - Vertical spacing between tiers: 80–120px (enough that arrows don't crowd labels)
-- Horizontal spacing between siblings: 40–60px minimum
-- Shape width: `max(160, labelCharCount * 9)` to prevent text truncation
+- Horizontal spacing between siblings: 40–60px minimum; give labeled arrows 120px+
+- Shape width: `max(160, labelCharCount * 12)` to keep the label on one line
 - Shape height: 60px single-line, 80px two-line labels
 - Background/zone padding: 50px on all sides around contained elements
+
+**Styling for a professional look:**
+- `"fillStyle": "solid"` on shapes gives crisp flat fills — the default is a sketchy hachure pattern
+- Pair pastel `backgroundColor` fills with their darker `strokeColor` (palette in the cheatsheet)
+- `"strokeStyle": "dashed"` on zone borders and async arrows reads as "boundary / background"
 
 ---
 
@@ -153,7 +158,7 @@ If you find any issue: **stop, fix it, re-screenshot, then continue.** Say "I se
    EOF
    ```
    (The `-` positional is optional — with no file argument, `add` reads stdin.)
-4. Set shape widths using `max(160, labelLength * 9)`.
+4. Set shape widths using `max(160, labelLength * 12)`.
 5. `screenshot` → view the file → run the Quality Checklist → fix issues before the next batch.
 
 ---
@@ -210,7 +215,7 @@ add elements
 
 1. `describe` to understand current state — note element IDs and positions.
 2. Identify elements by `id` or label text (not by x/y coordinates — they change).
-3. `update <id> --set '{...}'` to resize/recolor/move; `delete <id>` to remove; or bundle everything in one `apply` patch.
+3. `update <id> --set '{...}'` to resize/recolor/move; `delete <id>` to remove; or bundle everything in one `apply` patch. **Bound arrows re-route automatically when you move or resize their endpoints** — no need to delete and recreate them.
 4. `screenshot` to confirm the change looks right.
 5. If updates fail: check the ID exists with `get <id>`; unlock with `arrange unlock --ids <id>` if locked.
 

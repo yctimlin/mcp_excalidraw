@@ -30,10 +30,11 @@ export const DIAGRAM_DESIGN_GUIDE = `# Excalidraw Diagram Design Guide
 
 ## Sizing Rules
 
-- **Minimum shape size**: width >= 120px, height >= 60px
+- **Minimum shape size**: width >= 120px, height >= 60px; width >= labelChars * 12 keeps labels on one line
+- **Solid fills**: set \`fillStyle: "solid"\` for crisp flat fills — the default hachure pattern looks sketchy
 - **Font sizes**: body text >= 16, titles/headers >= 20, small labels >= 14
 - **Padding**: leave at least 20px inside shapes for text breathing room
-- **Arrow length**: minimum 80px between connected shapes
+- **Arrow length**: minimum 80px between connected shapes (120px+ when the arrow has a label)
 - **Consistent sizing**: keep same-role shapes identical dimensions
 
 ## Layout Patterns
