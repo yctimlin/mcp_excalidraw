@@ -5,17 +5,19 @@
 [![NPM Version](https://img.shields.io/npm/v/mcp-excalidraw-server)](https://www.npmjs.com/package/mcp-excalidraw-server)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Excalidraw toolkit for AI coding agents** — a live canvas your agent can draw on, look at, refine, and save into your repo. Three ways in, one canvas:
+**mcp-excalidraw-server** gives AI agents a live [Excalidraw](https://excalidraw.com) canvas they can draw on, look at, refine, and save into your repo. Your agent creates architecture diagrams and flowcharts programmatically, **sees its own work via screenshots**, fixes layout problems, and exports `.excalidraw` files you can commit next to your code.
 
-- **Agent Skill + CLI** (recommended for coding agents — Claude Code, Codex CLI, Cursor, OpenCode): `npx -y mcp-excalidraw-server <command>`. Zero config, auto-starts the canvas, composable JSON in/out.
-- **MCP Server**: 26 tools over stdio for MCP clients (Claude Desktop, Cursor, Codex CLI, Antigravity, ...).
-- **REST API**: plain HTTP for LangChain and custom frameworks.
+One canvas, three ways to drive it:
 
-Keywords: Excalidraw agent skill, Excalidraw CLI, Excalidraw MCP server, AI diagramming, Claude Code skill, Codex CLI skill, Claude Desktop MCP, Cursor MCP, Mermaid to Excalidraw.
+- **Agent Skill + CLI** — recommended for coding agents (Claude Code, Codex CLI, Cursor, OpenCode): `npx -y mcp-excalidraw-server <command>`. Zero config, auto-starts the canvas, composable JSON in/out.
+- **MCP Server** — 26 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...).
+- **REST API** — plain HTTP for LangChain and custom frameworks.
+
+Core drawing runs fully local (Node ≥ 18, MIT licensed) — no API keys. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com.
 
 ## Demo
 
-![MCP Excalidraw Demo](demo.gif)
+![AI agent drawing an architecture diagram on a live Excalidraw canvas via MCP](demo.gif)
 
 *AI agent creates a complete architecture diagram from a single prompt (4x speed). [Watch full video on YouTube](https://youtu.be/ufW78Amq5qA)*
 
@@ -25,7 +27,7 @@ Keywords: Excalidraw agent skill, Excalidraw CLI, Excalidraw MCP server, AI diag
 - [What It Is](#what-it-is)
 - [How We Differ from the Official Excalidraw MCP](#how-we-differ-from-the-official-excalidraw-mcp)
 - [What's New](#whats-new)
-- [Quick Start (CLI — recommended)](#quick-start-cli--recommended)
+- [Installation](#installation)
 - [Agent Skill](#agent-skill)
 - [CLI Reference](#cli-reference)
 - [Configure MCP Clients](#configure-mcp-clients)
@@ -38,13 +40,17 @@ Keywords: Excalidraw agent skill, Excalidraw CLI, Excalidraw MCP server, AI diag
 - [MCP Tools (26 Total)](#mcp-tools-26-total)
 - [Quick Start (From Source / Docker)](#quick-start-from-source--docker)
 - [Testing](#testing)
+- [FAQ](#faq)
 - [Troubleshooting](#troubleshooting)
 - [Known Issues / TODO](#known-issues--todo)
 - [Development](#development)
+- [License](#license)
 
 ## What It Is
 
-Two processes, one product:
+Ask your agent to *"draw the architecture of this service"* and it produces a real, editable Excalidraw diagram — not a one-shot image. Because the agent can query, screenshot, and update individual elements, it iterates until labels fit, nothing overlaps, and arrows route cleanly; then it exports the result as a `.excalidraw` file that lives in your repo and gets updated when the code changes.
+
+Under the hood there are two processes, one product:
 
 - **Canvas server**: Excalidraw web UI + REST API + WebSocket real-time sync (default `http://127.0.0.1:3000`)
 - **A thin front-end of your choice**: the CLI, the MCP stdio server, or raw HTTP — all drive the same canvas
@@ -86,9 +92,41 @@ Current package version: **1.1.0**. The current release line is **v1.1 — CLI-F
 - **Typed queries**: `query --filter locked=true --filter label.text=API` — booleans, numbers, and nested keys work.
 - **Internals**: shared core library (`src/core/`) behind both the CLI and MCP server; canvas `groupIds` are the source of truth for grouping (ungroup now works across restarts); `node-fetch` dropped; MCP version metadata derived from `package.json`; canvas server writes a pidfile and shuts down cleanly.
 
-## Quick Start (CLI — recommended)
+## Installation
 
-Prereq: Node >= 18. No clone, no config:
+The only prerequisite is **Node.js ≥ 18**.
+
+### Easiest: let Claude Code or Codex install it
+
+Copy this into Claude Code or Codex CLI — it installs, verifies, and draws a test diagram:
+
+```text
+Install the Excalidraw canvas toolkit so you can draw diagrams for me:
+
+1. Run: npx -y mcp-excalidraw-server install-skill
+   (add --target codex if you are Codex CLI; the default installs to ~/.claude/skills)
+2. Read the installed SKILL.md so you know the drawing workflow.
+3. Start the canvas with: npx -y mcp-excalidraw-server start
+   then tell me to open http://127.0.0.1:3000 in my browser (screenshots need an open tab).
+4. Draw a small test diagram — two labeled boxes connected by an arrow — take a
+   screenshot, and show me the result to confirm everything works.
+```
+
+### Manual install
+
+| You are... | Install with | Then |
+|---|---|---|
+| **Claude Code user** | `npx -y mcp-excalidraw-server install-skill` | Ask Claude Code to draw — the skill handles the rest |
+| **Codex CLI user** | `npx -y mcp-excalidraw-server install-skill --target codex` | Ask Codex to draw — the skill handles the rest |
+| **MCP client user** (Claude Desktop, Cursor, ...) | Add the npx config below | See [Configure MCP Clients](#configure-mcp-clients) |
+| **CLI user / scripting** | Nothing — `npx -y mcp-excalidraw-server <command>` | See [CLI Reference](#cli-reference) |
+| **Contributor / from source** | `git clone` + `npm ci` + `npm run build` | See [Quick Start (From Source / Docker)](#quick-start-from-source--docker) |
+
+There is no separate server setup: any drawing command auto-starts the local canvas server on `http://127.0.0.1:3000`.
+
+### 60-Second Quick Start (CLI)
+
+No clone, no config:
 
 ```bash
 # start the canvas (drawing commands auto-start it too) and open it
@@ -453,6 +491,40 @@ agent-browser wait --load networkidle
 agent-browser screenshot /tmp/canvas.png
 ```
 
+## FAQ
+
+### How is this different from the official Excalidraw MCP?
+
+The [official Excalidraw MCP](https://github.com/excalidraw/excalidraw-mcp) is a chat widget: you prompt, it streams a diagram into the conversation (the model gets two tools). This project is a **workbench for coding agents**: a persistent local canvas with element-level create/read/update/delete, layout tools, screenshots the model can see, snapshots, and `.excalidraw` file I/O — driveable via CLI, MCP, or REST. See the [full comparison table](#how-we-differ-from-the-official-excalidraw-mcp).
+
+### Which AI tools does it work with?
+
+Claude Code, Claude Desktop, Cursor, Codex CLI, OpenCode, and Google Antigravity are documented below — but any agent that can run shell commands can use the CLI, any MCP client can use the MCP server, and anything else (LangChain, custom apps) can use the REST API.
+
+### Can the AI actually see the diagram it drew?
+
+Yes — that's the core feature. `describe` returns a structured text summary (ids, positions, labels, connections) and `screenshot` returns a rendered PNG. Agents use both to catch truncated labels, overlaps, and bad arrow routing, then fix them element by element.
+
+### Do I need a browser open?
+
+Only for rendering-dependent features: screenshots, PNG/SVG export, viewport control, and Mermaid conversion (they render in the Excalidraw frontend). Creating, querying, updating elements and exporting `.excalidraw` JSON all work headless. The CLI exits with code `4` and tells you when a browser tab is needed.
+
+### Are my diagrams persistent?
+
+The canvas is in-memory by design (restart = blank canvas). Persist by exporting `.excalidraw` files into your repo (`export --out docs/architecture.excalidraw`) or with named `snapshot`s while working. Re-`import` a file to keep refining it later.
+
+### Are excalidraw.com share links private?
+
+`share` encrypts the scene locally with AES-GCM before uploading; the decryption key is only in the URL fragment, which excalidraw.com's server never sees. Anyone you give the full link to can view the diagram.
+
+### Does it need an API key or cloud service?
+
+No. Everything runs locally under MIT license. The only outbound call is the optional `share` upload to excalidraw.com.
+
+### Can I use it without configuring MCP?
+
+Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-server install-skill` and the agent drives everything through the CLI. MCP configuration is only needed for chat clients like Claude Desktop.
+
 ## Troubleshooting
 
 - **CLI exit code 3** (canvas unreachable): the server is not running for an inspecting command such as `status`, auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`), or `EXPRESS_SERVER_URL` points at a non-loopback host. Run `start` explicitly or fix the env.
@@ -475,3 +547,11 @@ npm run build
 npm run cli -- status      # run the CLI from the local build
 npm run sync:skills        # after editing skills/excalidraw-skill, sync the repo-local agent copy
 ```
+
+Bug reports and pull requests are welcome on [GitHub issues](https://github.com/yctimlin/mcp_excalidraw/issues). If this project helps you, a ⭐ helps others find it.
+
+## License
+
+[MIT](LICENSE) © [yctimlin](https://github.com/yctimlin) — not affiliated with the Excalidraw team. [Excalidraw](https://github.com/excalidraw/excalidraw) is its own MIT-licensed project; this toolkit builds on it with love.
+
+**Links:** [npm package](https://www.npmjs.com/package/mcp-excalidraw-server) · [GitHub](https://github.com/yctimlin/mcp_excalidraw) · [Issues](https://github.com/yctimlin/mcp_excalidraw/issues) · [Demo video](https://youtu.be/ufW78Amq5qA)
