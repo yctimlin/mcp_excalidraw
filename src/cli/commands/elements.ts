@@ -52,11 +52,17 @@ export async function apply(argv: string[]): Promise<void> {
   }
 
   const updated: ServerElement[] = [];
-  for (const update of patch.update || []) {
-    const { id, updates } = normalizePatchUpdate(update);
-    // Fetch the real type so text→label conversion skips text elements
-    const existing = await getElementStrict(id);
-    updated.push(await updateElementStrict(prepareElementUpdate(id, updates, existing.type)));
+  if (patch.update?.length) {
+    const typeById = new Map((await getElements()).map(element => [element.id, element.type]));
+    for (const update of patch.update) {
+      const { id, updates } = normalizePatchUpdate(update);
+      const existingType = typeById.get(id);
+      if (!existingType) throw new Error(`Element ${id} not found`);
+
+      const element = await updateElementStrict(prepareElementUpdate(id, updates, existingType));
+      typeById.set(id, element.type);
+      updated.push(element);
+    }
   }
 
   const deleted: string[] = [];
@@ -145,7 +151,7 @@ function coerce(value: string): unknown {
   if (value === 'true') return true;
   if (value === 'false') return false;
   if (value === 'null') return null;
-  if (value !== '' && !Number.isNaN(Number(value))) return Number(value);
+  if (value.trim() !== '' && !Number.isNaN(Number(value))) return Number(value);
   return value;
 }
 

@@ -80,6 +80,10 @@ export function parseArgs(argv: string[], spec: Record<string, FlagSpec>): Parse
 
 // Read all of stdin (for `add`, `import`, `mermaid`, ... piped input)
 export async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) {
+    throw new CliUsageError('No stdin provided (pass a file argument or pipe input to stdin)');
+  }
+
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
     chunks.push(chunk as Buffer);

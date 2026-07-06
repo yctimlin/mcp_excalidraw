@@ -295,7 +295,8 @@ app.post('/api/elements', (req: Request, res: Response) => {
 app.put('/api/elements/:id', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const updates = UpdateElementSchema.parse({ id, ...req.body });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const updates = UpdateElementSchema.parse({ id, ...body });
 
     if (!id) {
       return res.status(400).json({
@@ -322,8 +323,8 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
 
     // Keep Excalidraw text source in sync when clients update text via REST.
     // If originalText lags behind text, rendered wrapping/position can drift.
-    const hasTextUpdate = Object.prototype.hasOwnProperty.call(req.body, 'text');
-    const hasOriginalTextUpdate = Object.prototype.hasOwnProperty.call(req.body, 'originalText');
+    const hasTextUpdate = Object.prototype.hasOwnProperty.call(body, 'text');
+    const hasOriginalTextUpdate = Object.prototype.hasOwnProperty.call(body, 'originalText');
     if (updatedElement.type === EXCALIDRAW_ELEMENT_TYPES.TEXT && hasTextUpdate && !hasOriginalTextUpdate) {
       const incomingText = updates.text ?? '';
       const existingText = typeof existingElement.text === 'string' ? existingElement.text : '';
@@ -355,7 +356,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
 
     // Moving/resizing a shape must drag its bound arrows along
     const geometryChanged = ['x', 'y', 'width', 'height']
-      .some(key => Object.prototype.hasOwnProperty.call(req.body, key));
+      .some(key => Object.prototype.hasOwnProperty.call(body, key));
     if (geometryChanged && updatedElement.type !== 'arrow' && updatedElement.type !== 'line') {
       for (const arrow of rerouteBoundArrows(id)) {
         broadcast({ type: 'element_updated', element: arrow } as ElementUpdatedMessage);
