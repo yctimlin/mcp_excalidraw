@@ -306,6 +306,13 @@ function App(): JSX.Element {
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
 
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light'
+    const saved = window.localStorage?.getItem('excalidraw-canvas-theme')
+    if (saved === 'light' || saved === 'dark') return saved
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+
   // Sync state management
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
@@ -865,7 +872,7 @@ function App(): JSX.Element {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-theme={theme}>
       {/* Header */}
       <div className="header">
         <h1>Excalidraw Canvas</h1>
@@ -919,13 +926,17 @@ function App(): JSX.Element {
         >
           <Excalidraw
             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
-            onChange={() => {
+            onChange={(_elements, appState) => {
+              if (appState.theme !== theme) {
+                setTheme(appState.theme)
+                window.localStorage?.setItem('excalidraw-canvas-theme', appState.theme)
+              }
               scheduleAutoSync()
             }}
             initialData={{
               elements: [],
               appState: {
-                theme: 'light',
+                theme,
                 viewBackgroundColor: '#ffffff'
               }
             }}
