@@ -308,8 +308,12 @@ function App(): JSX.Element {
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'light'
-    const saved = window.localStorage?.getItem('excalidraw-canvas-theme')
-    if (saved === 'light' || saved === 'dark') return saved
+    try {
+      const saved = window.localStorage?.getItem('excalidraw-canvas-theme')
+      if (saved === 'light' || saved === 'dark') return saved
+    } catch (error) {
+      console.warn('Failed to read theme from localStorage:', error)
+    }
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
 
@@ -927,17 +931,20 @@ function App(): JSX.Element {
           <Excalidraw
             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
             onChange={(_elements, appState) => {
-              if (appState.theme !== theme) {
+              if (appState?.theme && appState.theme !== theme) {
                 setTheme(appState.theme)
-                window.localStorage?.setItem('excalidraw-canvas-theme', appState.theme)
+                try {
+                  window.localStorage?.setItem('excalidraw-canvas-theme', appState.theme)
+                } catch (error) {
+                  console.warn('Failed to save theme to localStorage:', error)
+                }
               }
               scheduleAutoSync()
             }}
             initialData={{
               elements: [],
               appState: {
-                theme,
-                viewBackgroundColor: '#ffffff'
+                theme
               }
             }}
           />
