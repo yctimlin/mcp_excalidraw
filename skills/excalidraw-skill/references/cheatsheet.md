@@ -36,8 +36,8 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 |---------|-------------|
 | `describe` | AI-readable scene summary (ids, positions, labels, connections) — plain text |
 | `screenshot` | PNG/SVG capture; `--out f.png`, `--format png\|svg`, `--no-background`; PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG (**browser tab required**) |
-| `export [--out f.excalidraw]` | Scene as .excalidraw JSON (stdout without `--out`) |
-| `import [file\|-] [--replace]` | Import .excalidraw JSON (merge by default) |
+| `export [--out f.excalidraw] [--format json\|obsidian]` | Scene as .excalidraw JSON (stdout without `--out`); a `.md` out path writes Obsidian's .excalidraw.md format |
+| `import [file\|-] [--replace]` | Import .excalidraw JSON or Obsidian .excalidraw.md (merge by default) |
 | `mermaid [file\|-]` | Render Mermaid onto the canvas (**browser tab required**) |
 | `share` | Encrypted upload → shareable excalidraw.com URL |
 | `clear --yes` | Wipe the canvas |
@@ -97,8 +97,8 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `export_scene` | Export to .excalidraw JSON | (optional) `filePath` |
-| `import_scene` | Import from .excalidraw JSON | `mode` ("replace"\|"merge"), `filePath` or `data` |
+| `export_scene` | Export to .excalidraw JSON (a `.md` filePath → Obsidian .excalidraw.md) | (optional) `filePath` |
+| `import_scene` | Import from .excalidraw JSON or Obsidian .excalidraw.md | `mode` ("replace"\|"merge"), `filePath` or `data` |
 | `export_to_image` | Export to PNG/SVG (needs browser) | `format` ("png"\|"svg"), (optional) `filePath`, `background` |
 | `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL | (none) |
 

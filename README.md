@@ -148,6 +148,9 @@ npx -y mcp-excalidraw-server screenshot --out diagram.png
 # diagrams as repo artifacts
 mkdir -p docs
 npx -y mcp-excalidraw-server export --out docs/architecture.excalidraw
+
+# or straight into an Obsidian vault (.md extension → Obsidian Excalidraw plugin format)
+npx -y mcp-excalidraw-server export --out ~/vault/diagrams/architecture.excalidraw.md
 ```
 
 Give your agent the full playbook:
@@ -172,6 +175,7 @@ The command copies the bundled `excalidraw-skill/` directory into `<skills-root>
 Where the skill shines:
 
 - **Diagrams as code artifacts**: export `.excalidraw` files into the repo, commit them, re-import + refine when the architecture changes.
+- **Obsidian vaults**: export with a `.excalidraw.md` extension and the file opens natively in the [Obsidian Excalidraw plugin](https://github.com/zsviczian/obsidian-excalidraw-plugin) — no compatibility-mode warning, block references and sync work; `import` reads both plain and lz-string-compressed vault files back.
 - **Self-verifying diagrams**: the agent screenshots its own work and fixes truncation/overlap before calling it done.
 - **No-MCP environments**: CI jobs, plain shells, and frameworks get the same capabilities through the CLI.
 
@@ -191,7 +195,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `query` | `--type`, `--bbox x0,y0,x1,y1`, `--filter k=v` (typed, nested keys), `--filter-json '{...}'` |
 | `describe` | AI-readable scene summary (plain text) |
 | `screenshot` | `--out f.png`, `--format png\|svg`, `--no-background` (browser tab required) |
-| `export [--out f.excalidraw]` / `import [file\|-] [--replace]` | Scene file I/O |
+| `export [--out f.excalidraw] [--format json\|obsidian]` / `import [file\|-] [--replace]` | Scene file I/O — a `.md` out path writes Obsidian's `.excalidraw.md` format; `import` reads it back |
 | `mermaid [file\|-]` | Mermaid → canvas (browser tab required) |
 | `snapshot save\|list\|restore <name>` | Named snapshots |
 | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate` | Layout ops (`--ids a,b,c`, `--to left\|horizontal\|...`) |

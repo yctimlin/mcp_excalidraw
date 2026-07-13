@@ -50,6 +50,7 @@ import {
   duplicateElements
 } from './core/geometry.js';
 import { buildSceneFile, importScene } from './core/scene-io.js';
+import { wrapSceneAsObsidianMd } from './core/obsidian-md.js';
 import { describeScene } from './core/describe.js';
 import { exportToExcalidrawUrl } from './core/share-url.js';
 import { DIAGRAM_DESIGN_GUIDE } from './core/design-guide.js';
@@ -455,26 +456,26 @@ const tools: Tool[] = [
   },
   {
     name: 'export_scene',
-    description: 'Export the current canvas to .excalidraw JSON format. Optionally write to a file.',
+    description: 'Export the current canvas to .excalidraw JSON format. Optionally write to a file; a path ending in .md is written in the Obsidian Excalidraw plugin format (.excalidraw.md).',
     inputSchema: {
       type: 'object',
       properties: {
         filePath: {
           type: 'string',
-          description: 'Optional file path to write the .excalidraw JSON file'
+          description: 'Optional file path to write the scene to (.excalidraw for raw JSON, .excalidraw.md for the Obsidian Excalidraw plugin format)'
         }
       }
     }
   },
   {
     name: 'import_scene',
-    description: 'Import elements from a .excalidraw JSON file or raw JSON data',
+    description: 'Import elements from a .excalidraw JSON file, an Obsidian .excalidraw.md file, or raw JSON data',
     inputSchema: {
       type: 'object',
       properties: {
         filePath: {
           type: 'string',
-          description: 'Path to a .excalidraw JSON file'
+          description: 'Path to a .excalidraw JSON or Obsidian .excalidraw.md file'
         },
         data: {
           type: 'string',
@@ -998,15 +999,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         logger.info('Exporting scene via MCP');
 
         const { scene, elementCount } = await buildSceneFile();
-        const jsonString = JSON.stringify(scene, null, 2);
 
         if (params.filePath) {
           const safePath = sanitizeFilePath(params.filePath);
-          fs.writeFileSync(safePath, jsonString, 'utf-8');
+          const asObsidianMd = params.filePath.endsWith('.md');
+          const output = asObsidianMd
+            ? wrapSceneAsObsidianMd(scene)
+            : JSON.stringify(scene, null, 2);
+          fs.writeFileSync(safePath, output, 'utf-8');
           return {
             content: [{
               type: 'text',
-              text: `Scene exported to ${safePath} (${elementCount} elements)`
+              text: `Scene exported to ${safePath} (${elementCount} elements${asObsidianMd ? ', Obsidian .excalidraw.md format' : ''})`
             }]
           };
         }
@@ -1014,7 +1018,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
         return {
           content: [{
             type: 'text',
-            text: jsonString
+            text: JSON.stringify(scene, null, 2)
           }]
         };
       }

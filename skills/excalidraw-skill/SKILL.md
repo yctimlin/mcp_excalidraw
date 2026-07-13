@@ -33,7 +33,7 @@ Results are JSON on stdout — except `describe` (plain text) and raw-content ou
 | Understand the scene | `describe` (plain-text summary: ids, positions, labels, connections) |
 | See the scene | `screenshot [--out f.png]` (PNG without `--out` → temp file path in JSON; SVG without `--out` → raw SVG) |
 | Layout operations | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate --ids a,b,c [--to left\|horizontal\|...]` |
-| Scene files | `export [--out scene.excalidraw]`, `import [scene.excalidraw|-] [--replace]` |
+| Scene files | `export [--out scene.excalidraw]`, `import [scene.excalidraw|-] [--replace]` — a `.excalidraw.md` out path writes Obsidian's format (see File I/O) |
 | Mermaid → canvas | `mermaid [diagram.mmd|-]` (or stdin) |
 | Snapshots | `snapshot save\|list\|restore <name>` |
 | Share link | `share` (encrypted upload → excalidraw.com URL) |
@@ -237,6 +237,17 @@ Requires an open browser tab (conversion runs in the frontend; exit code 4 tells
 - Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL
 
 This is how diagrams live in a repo: commit the `.excalidraw` file, and re-`import` + edit + `export` it when the architecture changes.
+
+### Obsidian vaults: use `.excalidraw.md`
+
+Check the destination before writing: if any ancestor directory contains `.obsidian/`, it is an Obsidian vault. A raw `.excalidraw` file there opens in the Excalidraw plugin only in **compatibility mode** ("Convert to new format" warning), gets no block references or vault-wide search, and default Obsidian Sync skips non-`.md` files. Give the export a `.excalidraw.md` extension and the CLI writes the plugin's native format automatically:
+
+```bash
+npx -y mcp-excalidraw-server export --out "$VAULT/diagrams/system-map.excalidraw.md"   # .md → Obsidian format (or force with --format obsidian)
+npx -y mcp-excalidraw-server import "$VAULT/diagrams/system-map.excalidraw.md" --replace  # reads both plain and compressed Drawing blocks
+```
+
+Round-trips are safe: text-element block references follow the plugin's own id rules, so re-importing, editing, and re-exporting the same file keeps links from other notes intact.
 
 ## Workflow: Snapshots
 
