@@ -644,13 +644,19 @@ function App(): JSX.Element {
                     animate: true
                   })
                 }
-              } else if (data.scrollToElementIds?.length) {
+              } else if (data.scrollToElementIds !== undefined) {
+                if (!Array.isArray(data.scrollToElementIds) ||
+                    data.scrollToElementIds.length === 0 ||
+                    !data.scrollToElementIds.every(id => typeof id === 'string' && id.length > 0)) {
+                  throw new Error('scrollToElementIds must be a non-empty array of element IDs')
+                }
                 const allElements = excalidrawAPI.getSceneElements()
-                const targetElements = allElements.filter(el =>
-                  data.scrollToElementIds!.includes(el.id)
-                )
-                if (targetElements.length === 0) {
-                  throw new Error(`No elements found for IDs: ${data.scrollToElementIds.join(', ')}`)
+                const requestedIds = new Set(data.scrollToElementIds)
+                const targetElements = allElements.filter(el => requestedIds.has(el.id))
+                const foundIds = new Set(targetElements.map(el => el.id))
+                const missingIds = data.scrollToElementIds.filter(id => !foundIds.has(id))
+                if (missingIds.length > 0) {
+                  throw new Error(`Elements not found for IDs: ${missingIds.join(', ')}`)
                 }
                 excalidrawAPI.scrollToContent(targetElements, {
                   fitToViewport: true,

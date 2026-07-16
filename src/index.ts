@@ -821,11 +821,14 @@ const tools: Tool[] = [
         scrollToElementIds: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Zoom-to-fit the bounding box of multiple elements by ID'
+          minItems: 1,
+          description: 'Zoom-to-fit the bounding box of one or more elements by ID; every ID must exist'
         },
         viewportZoomFactor: {
           type: 'number',
-          description: 'Optional fit-to-viewport zoom factor for scrollToContent or scrollToElementIds; lower values leave more padding'
+          exclusiveMinimum: 0,
+          maximum: 1,
+          description: 'Optional fit-to-viewport zoom factor in the range (0, 1] for scrollToContent or scrollToElementIds; lower values leave more padding'
         },
         scrollToElementId: {
           type: 'string',
@@ -2216,12 +2219,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'set_viewport': {
         const viewportParams = z.object({
           scrollToContent: z.boolean().optional(),
-          scrollToElementIds: z.array(z.string()).optional(),
-          viewportZoomFactor: z.number().optional(),
-          scrollToElementId: z.string().optional(),
+          scrollToElementIds: z.array(z.string().min(1)).min(1).optional(),
+          viewportZoomFactor: z.number().positive().max(1).optional(),
+          scrollToElementId: z.string().min(1).optional(),
           zoom: z.number().min(0.1).max(10).optional(),
           offsetX: z.number().optional(),
           offsetY: z.number().optional()
+        }).superRefine((params, ctx) => {
+          const modes = [
+            params.scrollToContent === true,
+            params.scrollToElementIds !== undefined,
+            params.scrollToElementId !== undefined,
+            params.zoom !== undefined || params.offsetX !== undefined || params.offsetY !== undefined
+          ].filter(Boolean).length;
+
+          if (modes !== 1) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Specify exactly one viewport mode: scrollToContent, scrollToElementIds, scrollToElementId, or manual zoom/offset'
+            });
+          }
+          if (params.viewportZoomFactor !== undefined &&
+              params.scrollToContent !== true &&
+              params.scrollToElementIds === undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['viewportZoomFactor'],
+              message: 'viewportZoomFactor requires scrollToContent or scrollToElementIds'
+            });
+          }
         }).parse(args || {});
 
         logger.info('Setting viewport via MCP', viewportParams);
@@ -2237,7 +2263,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
           throw new Error(viewportError.error || `Viewport request failed: ${viewportResponse.status}`);
         }
 
-        const viewportResult = await viewportResponse.json() as { success: boolean; message?: string };
+        const viewportResult = await viewportResponse.json() as ApiResponse;
+
+        if (!viewportResult.success) {
+          throw new Error(viewportResult.error || viewportResult.message || 'Viewport update failed');
+        }
 
         return {
           content: [{

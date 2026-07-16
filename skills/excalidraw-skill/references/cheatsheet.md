@@ -59,7 +59,7 @@
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `set_viewport` | Control camera: zoom-to-fit, center on element(s), manual zoom/scroll (needs browser) | (optional) `scrollToContent`, `scrollToElementIds`, `viewportZoomFactor`, `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
+| `set_viewport` | Control camera: zoom-to-fit all/selected elements, center one element without changing zoom, or manual zoom/scroll (needs browser); specify one mode per request | (optional) `scrollToContent`, `scrollToElementIds`, `viewportZoomFactor` (0, 1], `scrollToElementId`, `zoom`, `offsetX`, `offsetY` |
 
 ### Design Guide
 

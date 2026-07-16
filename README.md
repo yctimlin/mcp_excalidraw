@@ -64,7 +64,7 @@ Excalidraw now has an [official MCP](https://github.com/excalidraw/excalidraw-mc
 | **Mermaid conversion** | No | `create_from_mermaid` |
 | **Shareable URLs** | Yes | Yes — `export_to_excalidraw_url` |
 | **Design guide** | `read_me` cheat sheet | `read_diagram_guide` (colors, sizing, layout, anti-patterns) |
-| **Viewport control** | Camera animations | `set_viewport` (zoom-to-fit, center on element(s), manual zoom) |
+| **Viewport control** | Camera animations | `set_viewport` (zoom-to-fit all or selected elements, center on one element, manual zoom) |
 | **Live canvas UI** | Rendered inline in chat | Standalone Excalidraw app synced via WebSocket |
 | **Multi-agent** | Single user | Multiple agents can draw on the same canvas concurrently |
 | **Works without MCP** | No | Yes — REST API fallback via agent skill |
@@ -446,6 +446,8 @@ Viewport group focus can tune framing with `viewportZoomFactor`:
   "viewportZoomFactor": 0.85
 }
 ```
+
+`scrollToElementIds` zooms to fit every requested element, while `scrollToElementId` centers one element without changing the current zoom. Specify only one viewport mode per request. `viewportZoomFactor` accepts values greater than 0 and at most 1.
 
 ## Testing
 
