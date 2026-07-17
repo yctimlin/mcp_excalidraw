@@ -11,6 +11,7 @@ import {
   sendMermaid
 } from '../../core/canvas-client.js';
 import { buildSceneFile, importScene } from '../../core/scene-io.js';
+import { wrapSceneAsObsidianMd } from '../../core/obsidian-md.js';
 import { describeScene } from '../../core/describe.js';
 import { exportToExcalidrawUrl } from '../../core/share-url.js';
 import { EXPRESS_SERVER_URL } from '../../core/config.js';
@@ -64,20 +65,34 @@ export async function screenshot(argv: string[]): Promise<void> {
 }
 
 export async function exportCmd(argv: string[]): Promise<void> {
-  const { flags } = parseArgs(argv, { out: { takesValue: true } });
+  const { flags } = parseArgs(argv, {
+    out: { takesValue: true },
+    format: { takesValue: true }
+  });
+
+  const outPath = typeof flags.out === 'string' ? flags.out : undefined;
+  // A .md out path means an Obsidian vault destination, where raw .excalidraw
+  // JSON only opens in the Excalidraw plugin's compatibility mode.
+  const format = (flags.format as string | undefined)
+    ?? (outPath?.endsWith('.md') ? 'obsidian' : 'json');
+  if (format !== 'json' && format !== 'obsidian') {
+    throw new CliUsageError('--format must be json or obsidian');
+  }
 
   await ensureCanvasRunning();
   const { scene, elementCount } = await buildSceneFile();
-  const jsonString = JSON.stringify(scene, null, 2);
+  const output = format === 'obsidian'
+    ? wrapSceneAsObsidianMd(scene)
+    : JSON.stringify(scene, null, 2);
 
-  if (typeof flags.out === 'string') {
-    const resolved = path.resolve(flags.out);
-    fs.writeFileSync(resolved, jsonString, 'utf-8');
-    printJson({ success: true, file: resolved, elements: elementCount });
+  if (outPath) {
+    const resolved = path.resolve(outPath);
+    fs.writeFileSync(resolved, output, 'utf-8');
+    printJson({ success: true, file: resolved, elements: elementCount, format });
     return;
   }
 
-  process.stdout.write(jsonString + '\n');
+  process.stdout.write(output + '\n');
 }
 
 export async function importCmd(argv: string[]): Promise<void> {
@@ -91,7 +106,7 @@ export async function importCmd(argv: string[]): Promise<void> {
   // CLI should import from wherever it is pointed.
   const data = await readTextFileOrStdin(positionals[0]);
   if (!data.trim()) {
-    throw new CliUsageError('No scene provided (pass a .excalidraw file or pipe JSON to stdin)');
+    throw new CliUsageError('No scene provided (pass a .excalidraw / .excalidraw.md file or pipe JSON to stdin)');
   }
   const result = await importScene({ data, mode });
 

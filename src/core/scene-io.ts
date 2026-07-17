@@ -8,6 +8,7 @@ import {
   batchCreateElementsOnCanvas
 } from './canvas-client.js';
 import { sanitizeFilePath } from './normalize.js';
+import { isObsidianExcalidrawMd, extractSceneJsonFromObsidianMd } from './obsidian-md.js';
 
 export interface ExportedScene {
   scene: Record<string, any>;
@@ -45,22 +46,26 @@ export interface ImportResult {
   mode: 'replace' | 'merge';
 }
 
-// Import elements from a .excalidraw JSON file or raw JSON data
+// Import elements from a .excalidraw JSON file, an Obsidian .excalidraw.md
+// file, or raw JSON data
 export async function importScene(options: {
   filePath?: string;
   data?: string;
   mode: 'replace' | 'merge';
 }): Promise<ImportResult> {
-  let sceneData: any;
+  let raw: string;
   if (options.filePath) {
     const safeImportPath = sanitizeFilePath(options.filePath);
-    const fileContent = fs.readFileSync(safeImportPath, 'utf-8');
-    sceneData = JSON.parse(fileContent);
+    raw = fs.readFileSync(safeImportPath, 'utf-8');
   } else if (options.data) {
-    sceneData = JSON.parse(options.data);
+    raw = options.data;
   } else {
     throw new Error('Either filePath or data must be provided');
   }
+  if (isObsidianExcalidrawMd(raw)) {
+    raw = extractSceneJsonFromObsidianMd(raw);
+  }
+  const sceneData: any = JSON.parse(raw);
 
   // Extract elements from .excalidraw format or raw array
   const importElements: ServerElement[] = Array.isArray(sceneData)
