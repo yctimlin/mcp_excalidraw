@@ -73,6 +73,7 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) â
 | **Snapshot & rollback** | Widget-side checkpoints | Named server-side snapshots |
 | **Mermaid conversion** | No | `mermaid` / `create_from_mermaid` |
 | **Shareable URLs** | Widget-only | `share` / `export_to_excalidraw_url` |
+| **Viewport control** | Camera animations | `set_viewport` (zoom-to-fit all or selected elements, center on one element, manual zoom) |
 | **Works without MCP** | No | Yes â€” CLI + agent skill + REST API |
 | **Multi-agent** | Single chat | Multiple agents on the same canvas concurrently |
 
@@ -423,6 +424,17 @@ Config location: `~/.gemini/antigravity/mcp_config.json`
 | **Resources** | `get_resource` |
 
 Full schemas are discoverable via `tools/list` or in `skills/excalidraw-skill/references/cheatsheet.md`.
+
+Viewport group focus can tune framing with `viewportZoomFactor`:
+
+```json
+{
+  "scrollToElementIds": ["id1", "id2", "id3"],
+  "viewportZoomFactor": 0.85
+}
+```
+
+`scrollToElementIds` zooms to fit every requested element, while `scrollToElementId` centers one element without changing the current zoom. Specify only one viewport mode per request. `viewportZoomFactor` accepts values greater than 0 and at most 1.
 
 ## Quick Start (From Source / Docker)
 

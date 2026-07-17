@@ -65,6 +65,14 @@ interface WebSocketMessage {
   source?: string;
   mermaidDiagram?: string;
   config?: MermaidConfig;
+  requestId?: string;
+  scrollToContent?: boolean;
+  scrollToElementId?: string;
+  scrollToElementIds?: string[];
+  viewportZoomFactor?: number;
+  zoom?: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 interface ApiResponse {
@@ -641,8 +649,31 @@ function App(): JSX.Element {
               if (data.scrollToContent) {
                 const allElements = excalidrawAPI.getSceneElements()
                 if (allElements.length > 0) {
-                  excalidrawAPI.scrollToContent(allElements, { fitToViewport: true, animate: true })
+                  excalidrawAPI.scrollToContent(allElements, {
+                    fitToViewport: true,
+                    viewportZoomFactor: data.viewportZoomFactor,
+                    animate: true
+                  })
                 }
+              } else if (data.scrollToElementIds !== undefined) {
+                if (!Array.isArray(data.scrollToElementIds) ||
+                    data.scrollToElementIds.length === 0 ||
+                    !data.scrollToElementIds.every(id => typeof id === 'string' && id.length > 0)) {
+                  throw new Error('scrollToElementIds must be a non-empty array of element IDs')
+                }
+                const allElements = excalidrawAPI.getSceneElements()
+                const requestedIds = new Set(data.scrollToElementIds)
+                const targetElements = allElements.filter(el => requestedIds.has(el.id))
+                const foundIds = new Set(targetElements.map(el => el.id))
+                const missingIds = data.scrollToElementIds.filter(id => !foundIds.has(id))
+                if (missingIds.length > 0) {
+                  throw new Error(`Elements not found for IDs: ${missingIds.join(', ')}`)
+                }
+                excalidrawAPI.scrollToContent(targetElements, {
+                  fitToViewport: true,
+                  viewportZoomFactor: data.viewportZoomFactor,
+                  animate: true
+                })
               } else if (data.scrollToElementId) {
                 const allElements = excalidrawAPI.getSceneElements()
                 const targetElement = allElements.find(el => el.id === data.scrollToElementId)

@@ -1024,9 +1024,50 @@ interface PendingViewport {
 }
 const pendingViewports = new Map<string, PendingViewport>();
 
+const viewportRequestSchema = z.object({
+  scrollToContent: z.boolean().optional(),
+  scrollToElementIds: z.array(z.string().min(1)).min(1).optional(),
+  viewportZoomFactor: z.number().positive().max(1).optional(),
+  scrollToElementId: z.string().min(1).optional(),
+  zoom: z.number().min(0.1).max(10).optional(),
+  offsetX: z.number().optional(),
+  offsetY: z.number().optional()
+}).superRefine((params, ctx) => {
+  const modes = [
+    params.scrollToContent === true,
+    params.scrollToElementIds !== undefined,
+    params.scrollToElementId !== undefined,
+    params.zoom !== undefined || params.offsetX !== undefined || params.offsetY !== undefined
+  ].filter(Boolean).length;
+
+  if (modes !== 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Specify exactly one viewport mode: scrollToContent, scrollToElementIds, scrollToElementId, or manual zoom/offset'
+    });
+  }
+  if (params.viewportZoomFactor !== undefined &&
+      params.scrollToContent !== true &&
+      params.scrollToElementIds === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['viewportZoomFactor'],
+      message: 'viewportZoomFactor requires scrollToContent or scrollToElementIds'
+    });
+  }
+});
+
 app.post('/api/viewport', (req: Request, res: Response) => {
   try {
-    const { scrollToContent, scrollToElementId, zoom, offsetX, offsetY } = req.body;
+    const {
+      scrollToContent,
+      scrollToElementIds,
+      scrollToElementId,
+      viewportZoomFactor,
+      zoom,
+      offsetX,
+      offsetY
+    } = viewportRequestSchema.parse(req.body);
 
     if (clients.size === 0) {
       return res.status(503).json({
@@ -1050,7 +1091,9 @@ app.post('/api/viewport', (req: Request, res: Response) => {
       type: 'set_viewport',
       requestId,
       scrollToContent,
+      scrollToElementIds,
       scrollToElementId,
+      viewportZoomFactor,
       zoom,
       offsetX,
       offsetY
@@ -1068,9 +1111,11 @@ app.post('/api/viewport', (req: Request, res: Response) => {
       });
   } catch (error) {
     logger.error('Error initiating viewport change:', error);
-    res.status(500).json({
+    res.status(error instanceof z.ZodError ? 400 : 500).json({
       success: false,
-      error: (error as Error).message
+      error: error instanceof z.ZodError
+        ? error.issues.map(issue => issue.message).join('; ')
+        : (error as Error).message
     });
   }
 });
@@ -1092,10 +1137,10 @@ app.post('/api/viewport/result', (req: Request, res: Response) => {
       return res.json({ success: true });
     }
 
-    if (error) {
+    if (error || success === false) {
       clearTimeout(pending.timeout);
       pendingViewports.delete(requestId);
-      pending.resolve({ success: false, message: error });
+      pending.reject(new Error(error || message || 'Viewport update failed'));
       return res.json({ success: true });
     }
 

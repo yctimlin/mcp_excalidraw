@@ -597,13 +597,25 @@ const tools: Tool[] = [
   },
   {
     name: 'set_viewport',
-    description: 'Control the canvas viewport (camera). Auto-fit all elements, center on a specific element, or set zoom/scroll directly. Requires the canvas frontend open in a browser.',
+    description: 'Control the canvas viewport (camera). Auto-fit all elements, zoom-to-fit a subset of elements, center on a specific element, or set zoom/scroll directly. Requires the canvas frontend open in a browser.',
     inputSchema: {
       type: 'object',
       properties: {
         scrollToContent: {
           type: 'boolean',
           description: 'Auto-fit all elements in view (zoom-to-fit)'
+        },
+        scrollToElementIds: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          description: 'Zoom-to-fit the bounding box of one or more elements by ID; every ID must exist'
+        },
+        viewportZoomFactor: {
+          type: 'number',
+          exclusiveMinimum: 0,
+          maximum: 1,
+          description: 'Optional fit-to-viewport zoom factor in the range (0, 1] for scrollToContent or scrollToElementIds; lower values leave more padding'
         },
         scrollToElementId: {
           type: 'string',
@@ -1190,15 +1202,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
       case 'set_viewport': {
         const viewportParams = z.object({
           scrollToContent: z.boolean().optional(),
-          scrollToElementId: z.string().optional(),
+          scrollToElementIds: z.array(z.string().min(1)).min(1).optional(),
+          viewportZoomFactor: z.number().positive().max(1).optional(),
+          scrollToElementId: z.string().min(1).optional(),
           zoom: z.number().min(0.1).max(10).optional(),
           offsetX: z.number().optional(),
           offsetY: z.number().optional()
+        }).superRefine((params, ctx) => {
+          const modes = [
+            params.scrollToContent === true,
+            params.scrollToElementIds !== undefined,
+            params.scrollToElementId !== undefined,
+            params.zoom !== undefined || params.offsetX !== undefined || params.offsetY !== undefined
+          ].filter(Boolean).length;
+
+          if (modes !== 1) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'Specify exactly one viewport mode: scrollToContent, scrollToElementIds, scrollToElementId, or manual zoom/offset'
+            });
+          }
+          if (params.viewportZoomFactor !== undefined &&
+              params.scrollToContent !== true &&
+              params.scrollToElementIds === undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['viewportZoomFactor'],
+              message: 'viewportZoomFactor requires scrollToContent or scrollToElementIds'
+            });
+          }
         }).parse(args || {});
 
         logger.info('Setting viewport via MCP', viewportParams);
 
         const viewportResult = await setViewport(viewportParams);
+
+        if (!viewportResult.success) {
+          throw new Error(viewportResult.message || 'Viewport update failed');
+        }
 
         return {
           content: [{
