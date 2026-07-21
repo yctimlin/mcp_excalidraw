@@ -167,7 +167,7 @@ const CreateElementSchema = z.object({
   fileId: z.string().optional(),
   status: z.string().optional(),
   scale: z.tuple([z.number(), z.number()]).optional(),
-});
+}).passthrough();
 
 const UpdateElementSchema = z.object({
   id: z.string(),
@@ -225,7 +225,7 @@ const UpdateElementSchema = z.object({
   fileId: z.string().optional(),
   status: z.string().optional(),
   scale: z.tuple([z.number(), z.number()]).optional(),
-});
+}).passthrough();
 
 // API Routes
 
