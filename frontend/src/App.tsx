@@ -403,7 +403,12 @@ function App(): JSX.Element {
   }
 
   const connectWebSocket = (): void => {
-    if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+    // Guard CONNECTING too: the mount effect and the excalidrawAPI effect can
+    // both run before the first socket opens, orphaning a live duplicate
+    // connection whose handlers then process every broadcast twice.
+    if (websocketRef.current &&
+        (websocketRef.current.readyState === WebSocket.CONNECTING ||
+         websocketRef.current.readyState === WebSocket.OPEN)) {
       return
     }
 
@@ -734,9 +739,15 @@ function App(): JSX.Element {
               }
 
               if (result.elements && result.elements.length > 0) {
-                const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: false })
+                // Regenerate ids so repeated conversions of the same diagram
+                // (mermaid emits stable ids like "A", "B") can't collide with
+                // elements already on the canvas.
+                const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: true })
+                // Merge with the existing scene — updateScene() replaces the
+                // element list wholesale, and syncToBackend() would otherwise
+                // propagate that wipe to the server.
                 applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-                  elements: convertedElements,
+                  elements: [...excalidrawAPI.getSceneElements(), ...convertedElements],
                   captureUpdate: CaptureUpdateAction.IMMEDIATELY
                 })
 
@@ -784,7 +795,10 @@ function App(): JSX.Element {
   const syncToBackend = async (options: { silent?: boolean } = {}): Promise<void> => {
     const { silent = false } = options
 
-    if (!excalidrawAPI) {
+    // Read through the ref: WS message handlers attached at mount capture a
+    // stale closure where the excalidrawAPI state is still null.
+    const api = excalidrawAPIRef.current
+    if (!api) {
       console.warn('Excalidraw API not available')
       return
     }
@@ -805,7 +819,7 @@ function App(): JSX.Element {
 
     try {
       // 1. Get current elements
-      const currentElements = excalidrawAPI.getSceneElements()
+      const currentElements = api.getSceneElements()
       console.log(`Syncing ${currentElements.length} elements to backend`)
 
       // Filter out deleted elements
