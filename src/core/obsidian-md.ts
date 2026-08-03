@@ -96,14 +96,19 @@ export function extractSceneJsonFromObsidianMd(md: string): string {
   // The closing fence must sit at the start of a line: element text can
   // contain ``` inside the JSON strings, but a line of pretty-printed JSON
   // never begins with a backtick (this mirrors the plugin's own DRAWING_REG).
-  const compressed = md.match(/\n##? Drawing\n[^`]*```compressed-json\n([\s\S]*?)\n```/);
+  //
+  // Every line break is matched as `\r?\n`: files authored on Windows (or by
+  // the Obsidian plugin there) use CRLF, and requiring a bare `\n` right after
+  // `## Drawing` made every such file fail with the misleading "No Drawing
+  // block found" — even though the block was present.
+  const compressed = md.match(/\r?\n##? Drawing\r?\n[^`]*```compressed-json\r?\n([\s\S]*?)\r?\n```/);
   if (compressed) {
     const json = decompressFromBase64(compressed[1]!.replace(/\s/g, ''));
     if (!json) throw new Error('Failed to decompress the Drawing block');
     JSON.parse(json);
     return json;
   }
-  const plain = md.match(/\n##? Drawing\n[^`]*```json\n([\s\S]*?)\n```/);
+  const plain = md.match(/\r?\n##? Drawing\r?\n[^`]*```json\r?\n([\s\S]*?)\r?\n```/);
   if (plain) {
     JSON.parse(plain[1]!);
     return plain[1]!;

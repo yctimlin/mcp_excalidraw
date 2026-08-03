@@ -9,6 +9,7 @@ import {
 } from './canvas-client.js';
 import { sanitizeFilePath } from './normalize.js';
 import { isObsidianExcalidrawMd, extractSceneJsonFromObsidianMd } from './obsidian-md.js';
+import { normalizeSceneElements } from './to-excalidraw.js';
 
 export interface ExportedScene {
   scene: Record<string, any>;
@@ -25,19 +26,29 @@ export async function buildSceneFile(): Promise<ExportedScene> {
     sceneFiles = await getFiles();
   } catch { /* files endpoint may not exist */ }
 
+  // Expand the stored shorthand (label -> bound text element) and fill every
+  // field a real Excalidraw reader requires. Without this, the export is raw
+  // server shorthand that excalidraw.com and the Obsidian plugin cannot load
+  // (the plugin re-saves the note EMPTY). See to-excalidraw.ts.
+  const elements = normalizeSceneElements(sceneElements);
+
   const excalidrawScene: Record<string, any> = {
     type: 'excalidraw',
     version: 2,
     source: 'mcp-excalidraw-server',
-    elements: sceneElements,
+    elements,
     appState: {
       viewBackgroundColor: '#ffffff',
-      gridSize: null
+      gridSize: null,
+      // Pinned light: Excalidraw's dark theme is a color-inversion filter, so a
+      // scene authored with a dark palette flips to light under it. Light theme
+      // applies no filter, so exports render exactly as drawn.
+      theme: 'light'
     },
     ...(Object.keys(sceneFiles).length > 0 ? { files: sceneFiles } : {})
   };
 
-  return { scene: excalidrawScene, elementCount: sceneElements.length };
+  return { scene: excalidrawScene, elementCount: elements.length };
 }
 
 export interface ImportResult {
