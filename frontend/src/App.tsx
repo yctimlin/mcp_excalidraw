@@ -825,6 +825,33 @@ function App(): JSX.Element {
       // Filter out deleted elements
       const activeElements = currentElements.filter(el => !el.isDeleted)
 
+      // 2. Upload image binaries BEFORE the elements that reference them.
+      // An image element only carries a fileId; the bytes live in a separate
+      // files map. Syncing elements alone leaves the backend holding fileIds it
+      // cannot resolve, so the next reload renders every image as a broken
+      // placeholder. Files are content-addressed, so re-posting an unchanged
+      // one is a harmless no-op.
+      const fileList = Object.values(api.getFiles() ?? {}).map(f => ({
+        id: f.id,
+        dataURL: f.dataURL,
+        mimeType: f.mimeType,
+        created: f.created,
+      }))
+      if (fileList.length > 0) {
+        const filesResponse = await fetch('/api/files', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ files: fileList })
+        })
+        if (filesResponse.ok) {
+          console.log(`Synced ${fileList.length} files to backend`)
+        } else {
+          console.error('File sync failed:', filesResponse.statusText)
+        }
+      }
+
       // 3. Convert to backend format
       const backendElements = activeElements.map(convertToBackendFormat)
 
