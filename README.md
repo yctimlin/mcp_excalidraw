@@ -1,5 +1,7 @@
 # Excalidraw MCP Server, CLI & Agent Skill
 
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fyctimlin%2Fmcp_excalidraw.svg)](https://mcptoplist.com/server/glama%2Fyctimlin%2Fmcp_excalidraw)
+
 [![CI](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/ci.yml)
 [![Docker Build & Push](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml/badge.svg)](https://github.com/yctimlin/mcp_excalidraw/actions/workflows/docker.yml)
 [![NPM Version](https://img.shields.io/npm/v/mcp-excalidraw-server)](https://www.npmjs.com/package/mcp-excalidraw-server)
