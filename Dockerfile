@@ -3,7 +3,7 @@
 # The canvas server is optional and runs separately
 
 # Stage 1: Build backend (TypeScript compilation)
-FROM node:18-slim AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ COPY tsconfig.json ./
 RUN npm run build:server
 
 # Stage 2: Production MCP Server
-FROM node:18-slim AS production
+FROM node:20-slim AS production
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
