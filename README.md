@@ -10,7 +10,7 @@
 One canvas, three ways to drive it:
 
 - **Agent Skill + CLI** — recommended for coding agents (Claude Code, Codex CLI, Cursor, OpenCode): `npx -y mcp-excalidraw-server <command>`. Zero config, auto-starts the canvas, composable JSON in/out.
-- **MCP Server** — 26 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...).
+- **MCP Server** — 26 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...). Speaks MCP `2026-07-28` (`server/discover`, per-request `_meta` envelope, tool calls without a handshake) and stays compatible with 2025-era clients that open with `initialize`.
 - **REST API** — plain HTTP for LangChain and custom frameworks.
 
 Core drawing runs fully local (Node ≥ 18, MIT licensed) — no API keys. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com.
@@ -476,6 +476,17 @@ curl http://127.0.0.1:3000/health
 
 ```bash
 npm run test:bind
+```
+
+### MCP Stdio Wire Test
+
+Drives `dist/index.js` with raw JSON-RPC frames and checks both protocol eras:
+`server/discover`, tool calls sent without any handshake, refusal of unsupported
+protocol revisions and malformed `_meta` envelopes, and the legacy `initialize`
+path.
+
+```bash
+npm run test:mcp
 ```
 
 ### MCP Smoke Test (MCP Inspector)

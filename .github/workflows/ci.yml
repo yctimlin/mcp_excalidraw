@@ -34,6 +34,9 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Run MCP stdio wire tests
+        run: node scripts/check-mcp-stdio.mjs
+
       - name: Check build artifacts
         run: |
           echo "Checking if build artifacts exist..."
