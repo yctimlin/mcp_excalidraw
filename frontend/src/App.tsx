@@ -10,6 +10,7 @@ import {
 import type { ExcalidrawElement, NonDeleted, NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/types/element/types'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
+import { withStableGeneratedBoundTextIds } from '../../src/core/bound-text'
 
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
@@ -297,9 +298,10 @@ const convertElementsPreservingImageProps = (
   const imageElements = validatedElements.filter(isImageElement).map(normalizeImageElement)
   const freedrawElements = validatedElements.filter(isFreedrawElement).map(normalizeFreedrawElement)
   const nonImageElements = validatedElements.filter(el => !isImageElement(el) && !isFreedrawElement(el))
+  const stableNonImageElements = withStableGeneratedBoundTextIds(nonImageElements)
   // convertToExcalidrawElements may expand labeled shapes into [shape, textElement],
   // so we cannot assume a 1:1 mapping — return all converted elements directly.
-  const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
+  const convertedNonImageElements = convertToExcalidrawElements(stableNonImageElements as any, { regenerateIds: false })
   const restoredNonImageElements = restoreBindings(convertedNonImageElements, nonImageElements)
   return recenterBoundShapeTextElements([...restoredNonImageElements, ...imageElements, ...freedrawElements])
 }
