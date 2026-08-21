@@ -21,8 +21,9 @@
     "production": "npm run build && npm run canvas",
     "prepublishOnly": "npm run build",
     "sync:skills": "node scripts/sync-skills.mjs",
-    "test": "npm run test:mcp && npm run test:bind",
+    "test": "npm run test:mcp && npm run test:bind && npm run test:labels",
     "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
+    "test:labels": "npm run build:server && node scripts/check-bound-text-ids.mjs",
     "test:mcp": "npm run build:server && node scripts/check-mcp-stdio.mjs",
     "type-check": "npx tsc --noEmit"
   },
