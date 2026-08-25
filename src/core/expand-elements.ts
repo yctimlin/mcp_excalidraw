@@ -114,11 +114,15 @@ export function expandElementsForExport(
       // Agent-created text often has no dimensions (server stores null);
       // third-party consumers clip width-less text, so estimate like the
       // design guide does (~0.6×fontSize per char, 1.25 line height).
-      if (base.width == null || base.height == null) {
+      // Treat 0 as unmeasured, not just null/undefined: pre-2.0.0 headless
+      // creation stored width/height 0, and re-imported scenes carry it back
+      // into the store — zero-size text renders invisible in consumers that
+      // trust stored dimensions.
+      if (!base.width || !base.height) {
         const lines = String(base.text).split('\n');
         const longestLine = Math.max(1, ...lines.map((l: string) => l.length));
-        base.width = base.width ?? Math.ceil(longestLine * base.fontSize * 0.6);
-        base.height = base.height ?? Math.ceil(lines.length * base.fontSize * 1.25);
+        base.width = base.width || Math.ceil(longestLine * base.fontSize * 0.6);
+        base.height = base.height || Math.ceil(lines.length * base.fontSize * 1.25);
       }
       base.fontFamily = normalizeFontFamily(rest.fontFamily) ?? 1;
       base.textAlign = rest.textAlign ?? 'center';
