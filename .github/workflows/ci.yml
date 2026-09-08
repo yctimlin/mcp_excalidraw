@@ -31,11 +31,20 @@ jobs:
       - name: Run TypeScript type check
         run: npm run type-check
 
+      - name: Type check frontend
+        run: npm run type-check:frontend
+
       - name: Build project
         run: npm run build
 
       - name: Run MCP stdio wire tests
         run: node scripts/check-mcp-stdio.mjs
+
+      - name: Install Chromium for canvas regression tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Run canvas browser regression tests
+        run: npx playwright test
 
       - name: Check build artifacts
         run: |

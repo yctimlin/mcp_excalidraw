@@ -3,60 +3,23 @@ import {
   Excalidraw,
   convertToExcalidrawElements,
   CaptureUpdateAction,
-  ExcalidrawImperativeAPI,
   exportToBlob,
   exportToSvg
 } from '@excalidraw/excalidraw'
-import type { ExcalidrawElement, NonDeleted, NonDeletedExcalidrawElement } from '@excalidraw/excalidraw/types/element/types'
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
+import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
+import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
+import type { ServerElement } from './utils/scene'
 import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
 
-interface ServerElement {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  width?: number;
-  height?: number;
-  backgroundColor?: string;
-  strokeColor?: string;
-  strokeWidth?: number;
-  roughness?: number;
-  opacity?: number;
-  text?: string;
-  fontSize?: number;
-  fontFamily?: string | number;
-  label?: {
-    text: string;
-  };
-  createdAt?: string;
-  updatedAt?: string;
-  version?: number;
-  syncedAt?: string;
-  source?: string;
-  syncTimestamp?: string;
-  boundElements?: any[] | null;
-  containerId?: string | null;
-  locked?: boolean;
-  // Arrow element binding
-  start?: { id: string };
-  end?: { id: string };
-  strokeStyle?: string;
-  endArrowhead?: string;
-  startArrowhead?: string;
-  // Image element fields
-  fileId?: string;
-  status?: string;
-  scale?: [number, number];
-  angle?: number;
-  link?: string | null;
-}
-
 interface WebSocketMessage {
   type: string;
+  format?: 'png' | 'svg';
+  background?: boolean;
   element?: ServerElement;
   elements?: ServerElement[];
   elementId?: string;
@@ -86,223 +49,11 @@ interface ApiResponse {
 }
 
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+type SceneLoadStatus = 'loading' | 'ready' | 'failed';
 const AUTO_SYNC_DEBOUNCE_MS = 1200;
-
-// Helper function to clean elements for Excalidraw
-const cleanElementForExcalidraw = (element: ServerElement): Partial<ExcalidrawElement> => {
-  const {
-    createdAt,
-    updatedAt,
-    version,
-    syncedAt,
-    source,
-    syncTimestamp,
-    ...cleanElement
-  } = element;
-  return cleanElement;
-}
-
-// Helper function to validate and fix element binding data
-const validateAndFixBindings = (elements: Partial<ExcalidrawElement>[]): Partial<ExcalidrawElement>[] => {
-  const elementMap = new Map(elements.map(el => [el.id!, el]));
-
-  return elements.map(element => {
-    const fixedElement = { ...element };
-
-    // Validate and fix boundElements
-    if (fixedElement.boundElements) {
-      if (Array.isArray(fixedElement.boundElements)) {
-        fixedElement.boundElements = fixedElement.boundElements.filter((binding: any) => {
-          // Ensure binding has required properties
-          if (!binding || typeof binding !== 'object') return false;
-          if (!binding.id || !binding.type) return false;
-
-          // Ensure the referenced element exists
-          const referencedElement = elementMap.get(binding.id);
-          if (!referencedElement) return false;
-
-          // Validate binding type
-          if (!['text', 'arrow'].includes(binding.type)) return false;
-
-          return true;
-        });
-
-        // Remove boundElements if empty
-        if (fixedElement.boundElements.length === 0) {
-          fixedElement.boundElements = null;
-        }
-      } else {
-        // Invalid boundElements format, set to null
-        fixedElement.boundElements = null;
-      }
-    }
-
-    // Validate and fix containerId
-    if (fixedElement.containerId) {
-      const containerElement = elementMap.get(fixedElement.containerId);
-      if (!containerElement) {
-        // Container doesn't exist, remove containerId
-        fixedElement.containerId = null;
-      }
-    }
-
-    return fixedElement;
-  });
-}
-
-const isImageElement = (element: Partial<ExcalidrawElement>): boolean => {
-  return element.type === 'image'
-}
-
-const isFreedrawElement = (element: Partial<ExcalidrawElement>): boolean => {
-  return element.type === 'freedraw'
-}
-
-const isShapeContainerType = (type: string | undefined): boolean => {
-  return type === 'rectangle' || type === 'ellipse' || type === 'diamond'
-}
-
-const recenterBoundShapeTextElements = (
-  elements: Partial<ExcalidrawElement>[]
-): Partial<ExcalidrawElement>[] => {
-  const elementMap = new Map(elements.map((el) => [el.id, el]))
-
-  return elements.map((element) => {
-    if (element.type !== 'text' || !element.containerId) {
-      return element
-    }
-
-    const textElement = element as ExcalidrawElement & { type: 'text'; containerId: string; autoResize?: boolean }
-    const container = elementMap.get(textElement.containerId) as (ExcalidrawElement & { x: number; y: number; width: number; height: number }) | undefined
-    if (!container || !isShapeContainerType(container.type)) {
-      return element
-    }
-
-    if (textElement.autoResize === false) {
-      return element
-    }
-
-    if (
-      typeof container.x !== 'number' ||
-      typeof container.y !== 'number' ||
-      typeof container.width !== 'number' ||
-      typeof container.height !== 'number' ||
-      typeof textElement.width !== 'number' ||
-      typeof textElement.height !== 'number'
-    ) {
-      return element
-    }
-
-    return {
-      ...element,
-      x: container.x + (container.width - textElement.width) / 2,
-      y: container.y + (container.height - textElement.height) / 2,
-    }
-  })
-}
-
-const normalizeImageElement = (element: Partial<ExcalidrawElement>): Partial<ExcalidrawElement> => {
-  const img = element as any
-  return {
-    ...img,
-    angle: img.angle || 0,
-    strokeColor: img.strokeColor || 'transparent',
-    backgroundColor: img.backgroundColor || 'transparent',
-    fillStyle: img.fillStyle || 'solid',
-    strokeWidth: img.strokeWidth || 1,
-    strokeStyle: img.strokeStyle || 'solid',
-    roughness: img.roughness ?? 0,
-    opacity: img.opacity ?? 100,
-    groupIds: img.groupIds || [],
-    roundness: null,
-    seed: img.seed || Math.floor(Math.random() * 1000000),
-    version: img.version || 1,
-    versionNonce: img.versionNonce || Math.floor(Math.random() * 1000000),
-    isDeleted: img.isDeleted ?? false,
-    boundElements: img.boundElements || null,
-    link: img.link || null,
-    locked: img.locked || false,
-    status: img.status || 'saved',
-    fileId: img.fileId,
-    scale: img.scale || [1, 1],
-  }
-}
-
-const normalizeFreedrawElement = (element: Partial<ExcalidrawElement>): Partial<ExcalidrawElement> => {
-  const freedraw = element as any
-  return {
-    ...freedraw,
-    angle: freedraw.angle || 0,
-    backgroundColor: freedraw.backgroundColor || 'transparent',
-    fillStyle: freedraw.fillStyle || 'solid',
-    strokeWidth: freedraw.strokeWidth || 1,
-    strokeStyle: freedraw.strokeStyle || 'solid',
-    roughness: freedraw.roughness ?? 1,
-    opacity: freedraw.opacity ?? 100,
-    groupIds: freedraw.groupIds || [],
-    roundness: null,
-    seed: freedraw.seed || Math.floor(Math.random() * 1000000),
-    version: freedraw.version || 1,
-    versionNonce: freedraw.versionNonce || Math.floor(Math.random() * 1000000),
-    isDeleted: freedraw.isDeleted ?? false,
-    boundElements: freedraw.boundElements || null,
-    link: freedraw.link || null,
-    locked: freedraw.locked || false,
-    points: freedraw.points || [],
-    pressures: freedraw.pressures || [],
-    simulatePressure: freedraw.simulatePressure ?? true,
-    lastCommittedPoint: freedraw.lastCommittedPoint || null,
-  }
-}
-
-// Helper: restore startBinding/endBinding/boundElements after convertToExcalidrawElements strips them
-const restoreBindings = (
-  convertedElements: readonly any[],
-  originalElements: Partial<ExcalidrawElement>[]
-): any[] => {
-  const originalMap = new Map<string, any>();
-  for (const el of originalElements) {
-    if (el.id) originalMap.set(el.id, el);
-  }
-
-  return convertedElements.map((el: any) => {
-    const orig = originalMap.get(el.id);
-    if (!orig) return el;
-
-    const patched = { ...el };
-
-    if (orig.startBinding && !el.startBinding) {
-      patched.startBinding = orig.startBinding;
-    }
-    if (orig.endBinding && !el.endBinding) {
-      patched.endBinding = orig.endBinding;
-    }
-    if (orig.boundElements && (!el.boundElements || el.boundElements.length === 0)) {
-      patched.boundElements = orig.boundElements;
-    }
-    if (orig.elbowed !== undefined && el.elbowed === undefined) {
-      patched.elbowed = orig.elbowed;
-    }
-
-    return patched;
-  });
-};
-
-const convertElementsPreservingImageProps = (
-  elements: Partial<ExcalidrawElement>[]
-): Partial<ExcalidrawElement>[] => {
-  if (elements.length === 0) return []
-
-  const validatedElements = validateAndFixBindings(elements)
-  const imageElements = validatedElements.filter(isImageElement).map(normalizeImageElement)
-  const freedrawElements = validatedElements.filter(isFreedrawElement).map(normalizeFreedrawElement)
-  const nonImageElements = validatedElements.filter(el => !isImageElement(el) && !isFreedrawElement(el))
-  // convertToExcalidrawElements may expand labeled shapes into [shape, textElement],
-  // so we cannot assume a 1:1 mapping — return all converted elements directly.
-  const convertedNonImageElements = convertToExcalidrawElements(nonImageElements as any, { regenerateIds: false })
-  const restoredNonImageElements = restoreBindings(convertedNonImageElements, nonImageElements)
-  return recenterBoundShapeTextElements([...restoredNonImageElements, ...imageElements, ...freedrawElements])
-}
+const SCENE_MUTATIONS = new Set([
+  'element_created', 'element_updated', 'element_deleted', 'elements_batch_created'
+]);
 
 function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
@@ -313,6 +64,7 @@ function App(): JSX.Element {
   }, [excalidrawAPI])
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'light'
@@ -332,16 +84,65 @@ function App(): JSX.Element {
   const syncInFlightRef = useRef<boolean>(false)
   const suppressAutoSyncCountRef = useRef<number>(0)
   const userInteractedRef = useRef<boolean>(false)
+  const [sceneLoadStatus, setSceneLoadStatus] = useState<SceneLoadStatus>('loading')
+  const sceneLoadStatusRef = useRef<SceneLoadStatus>('loading')
+  const sceneGenerationRef = useRef(0)
+
+  const pauseSceneSync = (status: SceneLoadStatus = 'loading'): number => {
+    sceneGenerationRef.current += 1
+    sceneLoadStatusRef.current = status
+    setSceneLoadStatus(status)
+    if (autoSyncTimerRef.current) {
+      clearTimeout(autoSyncTimerRef.current)
+      autoSyncTimerRef.current = null
+    }
+    return sceneGenerationRef.current
+  }
+
+  const failSceneLoad = (error: unknown, generation = sceneGenerationRef.current): void => {
+    if (generation !== sceneGenerationRef.current) return
+    console.error('Scene load failed; backend sync is paused:', error)
+    pauseSceneSync('failed')
+  }
+
+  const canSyncScene = (): boolean =>
+    sceneLoadStatusRef.current === 'ready' && websocketRef.current?.readyState === WebSocket.OPEN
 
   const applySceneUpdateWithoutAutoSync = (
     api: ExcalidrawImperativeAPI,
     scene: Parameters<ExcalidrawImperativeAPI['updateScene']>[0]
   ): void => {
     suppressAutoSyncCountRef.current += 1
-    api.updateScene(scene)
-    setTimeout(() => {
-      suppressAutoSyncCountRef.current = Math.max(0, suppressAutoSyncCountRef.current - 1)
-    }, 0)
+    try {
+      api.updateScene(scene)
+    } finally {
+      setTimeout(() => {
+        suppressAutoSyncCountRef.current = Math.max(0, suppressAutoSyncCountRef.current - 1)
+      }, 0)
+    }
+  }
+
+  const applyServerScene = (
+    incoming: readonly Partial<ExcalidrawElement>[],
+    generation: number,
+    files?: Record<string, unknown>
+  ): void => {
+    const api = excalidrawAPIRef.current
+    if (!api || generation !== sceneGenerationRef.current) return
+    // Prepare everything before replacing the visible scene. restoreElements()
+    // can silently filter elements, so both conversion and API readback need checks.
+    const prepared = prepareServerScene(incoming)
+    const previous = api.getSceneElementsIncludingDeleted()
+    try {
+      if (files) api.addFiles(Object.values(files) as Parameters<typeof api.addFiles>[0])
+      applySceneUpdateWithoutAutoSync(api, { elements: prepared, captureUpdate: CaptureUpdateAction.NEVER })
+      assertScenePreserved(prepared, api.getSceneElements())
+    } catch (error) {
+      applySceneUpdateWithoutAutoSync(api, { elements: previous, captureUpdate: CaptureUpdateAction.NEVER })
+      throw error
+    }
+    sceneLoadStatusRef.current = 'ready'
+    setSceneLoadStatus('ready')
   }
 
   useEffect(() => {
@@ -356,49 +157,43 @@ function App(): JSX.Element {
   useEffect(() => {
     connectWebSocket()
     return () => {
-      if (websocketRef.current) {
-        websocketRef.current.close()
-      }
+      sceneGenerationRef.current += 1
+      sceneLoadStatusRef.current = 'loading'
+      const socket = websocketRef.current
+      websocketRef.current = null
+      socket?.close()
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
     }
   }, [])
 
   // Load existing elements when Excalidraw API becomes available
   useEffect(() => {
     if (excalidrawAPI) {
-      loadExistingElements()
-
-      // Ensure WebSocket is connected for real-time updates
-      if (!isConnected) {
-        connectWebSocket()
-      }
+      // initial_elements may arrive before the API exists. HTTP is the fallback;
+      // later WebSocket scenes invalidate this request through its generation.
+      if (sceneLoadStatusRef.current !== 'ready') void loadExistingElements()
     }
-  }, [excalidrawAPI, isConnected])
+  }, [excalidrawAPI])
 
   const loadExistingElements = async (): Promise<void> => {
+    if (!excalidrawAPIRef.current) return
+    const generation = pauseSceneSync()
     try {
-      const response = await fetch('/api/elements')
+      const response = await fetch('/api/elements', { signal: AbortSignal.timeout(10000) })
       const result: ApiResponse = await response.json()
-
-      if (result.success && result.elements && result.elements.length > 0) {
-        const cleanedElements = result.elements.map(cleanElementForExcalidraw)
-        const convertedElements = convertElementsPreservingImageProps(cleanedElements)
-        if (excalidrawAPI) {
-          applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-            elements: convertedElements,
-            captureUpdate: CaptureUpdateAction.NEVER
-          })
-        }
+      if (generation !== sceneGenerationRef.current) return
+      if (!response.ok || !result.success || !Array.isArray(result.elements)) {
+        throw new Error(result.error || 'Invalid scene response')
       }
-
-      const filesResponse = await fetch('/api/files')
-      if (filesResponse.ok) {
-        const filesResult = await filesResponse.json() as ApiResponse
-        if (filesResult.files) {
-          excalidrawAPI?.addFiles(Object.values(filesResult.files))
-        }
+      const filesResponse = await fetch('/api/files', { signal: AbortSignal.timeout(10000) })
+      const filesResult = await filesResponse.json() as ApiResponse
+      if (generation !== sceneGenerationRef.current) return
+      if (!filesResponse.ok || !filesResult.files) {
+        throw new Error('Could not load scene files')
       }
+      applyServerScene(result.elements.map(cleanElementForExcalidraw), generation, filesResult.files)
     } catch (error) {
-      console.error('Error loading existing elements:', error)
+      failSceneLoad(error, generation)
     }
   }
 
@@ -415,43 +210,54 @@ function App(): JSX.Element {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}`
 
-    websocketRef.current = new WebSocket(wsUrl)
+    const socket = new WebSocket(wsUrl)
+    websocketRef.current = socket
 
-    websocketRef.current.onopen = () => {
+    socket.onopen = () => {
+      if (websocketRef.current !== socket) return
       setIsConnected(true)
-
-      if (excalidrawAPI) {
-        setTimeout(loadExistingElements, 100)
-      }
+      void loadExistingElements()
     }
 
-    websocketRef.current.onmessage = (event: MessageEvent) => {
+    socket.onmessage = (event: MessageEvent) => {
+      if (websocketRef.current !== socket) return
       try {
         const data: WebSocketMessage = JSON.parse(event.data)
-        handleWebSocketMessage(data)
+        void handleWebSocketMessage(data)
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error, event.data)
+        failSceneLoad(error)
       }
     }
 
-    websocketRef.current.onclose = (event: CloseEvent) => {
+    socket.onclose = (event: CloseEvent) => {
+      if (websocketRef.current !== socket) return
       setIsConnected(false)
+      pauseSceneSync()
 
       // Reconnect after 3 seconds if not a clean close
       if (event.code !== 1000) {
-        setTimeout(connectWebSocket, 3000)
+        reconnectTimerRef.current = setTimeout(connectWebSocket, 3000)
       }
     }
 
-    websocketRef.current.onerror = (error: Event) => {
+    socket.onerror = (error: Event) => {
+      if (websocketRef.current !== socket) return
       console.error('WebSocket error:', error)
       setIsConnected(false)
+      pauseSceneSync()
     }
   }
 
   const handleWebSocketMessage = async (data: WebSocketMessage): Promise<void> => {
     const excalidrawAPI = excalidrawAPIRef.current
     if (!excalidrawAPI) {
+      return
+    }
+
+    if (SCENE_MUTATIONS.has(data.type) && sceneLoadStatusRef.current !== 'ready') {
+      // An incremental event cannot prove that a failed or pending full load
+      // was complete. Fetch the current full scene instead of reopening sync.
+      void loadExistingElements()
       return
     }
 
@@ -476,26 +282,15 @@ function App(): JSX.Element {
 
         mergedElements.push(...incomingById.values())
 
-        const convertedElements = convertElementsPreservingImageProps(mergedElements)
-        applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-          elements: convertedElements,
-          captureUpdate: CaptureUpdateAction.NEVER
-        })
+        applyServerScene(mergedElements, pauseSceneSync())
       }
 
       switch (data.type) {
         case 'initial_elements':
-          if (data.elements && data.elements.length > 0) {
-            const cleanedElements = data.elements.map(cleanElementForExcalidraw)
-            const convertedElements = convertElementsPreservingImageProps(cleanedElements)
-            applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-              elements: convertedElements,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
-          }
-          // Load files for image elements
-          if ((data as any).files) {
-            excalidrawAPI.addFiles(Object.values((data as any).files))
+          {
+            const generation = pauseSceneSync()
+            if (!Array.isArray(data.elements)) throw new Error('Invalid initial scene')
+            applyServerScene(data.elements.map(cleanElementForExcalidraw), generation, (data as any).files)
           }
           break
 
@@ -506,6 +301,7 @@ function App(): JSX.Element {
           break
 
         case 'element_created':
+          if (!data.element) throw new Error('Missing created element')
           if (data.element) {
             const cleanedNewElement = cleanElementForExcalidraw(data.element)
             // Rebuild against full scene so text/container bindings remain intact.
@@ -514,6 +310,7 @@ function App(): JSX.Element {
           break
 
         case 'element_updated':
+          if (!data.element) throw new Error('Missing updated element')
           if (data.element) {
             const cleanedUpdatedElement = cleanElementForExcalidraw(data.element)
             // Convert with full scene context so text metrics/container placement can refresh.
@@ -522,16 +319,15 @@ function App(): JSX.Element {
           break
 
         case 'element_deleted':
+          if (!data.elementId) throw new Error('Missing deleted element ID')
           if (data.elementId) {
             const filteredElements = currentElements.filter(el => el.id !== data.elementId)
-            applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-              elements: filteredElements,
-              captureUpdate: CaptureUpdateAction.NEVER
-            })
+            applyServerScene(filteredElements, pauseSceneSync())
           }
           break
 
         case 'elements_batch_created':
+          if (!Array.isArray(data.elements)) throw new Error('Invalid element batch')
           if (data.elements) {
             const cleanedBatchElements = data.elements.map(cleanElementForExcalidraw)
             mergeAndApplySceneElements(cleanedBatchElements)
@@ -549,15 +345,13 @@ function App(): JSX.Element {
 
         case 'canvas_cleared':
           console.log('Canvas cleared by server')
-          applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-            elements: [],
-            captureUpdate: CaptureUpdateAction.NEVER
-          })
+          applyServerScene([], pauseSceneSync())
           break
 
         case 'export_image_request':
           if (data.requestId) {
             try {
+              if (!canSyncScene()) throw new Error('Scene is not fully loaded; export is paused')
               const elements = excalidrawAPI.getSceneElements()
               const appState = excalidrawAPI.getAppState()
               const files = excalidrawAPI.getFiles()
@@ -731,7 +525,10 @@ function App(): JSX.Element {
           console.log('Received Mermaid conversion request from MCP')
           if (data.mermaidDiagram) {
             try {
+              if (!canSyncScene()) throw new Error('Scene is not fully loaded; Mermaid import is paused')
+              const generation = sceneGenerationRef.current
               const result = await convertMermaidToExcalidraw(data.mermaidDiagram, data.config || DEFAULT_MERMAID_CONFIG)
+              if (!canSyncScene() || generation !== sceneGenerationRef.current) return
 
               if (result.error) {
                 console.error('Mermaid conversion error:', result.error)
@@ -742,7 +539,7 @@ function App(): JSX.Element {
                 // Regenerate ids so repeated conversions of the same diagram
                 // (mermaid emits stable ids like "A", "B") can't collide with
                 // elements already on the canvas.
-                const convertedElements = convertToExcalidrawElements(result.elements, { regenerateIds: true })
+                const convertedElements = convertToExcalidrawElements([...result.elements] as Parameters<typeof convertToExcalidrawElements>[0], { regenerateIds: true })
                 // Merge with the existing scene — updateScene() replaces the
                 // element list wholesale, and syncToBackend() would otherwise
                 // propagate that wipe to the server.
@@ -771,6 +568,9 @@ function App(): JSX.Element {
       }
     } catch (error) {
       console.error('Error processing WebSocket message:', error, data)
+      if (data.type === 'initial_elements' || data.type === 'canvas_cleared' || SCENE_MUTATIONS.has(data.type)) {
+        failSceneLoad(error)
+      }
     }
   }
 
@@ -794,6 +594,9 @@ function App(): JSX.Element {
   // Main sync function
   const syncToBackend = async (options: { silent?: boolean } = {}): Promise<void> => {
     const { silent = false } = options
+    // Every caller, including manual sync and Mermaid, must respect a failed
+    // restore. A user interaction alone is not evidence of a complete scene.
+    if (!canSyncScene()) return
 
     // Read through the ref: WS message handlers attached at mount capture a
     // stale closure where the excalidrawAPI state is still null.
@@ -868,7 +671,7 @@ function App(): JSX.Element {
   }
 
   const scheduleAutoSync = (): void => {
-    if (!isConnected || !excalidrawAPI) {
+    if (!canSyncScene() || !excalidrawAPI) {
       return
     }
     if (!userInteractedRef.current) {
@@ -891,32 +694,18 @@ function App(): JSX.Element {
   }
 
   const clearCanvas = async (): Promise<void> => {
-    if (excalidrawAPI) {
-      try {
-        // Get all current elements and delete them from backend
-        const response = await fetch('/api/elements')
-        const result: ApiResponse = await response.json()
-
-        if (result.success && result.elements) {
-          const deletePromises = result.elements.map(element =>
-            fetch(`/api/elements/${element.id}`, { method: 'DELETE' })
-          )
-          await Promise.all(deletePromises)
-        }
-
-        // Clear the frontend canvas
-        applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-          elements: [],
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY
-        })
-      } catch (error) {
-        console.error('Error clearing canvas:', error)
-        // Still clear frontend even if backend fails
-        applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-          elements: [],
-          captureUpdate: CaptureUpdateAction.IMMEDIATELY
-        })
-      }
+    if (!canSyncScene()) return
+    const generation = pauseSceneSync()
+    try {
+      const response = await fetch('/api/elements/clear', {
+        method: 'DELETE', signal: AbortSignal.timeout(10000)
+      })
+      if (!response.ok) throw new Error('Could not clear the saved canvas')
+      // The server broadcasts canvas_cleared. HTTP is a fallback when that
+      // message has not arrived; do not overwrite a newer WebSocket scene.
+      if (generation === sceneGenerationRef.current) await loadExistingElements()
+    } catch (error) {
+      failSceneLoad(error, generation)
     }
   }
 
@@ -935,8 +724,8 @@ function App(): JSX.Element {
           <div className="sync-controls">
             <button
               className={`btn-primary ${syncStatus === 'syncing' ? 'btn-loading' : ''}`}
-              onClick={syncToBackend}
-              disabled={syncStatus === 'syncing' || !excalidrawAPI}
+              onClick={() => void syncToBackend()}
+              disabled={syncStatus === 'syncing' || !excalidrawAPI || !isConnected || sceneLoadStatus !== 'ready'}
             >
               {syncStatus === 'syncing' && <span className="spinner"></span>}
               {syncStatus === 'syncing' ? 'Syncing...' : 'Sync to Backend'}
@@ -958,9 +747,20 @@ function App(): JSX.Element {
             </div>
           </div>
 
-          <button className="btn-secondary" onClick={clearCanvas}>Clear Canvas</button>
+          <button className="btn-secondary" onClick={clearCanvas} disabled={!isConnected || sceneLoadStatus !== 'ready'}>Clear Canvas</button>
         </div>
       </div>
+
+      {sceneLoadStatus !== 'ready' && (
+        <div className="scene-load-status" role={sceneLoadStatus === 'failed' ? 'alert' : 'status'}>
+          <span>{sceneLoadStatus === 'failed'
+            ? 'Canvas could not be loaded. Sync is paused to protect your saved scene.'
+            : 'Loading canvas. Sync is paused until the scene is ready.'}</span>
+          {sceneLoadStatus === 'failed' && (
+            <button className="btn-secondary" onClick={() => void loadExistingElements()}>Retry loading</button>
+          )}
+        </div>
+      )}
 
       {/* Canvas Container */}
       <div className="canvas-container">
@@ -974,6 +774,7 @@ function App(): JSX.Element {
           style={{ width: '100%', height: '100%' }}
         >
           <Excalidraw
+            viewModeEnabled={sceneLoadStatus !== 'ready'}
             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
             onChange={(_elements, appState) => {
               if (appState?.theme && appState.theme !== theme) {
