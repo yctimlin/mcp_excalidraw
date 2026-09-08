@@ -490,6 +490,19 @@ curl http://127.0.0.1:3000/health
 npm run test:bind
 ```
 
+### Canvas Browser Regression Tests
+
+These Chromium tests build the app and start an isolated localhost server. They
+cover frame reload/reconnect, mixed scenes, failed-load sync protection, stale
+responses, clearing/deletion, Mermaid imports, and SVG export. They refuse to
+reuse an existing server; set `CANVAS_TEST_PORT` if port 51910 is occupied.
+
+```bash
+npx playwright install chromium
+npm run type-check:frontend
+npm run test:canvas
+```
+
 ### MCP Stdio Wire Test
 
 Drives `dist/index.js` with raw JSON-RPC frames and checks both protocol eras:

@@ -24,6 +24,8 @@
     "test": "npm run test:mcp && npm run test:bind",
     "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
     "test:mcp": "npm run build:server && node scripts/check-mcp-stdio.mjs",
+    "test:canvas": "npm run build && playwright test",
+    "type-check:frontend": "tsc --noEmit -p frontend/tsconfig.json",
     "type-check": "npx tsc --noEmit"
   },
   "dependencies": {
@@ -43,6 +45,7 @@
     "zod-to-json-schema": "^3.22.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.19.7",
