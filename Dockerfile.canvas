@@ -1,6 +1,37 @@
 # Dockerfile for Canvas Server (Optional)
-# This is for users who want to run the visual canvas UI
-# The canvas server provides the web interface and REST API
+# This is for users who want to run the visual canvas UI.
+# The canvas server provides the web interface, the REST API, and the
+# headless renderer (PNG/SVG export without a browser).
+#
+# Image anatomy (amd64, this branch): ~210 MB total
+#   alpine base          ~ 10 MB
+#   Node.js (apk)        ~72 MB   Node from the alpine repo; npm/yarn/
+#                                  corepack are NOT included — npm is only
+#                                  used at build time, in the stages below
+#   dist/                ~14 MB   server, headless exporter bundle, web UI
+#   node_modules         ~40 MB   production dependencies only
+#   fonts + assets       ~ 1 MB
+#
+# Two deliberate deviations, with why:
+#   1. @modelcontextprotocol/* (~20 MB) is removed from node_modules in
+#      stage 2. Only dist/index.js (the stdio MCP entry — never executed
+#      in this image) imports it; dist/server.js and its full import
+#      closure do not. Stage 3 runs a smoke test that fails the build if
+#      the server actually needs it. (It remains in the MCP image, which
+#      is built from ./Dockerfile — this change does not touch it.)
+#   2. Runtime base is alpine + `apk add nodejs`, not node:20-alpine.
+#      The node:20-alpine image is ~190 MB, and its npm/corepack/yarn stack
+#      is never invoked by this image at runtime (the package is prebuilt
+#      in stage 2). Dropping it saves ~90 MB. The runtime requires Node >= 20
+#      (see manifest engines); the alpine-package Node satisfies that and is
+#      asserted at build time below.
+#   3. resvg's native prebuild is swapped to the runtime libc (musl) in
+#      stage 2 — see the stage-2 comment block for the mechanics.
+#
+# The headless renderer is pure Node in both cases: Excalidraw's exporter
+# runs under jsdom (dist/render/excalidraw-node.mjs, bundled at build time)
+# and @resvg/resvg-js rasterizes SVG -> PNG. No browser is ever installed
+# or spawned by this image.
 
 # Stage 1: Build frontend
 FROM node:20-slim AS frontend-builder
@@ -20,7 +51,7 @@ COPY vite.config.js ./
 # Build frontend
 RUN npm run build:frontend
 
-# Stage 2: Build backend (TypeScript compilation)
+# Stage 2: Build backend (TypeScript compilation) and stage production deps
 FROM node:20-slim AS backend-builder
 
 WORKDIR /app
@@ -42,35 +73,99 @@ COPY frontend/src/utils ./frontend/src/utils
 # Compile TypeScript
 RUN npm run build:server
 
-# Stage 3: Production Canvas Server
-FROM node:20-slim AS production
+# Assemble the exact production node_modules for the runtime stage:
+#   - prune guarantees only manifest `dependencies` remain on disk
+#     (npm ci --omit=dev does this too, but the builder just ran a full
+#     `npm ci`, so prune is what enforces it now).
+#   - drop @modelcontextprotocol (see header note 2)
+#   - resvg's native prebuild must match the runtime libc. Stage 3 is musl,
+#     but this glibc build host only ever installs the -gnu prebuild for
+#     @resvg/resvg-js (its optionalDependencies resolve to the local libc).
+#     We keep the resvg-js wrapper but co-locate the matching -musl .node
+#     binding inside it: js-binding.js loads a co-located
+#     resvgjs.<platform>.node before falling back to a sibling platform
+#     package, so no extra top-level entry is needed. Both x64-musl and
+#     arm64-musl prebuilds are published; the URL tracks the version npm
+#     resolved for the wrapper so the two never drift.
+RUN VERS=$(node -p "require('./node_modules/@resvg/resvg-js/package.json').version") && \
+    ARCH=$(case "$(uname -m)" in x86_64) echo x64 ;; aarch64) echo arm64 ;; *) echo "unsupported" ;; esac) && \
+    [ "$ARCH" != "unsupported" ] && \
+    npm prune --omit=dev && npm cache clean --force && \
+    rm -rf node_modules/@modelcontextprotocol && \
+    rm -f  node_modules/@resvg/resvg-js/resvgjs.*.node && \
+    rm -rf node_modules/@resvg/resvg-js-linux-x64-gnu node_modules/@resvg/resvg-js-linux-arm64-gnu && \
+    apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates >/dev/null && \
+    curl -fsSL "https://registry.npmjs.org/@resvg/resvg-js-linux-$ARCH-musl/-/resvg-js-linux-$ARCH-musl-$VERS.tgz" \
+      -o /tmp/resvg.tgz && \
+    tar xz -C /tmp --strip-components=1 -f /tmp/resvg.tgz "package/resvgjs.linux-$ARCH-musl.node" && \
+    cp /tmp/resvgjs.linux-$ARCH-musl.node node_modules/@resvg/resvg-js/ && \
+    rm -f /tmp/resvg.tgz /tmp/resvgjs.linux-$ARCH-musl.node && \
+    node -e "const p=require('path'); const b=p.join('node_modules/@resvg/resvg-js','resvgjs.linux-$ARCH-musl.node'); require('fs').accessSync(b)" && \
+    du -sh node_modules
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --gid 1001 nodejs
+# Stage 3: Production Canvas Server
+FROM alpine:3.23 AS production
+
+# Node.js from the alpine repo (no npm/yarn/corepack). Manifest requires
+# node >= 20; the package currently provides Node 24. Assert rather than
+# pin: a future alpine repo downgrade must break the build visibly.
+RUN apk add --no-cache nodejs && \
+    node -e "const v = parseInt(process.versions.node, 10); if (v < 20) { console.error('alpine nodejs is ' + process.versions.node + ' < 20'); process.exit(1); }"
+
+# Create non-root user for security, with a real home directory. The server
+# writes its pidfile/logs under homedir() at runtime.
+RUN addgroup -S -g 1001 nodejs && \
+    adduser -S -u 1001 -G nodejs -h /home/nodejs nodejs && \
+    mkdir -p /home/nodejs && chown nodejs:nodejs /home/nodejs
+ENV HOME=/home/nodejs
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
-
-# Copy compiled backend from builder stage
-COPY --from=backend-builder /app/dist ./dist
-
-# Copy built frontend from frontend-builder stage
-COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
-
-# Fonts for headless PNG/SVG rendering (no browser in this image)
-COPY assets ./assets
-
-# Set ownership to nodejs user
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
+# Own the workdir up front so everything copied in is owned by nodejs and
+# no `chown -R` layer (which would duplicate node_modules) is produced.
+RUN chown nodejs:nodejs /app
 USER nodejs
+
+# Compiled backend (MCP entry, server, headless renderer, CLI)
+COPY --chown=nodejs:nodejs --from=backend-builder /app/dist ./dist
+# Production dependencies (no devDeps, no MCP SDK, musl resvg prebuild)
+COPY --chown=nodejs:nodejs --from=backend-builder /app/node_modules ./node_modules
+COPY --chown=nodejs:nodejs --from=backend-builder /app/package.json ./package.json
+# Built frontend (the canvas web UI on :3000)
+COPY --chown=nodejs:nodejs --from=frontend-builder /app/dist/frontend ./dist/frontend
+
+# Build-time smoke tests. Each assumption above is checked here so a
+# regression fails the build, not the export endpoint in production.
+RUN node --check dist/server.js && node -e "\
+    const fs = require('fs');\
+    // headless rasterizer loads and renders on this libc (musl)\
+    const r = require('@resvg/resvg-js');\
+    const png = new r.Resvg('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\" viewBox=\"0 0 8 8\"><rect width=\"8\" height=\"8\" fill=\"red\"/></svg>').render().asPng();\
+    if (png.length < 40) throw new Error('resvg rendered a suspiciously small PNG: ' + png.length);\
+    // headless exporter bundle present (built with tsc + esbuild in stage 2)\
+    if (!fs.existsSync('dist/render/excalidraw-node.mjs')) throw new Error('missing dist/render/excalidraw-node.mjs');\
+    // web UI present\
+    if (!fs.existsSync('dist/frontend/index.html')) throw new Error('missing dist/frontend/index.html');\
+    console.log('canvas smoke: resvg + bundle + frontend OK')"
+
+# TTFs for headless PNG/SVG rendering (resvg reads TTF only, not WOFF2)
+COPY --chown=nodejs:nodejs assets ./assets
+
+# Excalidraw's prod fonts (all font families incl. CJK), served at
+# /assets/fonts (src/server.ts) for the browser tab's export
+# font-subsetting worker. Only the dist/prod/fonts directory ships — not
+# the whole @excalidraw/excalidraw package.
+COPY --chown=nodejs:nodejs --from=frontend-builder \
+     /app/node_modules/@excalidraw/excalidraw/dist/prod/fonts \
+     ./node_modules/@excalidraw/excalidraw/dist/prod/fonts
+
+# Verify the font copies landed (order matters for a readable failure).
+# WOFF2 filenames carry a Vite content hash, so assert the family dir is
+# non-empty rather than checking one specific file.
+RUN [ -f assets/fonts/Excalifont-Regular.ttf ] && [ -f assets/fonts/CascadiaCode-Regular.ttf ] && [ -f assets/fonts/Virgil-Regular.ttf ] && [ -f assets/fonts/LiberationSans-Regular.ttf ] && \
+    ls node_modules/@excalidraw/excalidraw/dist/prod/fonts/Excalifont/*.woff2 >/dev/null && \
+    ls node_modules/@excalidraw/excalidraw/dist/prod/fonts/Virgil/*.woff2 >/dev/null && \
+    node -e "console.log('fonts OK')"
 
 # Set environment variables with defaults
 ENV NODE_ENV=production
@@ -80,7 +175,7 @@ ENV HOST=0.0.0.0
 # Expose port
 EXPOSE 3000
 
-# Run canvas server (web UI + REST API)
+# Run canvas server (web UI + REST API + headless renderer)
 CMD ["node", "dist/server.js"]
 
 # Labels for metadata
