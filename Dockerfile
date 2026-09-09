@@ -3,7 +3,7 @@
 # The canvas server is optional and runs separately
 
 # Stage 1: Build backend (TypeScript compilation)
-FROM node:20-slim AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -21,28 +21,32 @@ COPY tsconfig.json ./
 RUN npm run build:server
 
 # Stage 2: Production MCP Server
-FROM node:20-slim AS production
+FROM node:20-alpine AS production
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --gid 1001 nodejs
+# Create non-root user for security, with a real home directory so npm can
+# install as this user and any runtime homedir() writes have a writable target.
+RUN addgroup -S -g 1001 nodejs && \
+    adduser -S -u 1001 -G nodejs -h /home/nodejs nodejs && \
+    mkdir -p /home/nodejs && chown nodejs:nodejs /home/nodejs
+ENV HOME=/home/nodejs
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Own the workdir up front so dependencies install as the non-root user.
+# This avoids a costly `chown -R` layer that would duplicate node_modules.
+RUN chown nodejs:nodejs /app
+USER nodejs
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Copy package files
+COPY --chown=nodejs:nodejs package*.json ./
+
+# Install only production dependencies.
+# The frontend libs (react, mermaid, @excalidraw/*) are devDependencies —
+# the MCP stdio server never imports them at runtime.
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy compiled backend (MCP server only)
-COPY --from=builder /app/dist ./dist
-
-# Set ownership to nodejs user
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
-USER nodejs
+COPY --chown=nodejs:nodejs --from=builder /app/dist ./dist
 
 # Set environment variables with defaults
 ENV NODE_ENV=production

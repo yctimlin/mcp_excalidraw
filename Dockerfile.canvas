@@ -41,29 +41,41 @@ RUN npm run build:server
 # Stage 3: Production Canvas Server
 FROM node:20-slim AS production
 
-# Create non-root user for security
+# Create non-root user for security, with a real home directory. npm needs a
+# writable HOME to install as this user, and the server writes its pidfile/logs
+# under homedir() at runtime.
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --gid 1001 nodejs
+    adduser --system --uid 1001 --gid 1001 --home /home/nodejs nodejs && \
+    mkdir -p /home/nodejs && chown nodejs:nodejs /home/nodejs
+ENV HOME=/home/nodejs
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Own the workdir up front so dependencies install as the non-root user.
+# This avoids a costly `chown -R` layer that would duplicate node_modules.
+RUN chown nodejs:nodejs /app
+USER nodejs
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Copy package files
+COPY --chown=nodejs:nodejs package*.json ./
+
+# Install only production dependencies.
+# @excalidraw/excalidraw is a devDependency (used by the frontend build); the
+# canvas server only needs its prod fonts at runtime, copied in below.
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy compiled backend from builder stage
-COPY --from=backend-builder /app/dist ./dist
+COPY --chown=nodejs:nodejs --from=backend-builder /app/dist ./dist
 
 # Copy built frontend from frontend-builder stage
-COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
+COPY --chown=nodejs:nodejs --from=frontend-builder /app/dist/frontend ./dist/frontend
 
-# Set ownership to nodejs user
-RUN chown -R nodejs:nodejs /app
-
-# Switch to non-root user
-USER nodejs
+# The canvas server serves Excalidraw's fonts (src/server.ts) so the export
+# font-subsetting worker can fetch them. Ship only that fonts directory instead
+# of the entire ~47MB @excalidraw/excalidraw package.
+COPY --chown=nodejs:nodejs --from=frontend-builder \
+     /app/node_modules/@excalidraw/excalidraw/dist/prod/fonts \
+     ./node_modules/@excalidraw/excalidraw/dist/prod/fonts
 
 # Set environment variables with defaults
 ENV NODE_ENV=production
