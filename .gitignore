@@ -23,3 +23,7 @@ public/dist/
 .DS_Store
 
 docs/
+
+# Browser regression artifacts
+test-results/
+playwright-report/
