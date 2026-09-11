@@ -21,9 +21,10 @@
     "production": "npm run build && npm run canvas",
     "prepublishOnly": "npm run build",
     "sync:skills": "node scripts/sync-skills.mjs",
-    "test": "npm run test:mcp && npm run test:bind",
+    "test": "npm run test:mcp && npm run test:bind && npm run test:state",
     "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
     "test:mcp": "npm run build:server && node scripts/check-mcp-stdio.mjs",
+    "test:state": "npm run build:server && node scripts/check-state-integrity.mjs",
     "test:canvas": "npm run build && playwright test",
     "type-check:frontend": "tsc --noEmit -p frontend/tsconfig.json",
     "type-check": "npx tsc --noEmit"
