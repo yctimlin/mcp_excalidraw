@@ -9,6 +9,8 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { mixedScene, pixelFile } from '../tests/browser/fixtures.mjs';
 import { renderScene, RenderError } from '../dist/core/render/index.js';
+import { expandElementsForExport } from '../dist/core/expand-elements.js';
+import { generateKeyBetween } from 'fractional-indexing';
 
 const failures = [];
 async function check(name, fn) {
@@ -159,6 +161,39 @@ await check('validation: bad scale, format, exclusive selectors, unknown ids', a
   await assert.rejects(renderScene(scene, { format: 'svg', elementIds: ['shape'], frameId: 'frame-repro-1' }), RenderError);
   await assert.rejects(renderScene(scene, { format: 'svg', elementIds: ['nope'] }), e => e instanceof RenderError && e.status === 404);
   await assert.rejects(renderScene(scene, { format: 'svg', frameId: 'shape' }), RenderError);
+});
+
+// More than 62 elements, so order keys must grow past one base-62 digit;
+// the labels add bound text elements appended after every shape.
+const exportSource = [
+  ...Array.from({ length: 70 }, (_, i) => ({
+    id: `box-${i}`, type: 'rectangle', x: (i % 10) * 200, y: Math.floor(i / 10) * 120,
+    width: 160, height: 60, text: `Box ${i}`
+  })),
+  { id: 'note', type: 'text', x: 0, y: 900, text: 'free text\nsecond line', fontSize: 20 }
+];
+
+await check('export: order keys are valid and ascending in array order', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const keys = elements.map(e => e.index);
+  for (const key of keys) generateKeyBetween(key, null);  // throws "invalid order key"
+  assert.deepEqual(keys, [...keys].sort(), 'keys sort as strings in array order');
+  assert.equal(new Set(keys).size, keys.length, 'keys are unique');
+});
+
+await check('export: free text is left/top aligned, shape labels stay centred', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const note = elements.find(e => e.id === 'note');
+  assert.equal(note.textAlign, 'left');
+  assert.equal(note.verticalAlign, 'top');
+  const label = elements.find(e => e.id === 'box-0-label');
+  assert.equal(label.textAlign, 'center');
+});
+
+await check('export: a re-exported scene renders from its file', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const result = await renderScene({ elements, files: {} }, { format: 'svg' });
+  assert.ok(result.data.includes('Box 69'));
 });
 
 await check('render time: warm render under 500 ms', async () => {
