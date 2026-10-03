@@ -140,7 +140,40 @@ test('successful Mermaid import and SVG export retain the frame scene', async ({
   const result = await exported.json();
   expect(result.data).toContain('<svg');
   expect(result.data).toContain('Hello inside frame');
+  // Default renderer is headless even with a tab open; the tab path stays
+  // available on request and renders the same scene.
+  expect(result.renderer).toBe('node');
+  const viaTab = await request.post('/api/export/image', { data: { format: 'svg', renderer: 'browser' } });
+  expect(viaTab.ok()).toBeTruthy();
+  const tabResult = await viaTab.json();
+  expect(tabResult.renderer).toBe('browser');
+  expect(tabResult.data).toContain('Hello inside frame');
   expectFrame(await serverScene(request));
+});
+
+test('image export renders headless with no browser tab', async ({ request }) => {
+  await seed(request, mixedScene());
+  expect((await request.post('/api/files', { data: [pixelFile] })).ok()).toBeTruthy();
+
+  const png = await request.post('/api/export/image', { data: { format: 'png', scale: 2 } });
+  expect(png.ok()).toBeTruthy();
+  const pngResult = await png.json();
+  expect(pngResult.renderer).toBe('node');
+  expect(Buffer.from(pngResult.data, 'base64').subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  expect(pngResult.width).toBeGreaterThan(0);
+
+  const svg = await request.post('/api/export/image', { data: { format: 'svg', frameId: 'frame-repro-1' } });
+  expect(svg.ok()).toBeTruthy();
+  const svgResult = await svg.json();
+  expect(svgResult.renderer).toBe('node');
+  expect(svgResult.data).toContain('Hello inside frame');
+  expect(svgResult.data).not.toContain('Bound label');
+  expect(svgResult.data).toContain('@font-face');
+
+  // Only the explicit browser renderer still needs a tab
+  expect((await request.post('/api/export/image', { data: { format: 'svg', renderer: 'browser' } })).status()).toBe(503);
+  expect((await request.post('/api/export/image', { data: { format: 'png', scale: 9 } })).status()).toBe(400);
+  expect((await request.post('/api/export/image', { data: { format: 'svg', elementIds: ['nope'] } })).status()).toBe(404);
 });
 
 test('HTTP failure pauses sync and a successful retry recovers the scene', async ({ page, request }) => {

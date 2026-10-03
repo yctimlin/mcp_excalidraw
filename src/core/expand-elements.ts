@@ -37,7 +37,7 @@ export function canonicalizeKeys(v: any): any {
 }
 
 // FNV-1a 32-bit hash — stable positive int from a string
-function fnv1a(str: string): number {
+export function fnv1a(str: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -66,9 +66,20 @@ export function expandElementsForExport(
   const boundTextElements: Record<string, any>[] = [];
   let indexCounter = 0;
 
+  // Shapes created without dimensions get the same 100x100 default the live
+  // tab's skeleton converter applies, so files and headless renders agree
+  // with what the canvas shows instead of collapsing to a 0x0 element.
+  const DEFAULT_DIMENSION = 100;
+  const hasOwnGeometry = (type: string) =>
+    type === 'arrow' || type === 'line' || type === 'freedraw' || type === 'text';
+
   function makeBaseElement(el: any, rest: any): Record<string, any> {
+    const width = rest.width ?? (hasOwnGeometry(el.type) ? undefined : DEFAULT_DIMENSION);
+    const height = rest.height ?? (hasOwnGeometry(el.type) ? undefined : DEFAULT_DIMENSION);
     return {
       ...rest,
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
       angle: rest.angle ?? 0,
       strokeColor: rest.strokeColor ?? '#1e1e1e',
       backgroundColor: rest.backgroundColor ?? 'transparent',

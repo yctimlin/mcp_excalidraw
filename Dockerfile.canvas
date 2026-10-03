@@ -34,6 +34,10 @@ RUN npm ci && npm cache clean --force
 # Copy backend source
 COPY src ./src
 COPY tsconfig.json ./
+# build:server also bundles Excalidraw's exporter for the headless renderer
+COPY scripts ./scripts
+# The exporter bundle includes the canvas tab's scene preparation code
+COPY frontend/src/utils ./frontend/src/utils
 
 # Compile TypeScript
 RUN npm run build:server
@@ -58,6 +62,9 @@ COPY --from=backend-builder /app/dist ./dist
 
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
+
+# Fonts for headless PNG/SVG rendering (no browser in this image)
+COPY assets ./assets
 
 # Set ownership to nodejs user
 RUN chown -R nodejs:nodejs /app

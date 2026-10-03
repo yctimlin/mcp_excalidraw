@@ -1,6 +1,41 @@
 import type { Tool } from '@modelcontextprotocol/server';
 import { EXCALIDRAW_ELEMENT_TYPES } from '../types.js';
 
+// Shared by export_to_image and get_canvas_screenshot. Rendering happens
+// headless inside the canvas server by default; no browser tab is needed.
+const IMAGE_RENDER_PROPERTIES = {
+  background: {
+    type: 'boolean',
+    description: 'Include the background (default: true)'
+  },
+  renderer: {
+    type: 'string',
+    enum: ['auto', 'node', 'browser'],
+    description: '"auto" (default) renders headless in the canvas server, no browser needed. "browser" asks an open canvas tab to render with Excalidraw itself (reference rendering, slower).'
+  },
+  dark: {
+    type: 'boolean',
+    description: 'Render in dark mode (default: false)'
+  },
+  scale: {
+    type: 'number',
+    description: 'PNG pixel scale from 1 to 4 (default: 1)'
+  },
+  padding: {
+    type: 'number',
+    description: 'Padding around the drawing in px (default: 10)'
+  },
+  elementIds: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Render only these elements (their bound labels are included)'
+  },
+  frameId: {
+    type: 'string',
+    description: 'Render a single frame, clipped to its bounds'
+  }
+};
+
 // Tool definitions
 export const tools: Tool[] = [
   {
@@ -337,7 +372,7 @@ export const tools: Tool[] = [
   },
   {
     name: 'export_to_image',
-    description: 'Export the current canvas to PNG or SVG image. Requires the canvas frontend to be open in a browser.',
+    description: 'Export the current canvas to a PNG or SVG image. Renders headless in the canvas server (no browser tab needed); SVGs embed the fonts they use.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -350,10 +385,7 @@ export const tools: Tool[] = [
           type: 'string',
           description: 'Optional file path to save the image'
         },
-        background: {
-          type: 'boolean',
-          description: 'Include background in export (default: true)'
-        }
+        ...IMAGE_RENDER_PROPERTIES
       },
       required: ['format']
     }
@@ -413,14 +445,11 @@ export const tools: Tool[] = [
   },
   {
     name: 'get_canvas_screenshot',
-    description: 'Take a screenshot of the current canvas and return it as an image. Requires the canvas frontend to be open in a browser. Use this to visually verify what the diagram looks like.',
+    description: 'Render the current canvas to a PNG and return it as an image. Renders headless in the canvas server (no browser tab needed). Use this to visually verify what the diagram looks like.',
     inputSchema: {
       type: 'object',
       properties: {
-        background: {
-          type: 'boolean',
-          description: 'Include background in screenshot (default: true)'
-        }
+        ...IMAGE_RENDER_PROPERTIES
       }
     }
   },
