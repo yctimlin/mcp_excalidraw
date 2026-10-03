@@ -82,14 +82,15 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 ## What's New
 
-Current package version: **2.0.0**. The current release line is **v2.0 — Interchange-Grade Exports & MCP 2026-07-28**.
+Current package version: **2.1.0**. The current release line is **v2.1 — Headless Rendering**.
 
-### v2.1 (unreleased) — Headless Rendering
+### v2.1 — Headless Rendering
 
 - **Screenshots and image exports no longer need a browser tab.** `screenshot`, `export_to_image` and `get_canvas_screenshot` render inside the canvas server: Excalidraw's own SVG exporter runs under Node (jsdom) and resvg rasterizes to PNG with bundled Excalifont/Virgil/Cascadia/Liberation fonts. Same output as the tab, deterministic (byte-identical for an unchanged scene), a few milliseconds per render, works in CI and Docker. See [Headless Rendering](#headless-rendering).
 - **New render options** on the CLI, REST and MCP: `dark`, `scale` (1–4), `padding`, `elementIds` (render a subset), `frameId` (render one frame), `embedFonts`. `--renderer browser` keeps the old tab path.
 - **New `render` command**: `npx -y mcp-excalidraw-server render docs/arch.excalidraw --out docs/arch.png` renders a committed file offline — no canvas server at all.
 - Shapes created without `width`/`height` now default to 100×100 in exports and renders (matching the canvas) instead of collapsing to 0×0.
+- Text stored with `width: 0, height: 0` (scenes from pre-2.0 servers) is re-measured on export instead of exporting invisible. (#107)
 
 ### v2.0 — Interchange-Grade Exports & MCP 2026-07-28
 
