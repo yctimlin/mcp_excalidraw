@@ -16,10 +16,20 @@ import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
 
+interface ExportImageOptions {
+  background?: boolean;
+  dark?: boolean;
+  scale?: number;
+  padding?: number;
+  elementIds?: string[];
+  frameId?: string;
+}
+
 interface WebSocketMessage {
   type: string;
   format?: 'png' | 'svg';
   background?: boolean;
+  options?: ExportImageOptions;
   element?: ServerElement;
   elements?: ServerElement[];
   elementId?: string;
@@ -352,18 +362,34 @@ function App(): JSX.Element {
           if (data.requestId) {
             try {
               if (!canSyncScene()) throw new Error('Scene is not fully loaded; export is paused')
-              const elements = excalidrawAPI.getSceneElements()
+              // Same option surface as the headless renderer (renderer:'node'),
+              // so `--renderer browser` accepts identical flags.
+              const opts = data.options ?? {}
+              const allElements = excalidrawAPI.getSceneElements()
+              const wanted = opts.elementIds ? new Set(opts.elementIds) : null
+              const elements = wanted
+                ? allElements.filter(el => wanted.has(el.id) || (el.type === 'text' && (el as any).containerId && wanted.has((el as any).containerId)))
+                : allElements
+              const exportingFrame = opts.frameId
+                ? (allElements.find(el => el.id === opts.frameId && (el.type === 'frame' || el.type === 'magicframe')) as any) ?? null
+                : null
+              if (opts.frameId && !exportingFrame) throw new Error(`Unknown frame id: ${opts.frameId}`)
               const appState = excalidrawAPI.getAppState()
+              const exportAppState = {
+                ...appState,
+                exportBackground: data.background !== false,
+                ...(opts.dark !== undefined ? { exportWithDarkMode: opts.dark } : {}),
+                exportScale: opts.scale ?? 1
+              }
               const files = excalidrawAPI.getFiles()
 
               if (data.format === 'svg') {
                 const svg = await exportToSvg({
                   elements,
-                  appState: {
-                    ...appState,
-                    exportBackground: data.background !== false
-                  },
-                  files
+                  appState: exportAppState,
+                  files,
+                  exportPadding: opts.padding,
+                  exportingFrame
                 })
                 const svgString = new XMLSerializer().serializeToString(svg)
                 await fetch('/api/export/image/result', {
@@ -378,12 +404,11 @@ function App(): JSX.Element {
               } else {
                 const blob = await exportToBlob({
                   elements,
-                  appState: {
-                    ...appState,
-                    exportBackground: data.background !== false
-                  },
+                  appState: exportAppState,
                   files,
-                  mimeType: 'image/png'
+                  mimeType: 'image/png',
+                  exportPadding: opts.padding,
+                  exportingFrame
                 })
                 const reader = new FileReader()
                 reader.onload = async () => {

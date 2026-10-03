@@ -40,6 +40,9 @@ jobs:
       - name: Run MCP stdio wire tests
         run: node scripts/check-mcp-stdio.mjs
 
+      - name: Run headless renderer checks
+        run: node scripts/check-render.mjs
+
       - name: Install Chromium for canvas regression tests
         run: npx playwright install --with-deps chromium
 
@@ -52,6 +55,7 @@ jobs:
           test -f dist/index.js || (echo "dist/index.js not found" && exit 1)
           test -f dist/server.js || (echo "dist/server.js not found" && exit 1)
           test -d dist/frontend || (echo "dist/frontend not found" && exit 1)
+          test -f dist/render/excalidraw-node.mjs || (echo "dist/render/excalidraw-node.mjs not found" && exit 1)
           echo "All build artifacts present!"
 
       - name: Upload build artifacts

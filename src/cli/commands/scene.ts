@@ -15,6 +15,7 @@ import { wrapSceneAsObsidianMd } from '../../core/obsidian-md.js';
 import { describeScene } from '../../core/describe.js';
 import { exportToExcalidrawUrl } from '../../core/share-url.js';
 import { EXPRESS_SERVER_URL } from '../../core/config.js';
+import { IMAGE_FLAG_SPEC, imageFormatFromFlags, imageOptionsFromFlags } from '../image-options.js';
 
 async function readTextFileOrStdin(inputPath: string | undefined): Promise<string> {
   if (!inputPath || inputPath === '-') return await readStdin();
@@ -30,21 +31,18 @@ export async function describe(argv: string[]): Promise<void> {
 }
 
 export async function screenshot(argv: string[]): Promise<void> {
-  const { flags } = parseArgs(argv, {
-    out: { takesValue: true },
-    format: { takesValue: true },
-    'no-background': { takesValue: false }
-  });
+  const { flags } = parseArgs(argv, IMAGE_FLAG_SPEC);
 
-  const format = (flags.format as string | undefined) ?? 'png';
-  if (format !== 'png' && format !== 'svg') {
-    throw new CliUsageError('--format must be png or svg');
-  }
+  const format = imageFormatFromFlags(flags);
+  const options = imageOptionsFromFlags(flags, format);
 
   await ensureCanvasRunning();
-  await requireBrowserClient('screenshot');
+  // Default rendering is headless inside the canvas server; only the explicit
+  // browser renderer still needs an open tab.
+  if (options.renderer === 'browser') await requireBrowserClient('screenshot --renderer browser');
 
-  const result = await exportImage(format, !flags['no-background']);
+  const result = await exportImage(options);
+  for (const warning of result.warnings ?? []) note(`warning: ${warning}`);
 
   let outPath = flags.out as string | undefined;
   if (!outPath && format === 'svg') {
@@ -61,7 +59,13 @@ export async function screenshot(argv: string[]): Promise<void> {
   } else {
     fs.writeFileSync(resolved, Buffer.from(result.data, 'base64'));
   }
-  printJson({ success: true, file: resolved, format });
+  printJson({
+    success: true,
+    file: resolved,
+    format,
+    renderer: result.renderer ?? 'browser',
+    ...(result.width !== undefined ? { width: result.width, height: result.height } : {})
+  });
 }
 
 export async function exportCmd(argv: string[]): Promise<void> {

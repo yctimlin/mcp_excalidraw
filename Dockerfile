@@ -16,6 +16,8 @@ RUN npm ci && npm cache clean --force
 # Copy backend source
 COPY src ./src
 COPY tsconfig.json ./
+# build:server also bundles Excalidraw's exporter (dist/render/excalidraw-node.mjs)
+COPY scripts ./scripts
 
 # Compile TypeScript
 RUN npm run build:server

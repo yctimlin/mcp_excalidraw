@@ -6,6 +6,8 @@ import * as scene from './commands/scene.js';
 import { snapshot } from './commands/snapshot.js';
 import { arrange } from './commands/arrange.js';
 import { installSkill } from './commands/install-skill.js';
+import { render } from './commands/render.js';
+import { IMAGE_FLAG_USAGE } from './image-options.js';
 
 interface Command {
   handler: (argv: string[]) => Promise<void>;
@@ -16,7 +18,7 @@ interface Command {
 const COMMANDS: Record<string, Command> = {
   start: { handler: server.start, summary: 'Start the canvas server (detached)', usage: 'start' },
   stop: { handler: server.stop, summary: 'Stop the canvas server', usage: 'stop' },
-  status: { handler: server.status, summary: 'Canvas health, element count, browser clients', usage: 'status' },
+  status: { handler: server.status, summary: 'Canvas health, element count, renderers, browser clients', usage: 'status' },
   apply: { handler: elements.apply, summary: 'Apply a {create,update,delete} patch in one call', usage: 'apply [patch.json|-] (update entries accept direct fields or {id,set:{...}})' },
   add: { handler: elements.add, summary: 'Create elements from a JSON array', usage: 'add [elements.json] (or stdin) | add --one \'{"type":"rectangle",...}\'' },
   update: { handler: elements.update, summary: 'Update one element', usage: 'update <id> --set \'{"backgroundColor":"#ffc9c9"}\'' },
@@ -24,7 +26,8 @@ const COMMANDS: Record<string, Command> = {
   get: { handler: elements.get, summary: 'Get one element by id', usage: 'get <id>' },
   query: { handler: elements.query, summary: 'Query elements (server + typed client-side filters)', usage: 'query [--type rectangle] [--bbox x0,y0,x1,y1] [--filter locked=true] [--filter-json \'{...}\']' },
   describe: { handler: scene.describe, summary: 'AI-readable scene description (plain text)', usage: 'describe' },
-  screenshot: { handler: scene.screenshot, summary: 'Capture the canvas (needs an open browser tab)', usage: 'screenshot [--out file.png] [--format png|svg] [--no-background]' },
+  screenshot: { handler: scene.screenshot, summary: 'Render the canvas to PNG/SVG (headless; no browser tab needed)', usage: `screenshot [--out file.png|file.svg] [--renderer auto|node|browser] ${IMAGE_FLAG_USAGE}` },
+  render: { handler: render, summary: 'Render a .excalidraw / .excalidraw.md file to PNG/SVG offline (no canvas server)', usage: `render [scene.excalidraw|note.excalidraw.md|-] [--out file.png|file.svg] ${IMAGE_FLAG_USAGE}` },
   export: { handler: scene.exportCmd, summary: 'Export the scene as .excalidraw JSON or Obsidian .excalidraw.md', usage: 'export [--out scene.excalidraw | note.excalidraw.md] [--format json|obsidian] (a .md out path implies obsidian)' },
   import: { handler: scene.importCmd, summary: 'Import a .excalidraw or Obsidian .excalidraw.md file (merge by default)', usage: 'import [scene.excalidraw|note.excalidraw.md|-] [--replace] (or stdin)' },
   mermaid: { handler: scene.mermaid, summary: 'Render a Mermaid diagram onto the canvas (needs a browser tab)', usage: 'mermaid [diagram.mmd|-] (or stdin)' },
@@ -51,7 +54,7 @@ function printHelp(): void {
     '  Results are JSON on stdout — except `describe` (plain text) and raw-content',
     '  output when --out is omitted (`export` scene JSON, `screenshot --format svg`).',
     '  Diagnostics go to stderr.',
-    '  Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required.',
+    '  Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (mermaid, --renderer browser).',
     '  Canvas-driving commands auto-start the server (disable with EXCALIDRAW_NO_AUTOSTART=1).',
     '  Canvas URL comes from EXPRESS_SERVER_URL (default http://127.0.0.1:3000) or --url.',
     '',
