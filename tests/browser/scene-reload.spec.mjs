@@ -105,16 +105,23 @@ test('a frame drawn with the UI survives sync, reload and another edit', async (
   expect(result.some(e => e.type === 'rectangle' && e.frameId === frame.id)).toBeTruthy();
 });
 
-test('text is re-measured once its font loads, so it is not clipped', async ({ page, request }) => {
-  await seed(request, []);
-  const created = await request.post('/api/elements/batch', { data: { elements: [
-    { id: 'hand', type: 'text', x: 100, y: 100, text: 'Hello fonts', fontSize: 28 },
-    { id: 'centre', type: 'text', x: 100, y: 160, text: 'Centred text', textAlign: 'center', fontSize: 28 },
-    { id: 'code', type: 'text', x: 100, y: 220, text: 'code()', fontFamily: '3', fontSize: 28 },
-  ] } });
-  expect(created.ok()).toBeTruthy();
-  await page.goto('/');
-  await expect(syncButton(page)).toBeEnabled();
+// Excalidraw's fonts come from a CDN. Delay them, as a slow network would, so
+// text reaches the tab before its font does.
+async function slowFonts(page) {
+  await page.route(/\.(woff2|ttf)(\?.*)?$/, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+}
+
+const fontCases = [
+  { id: 'hand', type: 'text', x: 100, y: 100, text: 'Hello fonts', fontSize: 28 },
+  { id: 'centre', type: 'text', x: 100, y: 160, text: 'Centred text', textAlign: 'center', fontSize: 28 },
+  { id: 'code', type: 'text', x: 100, y: 220, text: 'code()', fontFamily: '3', fontSize: 28 },
+  { id: 'auto-box', type: 'rectangle', x: 400, y: 100, label: { text: 'Agent label' } },
+];
+
+async function expectMeasuredWithRealFonts(page, request) {
   // Width each text needs with whatever font the browser ended up with
   const expected = await page.evaluate(async () => {
     await document.fonts.ready;
@@ -129,7 +136,31 @@ test('text is re-measured once its font loads, so it is not clipped', async ({ p
       expect(Math.abs(element.width - width), `${id} width`).toBeLessThan(1);
       expect(element.x, `${id} keeps its x`).toBe(100);
     }
+    // A shape sized from its label fits the label on one line
+    const box = scene.find(e => e.id === 'auto-box');
+    const label = scene.find(e => e.type === 'text' && e.containerId === 'auto-box');
+    expect(label.text).toBe('Agent label');
+    expect(box.width).toBeGreaterThan(label.width);
   }).toPass();
+}
+
+test('text in the first scene is measured with its real font', async ({ page, request }) => {
+  await seed(request, []);
+  expect((await request.post('/api/elements/batch', { data: { elements: fontCases } })).ok()).toBeTruthy();
+  await slowFonts(page);
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  await expectMeasuredWithRealFonts(page, request);
+});
+
+test('text an agent adds to an open tab is measured with its real font', async ({ page, request }) => {
+  await seed(request, []);
+  await slowFonts(page);
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  expect((await request.post('/api/elements/batch', { data: { elements: fontCases } })).ok()).toBeTruthy();
+  await expect.poll(async () => page.evaluate(() => document.querySelectorAll('canvas').length)).toBeGreaterThan(0);
+  await expectMeasuredWithRealFonts(page, request);
 });
 
 test('a dropped image uploads its file once and survives reload', async ({ page, request }) => {
@@ -143,7 +174,9 @@ test('a dropped image uploads its file once and survives reload', async ({ page,
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 40;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#e03131';
+    // A new colour per run gives a new file id: the server keeps files, and a
+    // file it already holds is (correctly) not uploaded again
+    ctx.fillStyle = `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')}`;
     ctx.fillRect(0, 0, 40, 40);
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     const transfer = new DataTransfer();
