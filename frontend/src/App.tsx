@@ -15,6 +15,7 @@ import type {
 } from '@excalidraw/excalidraw/data/library'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
+import { preloadCanvasFonts } from './utils/fonts'
 import type { ServerElement } from './utils/scene'
 import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 
@@ -219,10 +220,10 @@ function App(): JSX.Element {
     }
   }, [])
 
-  // Excalidraw's fonts load from its CDN after the first scene is drawn, so
-  // text measured before then keeps a box sized for a fallback font and its
-  // end is clipped. Excalidraw only waits for fonts on its initial scene; ours
-  // arrive later through updateScene. Re-measure once fonts finish loading.
+  // The first scene waits for the Latin fonts (preloadCanvasFonts). Fonts
+  // that arrive later, such as CJK subsets or a preload that timed out, find
+  // text already measured with a fallback font, which leaves it clipped.
+  // Excalidraw itself only redraws then, so re-measure once fonts load.
   useEffect(() => {
     const fontSet = document.fonts
     if (!fontSet?.addEventListener) return
@@ -286,6 +287,8 @@ function App(): JSX.Element {
       if (!filesResponse.ok || !filesResult.files) {
         throw new Error('Could not load scene files')
       }
+      await preloadCanvasFonts()
+      if (generation !== sceneGenerationRef.current) return
       applyServerScene(result.elements.map(cleanElementForExcalidraw), generation, filesResult.files)
     } catch (error) {
       failSceneLoad(error, generation)
@@ -389,6 +392,9 @@ function App(): JSX.Element {
           {
             const generation = pauseSceneSync()
             if (!Array.isArray(data.elements)) throw new Error('Invalid initial scene')
+            // Measure the first scene with the real fonts, not a fallback
+            await preloadCanvasFonts()
+            if (generation !== sceneGenerationRef.current) return
             applyServerScene(data.elements.map(cleanElementForExcalidraw), generation, (data as any).files)
           }
           break
