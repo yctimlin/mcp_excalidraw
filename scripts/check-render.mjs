@@ -222,6 +222,27 @@ await check('scene prep: repeated passes keep text and arrow geometry', async ()
   assert.deepEqual(geometry(elements), first);
 });
 
+// A server update merged onto the tab's element carries the label shorthand
+// and the bound text from the last conversion. Converting it again must
+// replace that label, not add another one beside it.
+await check('scene prep: merged label updates keep one bound label', async () => {
+  const box = (x, text) => ({ id: 'box', type: 'rectangle', x, y: 0, width: 160, height: 70, label: { text } });
+  let elements = await prepareScene([
+    box(0, 'Hello'),
+    { id: 'other', type: 'rectangle', x: 400, y: 0, width: 100, height: 70 },
+    { id: 'edge', type: 'arrow', x: 160, y: 35, width: 240, height: 0, points: [[0, 0], [240, 0]],
+      start: { id: 'box' }, end: { id: 'other' } }
+  ]);
+  for (const incoming of [box(10, 'Hello'), box(20, 'Hello'), box(30, 'Renamed')]) {
+    // The tab's incremental merge (App.tsx): { ...local, ...incoming }
+    elements = await prepareScene(elements.map(e => e.id === incoming.id ? { ...e, ...incoming } : e));
+  }
+  const labels = elements.filter(e => e.type === 'text');
+  assert.deepEqual(labels.map(e => [e.id, e.containerId, e.text]), [['box-label', 'box', 'Renamed']]);
+  const bindings = elements.find(e => e.id === 'box').boundElements.map(b => `${b.type}:${b.id}`).sort();
+  assert.deepEqual(bindings, ['arrow:edge', 'text:box-label']);
+});
+
 await check('render time: warm render under 500 ms', async () => {
   const t0 = performance.now();
   await renderScene(scene, { format: 'png' });
