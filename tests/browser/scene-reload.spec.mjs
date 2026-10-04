@@ -105,6 +105,33 @@ test('a frame drawn with the UI survives sync, reload and another edit', async (
   expect(result.some(e => e.type === 'rectangle' && e.frameId === frame.id)).toBeTruthy();
 });
 
+test('text is re-measured once its font loads, so it is not clipped', async ({ page, request }) => {
+  await seed(request, []);
+  const created = await request.post('/api/elements/batch', { data: { elements: [
+    { id: 'hand', type: 'text', x: 100, y: 100, text: 'Hello fonts', fontSize: 28 },
+    { id: 'centre', type: 'text', x: 100, y: 160, text: 'Centred text', textAlign: 'center', fontSize: 28 },
+    { id: 'code', type: 'text', x: 100, y: 220, text: 'code()', fontFamily: '3', fontSize: 28 },
+  ] } });
+  expect(created.ok()).toBeTruthy();
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  // Width each text needs with whatever font the browser ended up with
+  const expected = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const ctx = document.createElement('canvas').getContext('2d');
+    const width = (family, text) => { ctx.font = `28px ${family}, Segoe UI Emoji`; return ctx.measureText(text).width; };
+    return { hand: width('Excalifont', 'Hello fonts'), centre: width('Excalifont', 'Centred text'), code: width('Cascadia', 'code()') };
+  });
+  await expect(async () => {
+    const scene = await sync(page, request);
+    for (const [id, width] of Object.entries(expected)) {
+      const element = scene.find(e => e.id === id);
+      expect(Math.abs(element.width - width), `${id} width`).toBeLessThan(1);
+      expect(element.x, `${id} keeps its x`).toBe(100);
+    }
+  }).toPass();
+});
+
 test('a dropped image uploads its file once and survives reload', async ({ page, request }) => {
   const uploads = [];
   page.on('request', r => {
