@@ -13,7 +13,7 @@ One canvas, three ways to drive it:
 - **MCP Server** — 26 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...). Speaks MCP `2026-07-28` (`server/discover`, per-request `_meta` envelope, tool calls without a handshake) and stays compatible with 2025-era clients that open with `initialize`.
 - **REST API** — plain HTTP for LangChain and custom frameworks.
 
-Core drawing runs fully local (Node ≥ 20, MIT licensed) — no API keys. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com.
+Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or accounts. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com. The canvas page loads Excalidraw's fonts from the esm.sh CDN.
 
 ## Demo
 
@@ -82,7 +82,14 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 ## What's New
 
-Current package version: **2.1.1**. The current release line is **v2.1 — Headless Rendering**.
+Current package version: **2.1.2**. The current release line is **v2.1 — Headless Rendering**.
+
+### v2.1.2 — Fixes
+
+- Snapshot restore no longer wipes the canvas; frames restore and import. (#101, thanks @sanjayy0612; #120)
+- One label per shape, even across updates and renames. (#121, thanks @sdrshn-nmbr)
+- Dropped images survive reload and show up in exports. (#122, thanks @appdesigngeeks)
+- Text is no longer clipped when the font loads late. (#123, #124)
 
 ### v2.1.1 — Fixes
 
@@ -135,7 +142,7 @@ Install the Excalidraw canvas toolkit so you can draw diagrams for me:
 2. Run: npx -y mcp-excalidraw-server install-skill --dir <that-skills-directory>
 3. Read the installed excalidraw-skill/SKILL.md so you know the drawing workflow.
 4. Start the canvas with: npx -y mcp-excalidraw-server start
-   then tell me to open http://127.0.0.1:3000 in my browser (screenshots need an open tab).
+   then tell me I can open http://127.0.0.1:3000 to watch you draw (optional).
 5. Draw a small test diagram — two labeled boxes connected by an arrow — take a
    screenshot, and show me the result to confirm everything works.
 ```
@@ -160,7 +167,7 @@ No clone, no config:
 ```bash
 # start the canvas (drawing commands auto-start it too) and open it
 npx -y mcp-excalidraw-server start
-open http://127.0.0.1:3000   # browser tab enables screenshots & mermaid
+open http://127.0.0.1:3000   # optional: watch live (only mermaid needs the tab)
 
 # draw something
 echo '[
@@ -232,7 +239,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `clear --yes` | Wipe the canvas |
 | `install-skill [--dir <skills-root>]` | Install the portable agent skill |
 
-Labels and arrow bindings use the agent-friendly format everywhere in the CLI: `"text"` on any shape, `"startElementId"`/`"endElementId"` on arrows — normalization is automatic.
+Labels and arrow bindings use the agent-friendly format everywhere in the CLI: `"text"` on any shape, `"startElementId"`/`"endElementId"` on arrows — normalization is automatic. For a native frame, add a `"type":"frame"` element with a `"name"` and set `"frameId"` on its children.
 
 ## Headless Rendering
 
@@ -258,7 +265,10 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `ENABLE_CANVAS_SYNC` | Enable real-time canvas sync | `true` |
 | `EXCALIDRAW_NO_AUTOSTART` | Set `1` to disable canvas auto-start | (unset) |
 | `EXCALIDRAW_EXPORT_DIR` | Base directory MCP file exports may write to | current working dir |
+| `EXCALIDRAW_RENDER_MAX_DIM` | Largest side of a headless PNG, in pixels | `8192` |
 | `PORT` / `HOST` | Canvas server bind address | `3000` / `127.0.0.1` |
+| `LOG_LEVEL` | Log verbosity (`error`, `warn`, `info`, `debug`) | `info` |
+| `LOG_FILE_PATH` | Log file location | `~/Library/Logs/excalidraw-mcp.log` (macOS), `$XDG_STATE_HOME/excalidraw-mcp/excalidraw.log` (Linux), `%LOCALAPPDATA%\Excalidraw-MCP\excalidraw.log` (Windows) |
 
 ---
 
@@ -512,18 +522,25 @@ npx -y mcp-excalidraw-server describe
 curl http://127.0.0.1:3000/health
 ```
 
-### Local Bind Regression Test
+### Regression Checks
+
+`npm test` builds the server and runs four suites, each also available on its own:
 
 ```bash
-npm run test:bind
+npm test
+npm run test:mcp      # MCP stdio wire protocol (see below)
+npm run test:bind     # default loopback bind, duplicate-start refusal
+npm run test:render   # headless renderer, export order keys, scene-prep stability
+npm run test:state    # atomic import and snapshot restore, sync validation
 ```
 
 ### Canvas Browser Regression Tests
 
 These Chromium tests build the app and start an isolated localhost server. They
 cover frame reload/reconnect, mixed scenes, failed-load sync protection, stale
-responses, clearing/deletion, Mermaid imports, and SVG export. They refuse to
-reuse an existing server; set `CANVAS_TEST_PORT` if port 51910 is occupied.
+responses, clearing/deletion, Mermaid imports, SVG export, dropped images, and
+text measurement after fonts load. They refuse to reuse an existing server; set
+`CANVAS_TEST_PORT` if port 51910 is occupied.
 
 ```bash
 npx playwright install chromium
@@ -600,7 +617,7 @@ The canvas is in-memory by design (restart = blank canvas). Persist by exporting
 
 ### Does it need an API key or cloud service?
 
-No API key is required. Core drawing runs locally under MIT license. The only outbound call is the optional `share` upload to excalidraw.com.
+No API key is required. Core drawing runs locally under MIT license. Outbound traffic is limited to the canvas page loading Excalidraw's fonts from the esm.sh CDN and the optional `share` upload to excalidraw.com. The CLI, MCP server and headless renderer make no other network calls.
 
 ### Can I use it without configuring MCP?
 
@@ -612,12 +629,14 @@ Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-se
 - **CLI exit code 4** (browser required): only `mermaid` and `screenshot --renderer browser` need an open tab — open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` to render headless.
 - **Headless PNG shows boxes instead of CJK/emoji text**: the bundled fonts cover Latin scripts; for other scripts resvg falls back to the machine's fonts (a warning is printed). Install a CJK font on the machine running the canvas server.
 - **Canvas not updating**: confirm `EXPRESS_SERVER_URL` points at the running canvas server (`status` shows the URL in use).
-- **Updates/deletes fail after batch creation**: ensure you are on a build that includes the batch id preservation fix (merged via PR #34).
+- **Canvas page shows plain fonts offline**: the page loads Excalidraw's hand-drawn fonts from the esm.sh CDN, so without internet access it falls back to system fonts. Headless screenshots and `render` use the bundled fonts and are unaffected.
+- **Something else looks wrong**: the server log has the details; its location is in [Environment Variables](#environment-variables) (`LOG_FILE_PATH`).
 
 ## Known Issues / TODO
 
 - [ ] **Persistent storage**: Elements are stored in-memory — restarting the server clears everything. Use `export` / snapshots as a workaround.
 - [ ] **Mermaid conversion requires a browser**: `mermaid` / `create_from_mermaid` lay out the diagram in the frontend. Image export and screenshots are headless since v2.1.
+- [ ] **Canvas page fonts come from a CDN**: serving them from the canvas server would make the page work fully offline.
 
 Contributions welcome!
 
