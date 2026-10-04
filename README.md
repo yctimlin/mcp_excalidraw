@@ -82,7 +82,13 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 ## What's New
 
-Current package version: **2.1.0**. The current release line is **v2.1 — Headless Rendering**.
+Current package version: **2.1.1**. The current release line is **v2.1 — Headless Rendering**.
+
+### v2.1.1 — Fixes
+
+- Large exports no longer fail with `invalid order key`. (#115, thanks @fernandovmacedo)
+- Text and arrows no longer drift on each canvas sync. (#116, thanks @hidinginabunker)
+- Library installs work and persist; labels re-wrap on resize. (#113, thanks @lukemariano)
 
 ### v2.1 — Headless Rendering
 
@@ -631,3 +637,5 @@ Bug reports and pull requests are welcome on [GitHub issues](https://github.com/
 [MIT](LICENSE) © [yctimlin](https://github.com/yctimlin) — not affiliated with the Excalidraw team. [Excalidraw](https://github.com/excalidraw/excalidraw) is its own MIT-licensed project; this toolkit builds on it with love.
 
 **Links:** [npm package](https://www.npmjs.com/package/mcp-excalidraw-server) · [GitHub](https://github.com/yctimlin/mcp_excalidraw) · [Issues](https://github.com/yctimlin/mcp_excalidraw/issues) · [Demo video](https://youtu.be/ufW78Amq5qA)
+
+If you're interested in what comes next, follow me on X: [@ycalintim](https://x.com/ycalintim).
