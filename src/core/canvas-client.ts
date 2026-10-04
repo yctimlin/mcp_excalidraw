@@ -297,6 +297,17 @@ export async function batchCreateElementsStrict(elements: ServerElement[]): Prom
   return data.elements || [];
 }
 
+// Strict counterpart of replaceElementsOnCanvas: the server validates the whole
+// batch before clearing, so a rejected restore leaves the canvas untouched.
+export async function replaceElementsStrict(elements: ServerElement[]): Promise<ServerElement[]> {
+  const data = await requestJson<ApiResponse>('/api/elements/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ elements, replace: true })
+  });
+  return data.elements || [];
+}
+
 // Identity marker the canvas server puts in /health (v1.1+)
 export const CANVAS_SERVICE_NAME = 'mcp-excalidraw-canvas';
 

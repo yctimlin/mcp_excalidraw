@@ -14,6 +14,7 @@ import {
   getElementFromCanvas,
   createElementOnCanvas,
   batchCreateElementsOnCanvas,
+  replaceElementsOnCanvas,
   getElements,
   searchElements,
   clearCanvas,
@@ -613,11 +614,10 @@ export async function callExcalidrawTool(
           throw new Error(`Snapshot "${params.name}" not found`);
         }
 
-        // Clear current canvas, then restore elements
-        await clearCanvas();
-        const restored = await batchCreateElementsOnCanvas(snapshot.elements);
+        // One atomic replace: a snapshot the server rejects leaves the canvas as is
+        const restored = await replaceElementsOnCanvas(snapshot.elements);
         if (!restored) {
-          throw new Error(`Failed to restore snapshot "${params.name}": HTTP server unavailable (canvas was cleared)`);
+          throw new Error(`Failed to restore snapshot "${params.name}": the canvas rejected it or is unreachable (current canvas unchanged)`);
         }
 
         return {
