@@ -105,6 +105,45 @@ test('a frame drawn with the UI survives sync, reload and another edit', async (
   expect(result.some(e => e.type === 'rectangle' && e.frameId === frame.id)).toBeTruthy();
 });
 
+test('a dropped image uploads its file once and survives reload', async ({ page, request }) => {
+  const uploads = [];
+  page.on('request', r => {
+    if (r.url().endsWith('/api/files') && r.method() === 'POST') uploads.push(r.postDataJSON());
+  });
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 40;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#e03131';
+    ctx.fillRect(0, 0, 40, 40);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], 'square.png', { type: 'image/png' }));
+    const target = document.querySelector('canvas.interactive') || document.querySelector('.excalidraw canvas');
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, clientX: 500, clientY: 400, dataTransfer: transfer }));
+    }
+  });
+  let image;
+  await expect(async () => {
+    image = (await sync(page, request)).find(e => e.type === 'image');
+    expect(image?.fileId).toBeTruthy();
+  }).toPass();
+  const stored = (await (await request.get('/api/files')).json()).files;
+  expect(stored[image.fileId]?.dataURL).toMatch(/^data:image\/png;base64,/);
+  expect(uploads.flatMap(u => u.files.map(f => f.id))).toEqual([image.fileId]);
+
+  // A later sync does not upload it again; after a reload the tab loads it back
+  await sync(page, request);
+  expect(uploads).toHaveLength(1);
+  await page.reload();
+  const reloaded = await sync(page, request);
+  expect(reloaded.find(e => e.id === image.id)).toMatchObject({ type: 'image', fileId: image.fileId });
+  expect(uploads).toHaveLength(1);
+});
+
 test('reconnect and server incremental updates preserve an existing frame', async ({ page, request }) => {
   await seed(request, frameScene());
   const socket = await interceptSocket(page);
