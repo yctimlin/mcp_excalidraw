@@ -219,6 +219,35 @@ function App(): JSX.Element {
     }
   }, [])
 
+  // Excalidraw's fonts load from its CDN after the first scene is drawn, so
+  // text measured before then keeps a box sized for a fallback font and its
+  // end is clipped. Excalidraw only waits for fonts on its initial scene; ours
+  // arrive later through updateScene. Re-measure once fonts finish loading.
+  useEffect(() => {
+    const fontSet = document.fonts
+    if (!fontSet?.addEventListener) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const remeasureText = (): void => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const api = excalidrawAPIRef.current
+        if (!api || sceneLoadStatusRef.current !== 'ready') return
+        const current = api.getSceneElements()
+        if (!current.some(el => el.type === 'text')) return
+        try {
+          applyServerScene(current, sceneGenerationRef.current, undefined, { refreshDimensions: true })
+        } catch (error) {
+          console.warn('Could not re-measure text after fonts loaded:', error)
+        }
+      }, 50)
+    }
+    fontSet.addEventListener('loadingdone', remeasureText)
+    return () => {
+      fontSet.removeEventListener('loadingdone', remeasureText)
+      clearTimeout(timer)
+    }
+  }, [])
+
   // WebSocket connection
   useEffect(() => {
     connectWebSocket()

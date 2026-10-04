@@ -43,6 +43,9 @@ jobs:
       - name: Run headless renderer checks
         run: node scripts/check-render.mjs
 
+      - name: Run canvas state integrity checks
+        run: node scripts/check-state-integrity.mjs
+
       - name: Install Chromium for canvas regression tests
         run: npx playwright install --with-deps chromium
 
