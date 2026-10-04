@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js';
-import { ServerElement } from '../types.js';
+import { ServerElement, ExportImageOptions } from '../types.js';
 import { EXPRESS_SERVER_URL, ENABLE_CANVAS_SYNC } from './config.js';
 
 // API Response types
@@ -198,11 +198,24 @@ export async function postFiles(files: any[]): Promise<void> {
   });
 }
 
-export async function exportImage(format: 'png' | 'svg', background = true): Promise<{ success: boolean; format: string; data: string }> {
+export interface ExportImageResult {
+  success: boolean;
+  format: string;
+  data: string;
+  renderer?: 'node' | 'browser';
+  width?: number;
+  height?: number;
+  warnings?: string[];
+}
+
+export async function exportImage(options: ExportImageOptions): Promise<ExportImageResult>;
+export async function exportImage(format: 'png' | 'svg', background?: boolean): Promise<ExportImageResult>;
+export async function exportImage(arg: ExportImageOptions | 'png' | 'svg', background = true): Promise<ExportImageResult> {
+  const body: ExportImageOptions = typeof arg === 'string' ? { format: arg, background } : arg;
   return requestJson('/api/export/image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ format, background })
+    body: JSON.stringify(body)
   });
 }
 
@@ -369,6 +382,8 @@ export interface HealthStatus {
   // Identity fields (v1.1+); `stop` requires both before signaling anything
   service?: string;
   pid?: number;
+  // v2.1+: which image renderers this server can use right now
+  renderers?: { node: boolean; browser: number };
 }
 
 export async function getHealth(timeoutMs = 2000): Promise<HealthStatus> {

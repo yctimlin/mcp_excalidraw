@@ -64,6 +64,8 @@ export async function status(argv: string[]): Promise<void> {
     pid: health.pid ?? readPidFile(canvasPort()) ?? undefined,
     elements: health.elements_count,
     browserClients: health.websocket_clients,
+    // Older servers predate the headless renderer and only report tabs
+    renderers: health.renderers ?? { node: false, browser: health.websocket_clients },
     ...sync
   });
 }

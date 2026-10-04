@@ -4,22 +4,69 @@ import {
   convertToExcalidrawElements,
   CaptureUpdateAction,
   exportToBlob,
-  exportToSvg
+  exportToSvg,
+  useHandleLibrary
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+import type {
+  LibraryPersistedData,
+  LibraryPersistenceAdapter
+} from '@excalidraw/excalidraw/data/library'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
 import type { ServerElement } from './utils/scene'
 import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 
+const LIBRARY_STORAGE_KEY = 'excalidraw-canvas-library'
+
+/**
+ * Persists the user's library in this browser.
+ *
+ * The scene is in-memory by design, but the library is not scene data — it is a
+ * user asset: shapes they added themselves, or a pack they installed from
+ * libraries.excalidraw.com. Without an adapter the library panel resets to empty
+ * on every reload, which makes it useless, and `useHandleLibrary` below needs one
+ * to accept installs in the first place.
+ */
+const libraryAdapter: LibraryPersistenceAdapter = {
+  load: () => {
+    try {
+      const raw = window.localStorage?.getItem(LIBRARY_STORAGE_KEY)
+      return raw ? { libraryItems: JSON.parse(raw) } : null
+    } catch (error) {
+      console.warn('Failed to read library from localStorage:', error)
+      return null
+    }
+  },
+  save: (data: LibraryPersistedData) => {
+    try {
+      window.localStorage?.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(data.libraryItems))
+    } catch (error) {
+      // Most likely the 5MB quota, which a large icon pack can exceed. The
+      // library stays usable for this session; it just will not survive reload.
+      console.warn('Failed to save library to localStorage:', error)
+    }
+  }
+}
+
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
+
+interface ExportImageOptions {
+  background?: boolean;
+  dark?: boolean;
+  scale?: number;
+  padding?: number;
+  elementIds?: string[];
+  frameId?: string;
+}
 
 interface WebSocketMessage {
   type: string;
   format?: 'png' | 'svg';
   background?: boolean;
+  options?: ExportImageOptions;
   element?: ServerElement;
   elements?: ServerElement[];
   elementId?: string;
@@ -62,6 +109,13 @@ function App(): JSX.Element {
   useEffect(() => {
     excalidrawAPIRef.current = excalidrawAPI
   }, [excalidrawAPI])
+
+  // Handles the `#addLibrary=...` callback that libraries.excalidraw.com sends
+  // back after "Add to Excalidraw", and loads/saves the library through the
+  // adapter above. Without this hook the Browse-libraries button opens the site
+  // and correctly points it back here, but nothing receives what it returns —
+  // the install silently does nothing.
+  useHandleLibrary({ excalidrawAPI, adapter: libraryAdapter })
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -125,13 +179,14 @@ function App(): JSX.Element {
   const applyServerScene = (
     incoming: readonly Partial<ExcalidrawElement>[],
     generation: number,
-    files?: Record<string, unknown>
+    files?: Record<string, unknown>,
+    opts: { refreshDimensions?: boolean } = {}
   ): void => {
     const api = excalidrawAPIRef.current
     if (!api || generation !== sceneGenerationRef.current) return
     // Prepare everything before replacing the visible scene. restoreElements()
     // can silently filter elements, so both conversion and API readback need checks.
-    const prepared = prepareServerScene(incoming)
+    const prepared = prepareServerScene(incoming, opts)
     const previous = api.getSceneElementsIncludingDeleted()
     try {
       if (files) api.addFiles(Object.values(files) as Parameters<typeof api.addFiles>[0])
@@ -282,7 +337,11 @@ function App(): JSX.Element {
 
         mergedElements.push(...incomingById.values())
 
-        applyServerScene(mergedElements, pauseSceneSync())
+        // `refreshDimensions` re-wraps bound text from its `originalText`. An
+        // update can resize a container (`update_element` with a new width),
+        // and without this the label keeps the line breaks computed for the old
+        // box — the shape grows, the text stays broken where it was.
+        applyServerScene(mergedElements, pauseSceneSync(), undefined, { refreshDimensions: true })
       }
 
       switch (data.type) {
@@ -352,18 +411,34 @@ function App(): JSX.Element {
           if (data.requestId) {
             try {
               if (!canSyncScene()) throw new Error('Scene is not fully loaded; export is paused')
-              const elements = excalidrawAPI.getSceneElements()
+              // Same option surface as the headless renderer (renderer:'node'),
+              // so `--renderer browser` accepts identical flags.
+              const opts = data.options ?? {}
+              const allElements = excalidrawAPI.getSceneElements()
+              const wanted = opts.elementIds ? new Set(opts.elementIds) : null
+              const elements = wanted
+                ? allElements.filter(el => wanted.has(el.id) || (el.type === 'text' && (el as any).containerId && wanted.has((el as any).containerId)))
+                : allElements
+              const exportingFrame = opts.frameId
+                ? (allElements.find(el => el.id === opts.frameId && (el.type === 'frame' || el.type === 'magicframe')) as any) ?? null
+                : null
+              if (opts.frameId && !exportingFrame) throw new Error(`Unknown frame id: ${opts.frameId}`)
               const appState = excalidrawAPI.getAppState()
+              const exportAppState = {
+                ...appState,
+                exportBackground: data.background !== false,
+                ...(opts.dark !== undefined ? { exportWithDarkMode: opts.dark } : {}),
+                exportScale: opts.scale ?? 1
+              }
               const files = excalidrawAPI.getFiles()
 
               if (data.format === 'svg') {
                 const svg = await exportToSvg({
                   elements,
-                  appState: {
-                    ...appState,
-                    exportBackground: data.background !== false
-                  },
-                  files
+                  appState: exportAppState,
+                  files,
+                  exportPadding: opts.padding,
+                  exportingFrame
                 })
                 const svgString = new XMLSerializer().serializeToString(svg)
                 await fetch('/api/export/image/result', {
@@ -378,12 +453,11 @@ function App(): JSX.Element {
               } else {
                 const blob = await exportToBlob({
                   elements,
-                  appState: {
-                    ...appState,
-                    exportBackground: data.background !== false
-                  },
+                  appState: exportAppState,
                   files,
-                  mimeType: 'image/png'
+                  mimeType: 'image/png',
+                  exportPadding: opts.padding,
+                  exportingFrame
                 })
                 const reader = new FileReader()
                 reader.onload = async () => {

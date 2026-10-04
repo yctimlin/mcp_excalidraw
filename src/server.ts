@@ -30,6 +30,7 @@ import { z } from 'zod';
 import WebSocket from 'ws';
 import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
+import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -927,81 +928,120 @@ interface PendingExport {
 }
 const pendingExports = new Map<string, PendingExport>();
 
-app.post('/api/export/image', (req: Request, res: Response) => {
-  try {
-    const { format, background } = req.body;
+const exportImageSchema = z.object({
+  format: z.enum(['png', 'svg']),
+  background: z.boolean().optional(),
+  renderer: z.enum(['auto', 'node', 'browser']).optional(),
+  dark: z.boolean().optional(),
+  scale: z.number().min(1).max(MAX_SCALE).optional(),
+  padding: z.number().min(0).optional(),
+  elementIds: z.array(z.string()).min(1).optional(),
+  frameId: z.string().optional(),
+  embedFonts: z.boolean().optional()
+});
+type ExportImageBody = z.infer<typeof exportImageSchema>;
 
-    if (!format || !['png', 'svg'].includes(format)) {
-      return res.status(400).json({
-        success: false,
-        error: 'format must be "png" or "svg"'
-      });
-    }
+const NO_BROWSER_TAB_ERROR = 'No frontend client connected. Open the canvas in a browser first.';
 
-    if (clients.size === 0) {
-      return res.status(503).json({
-        success: false,
-        error: 'No frontend client connected. Open the canvas in a browser first.'
-      });
-    }
+// Ask the open browser tab(s) to render — Excalidraw's own exporter in a real
+// browser. Slower (re-sync + 3 s collection window) and needs a tab, but it
+// is the reference rendering, so it stays available as renderer:'browser'.
+function exportViaBrowserTab(options: ExportImageBody): Promise<{ format: string; data: string }> {
+  const { format, background, renderer: _renderer, ...rest } = options;
+  const requestId = generateId();
 
-    const requestId = generateId();
+  const exportPromise = new Promise<{ format: string; data: string }>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      const pending = pendingExports.get(requestId);
+      pendingExports.delete(requestId);
+      // If we collected any result during the window, use it
+      if (pending?.bestResult) {
+        resolve(pending.bestResult);
+      } else {
+        reject(new Error('Export timed out after 30 seconds'));
+      }
+    }, 30000);
 
-    const exportPromise = new Promise<{ format: string; data: string }>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        const pending = pendingExports.get(requestId);
-        pendingExports.delete(requestId);
-        // If we collected any result during the window, use it
-        if (pending?.bestResult) {
-          resolve(pending.bestResult);
-        } else {
-          reject(new Error('Export timed out after 30 seconds'));
-        }
-      }, 30000);
+    pendingExports.set(requestId, { resolve, reject, timeout, collectionTimeout: null, bestResult: null });
+  });
 
-      pendingExports.set(requestId, { resolve, reject, timeout, collectionTimeout: null, bestResult: null });
-    });
+  // Re-broadcast current elements so all connected clients (including stale ones)
+  // sync to the canonical server state before exporting
+  const filesObj: Record<string, ExcalidrawFile> = {};
+  files.forEach((f, id) => { filesObj[id] = f; });
+  broadcast({
+    type: 'initial_elements',
+    elements: Array.from(elements.values()),
+    ...(files.size > 0 ? { files: filesObj } : {})
+  } as InitialElementsMessage & { files?: Record<string, ExcalidrawFile> });
 
-    // Re-broadcast current elements so all connected clients (including stale ones)
-    // sync to the canonical server state before exporting
-    const filesObj: Record<string, ExcalidrawFile> = {};
-    files.forEach((f, id) => { filesObj[id] = f; });
+  // Give browsers time to process the reload before requesting export
+  setTimeout(() => {
     broadcast({
-      type: 'initial_elements',
-      elements: Array.from(elements.values()),
-      ...(files.size > 0 ? { files: filesObj } : {})
-    } as InitialElementsMessage & { files?: Record<string, ExcalidrawFile> });
-
-    // Give browsers time to process the reload before requesting export
-    setTimeout(() => {
-      broadcast({
-        type: 'export_image_request',
-        requestId,
-        format,
-        background: background ?? true
-      });
-    }, 800);
-
-    exportPromise
-      .then(result => {
-        res.json({
-          success: true,
-          format: result.format,
-          data: result.data
-        });
-      })
-      .catch(error => {
-        res.status(500).json({
-          success: false,
-          error: (error as Error).message
-        });
-      });
-  } catch (error) {
-    logger.error('Error initiating image export:', error);
-    res.status(500).json({
-      success: false,
-      error: (error as Error).message
+      type: 'export_image_request',
+      requestId,
+      format,
+      background: background ?? true,
+      options: { background, ...rest }
     });
+  }, 800);
+
+  return exportPromise;
+}
+
+app.post('/api/export/image', async (req: Request, res: Response) => {
+  const parsed = exportImageSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path.join('.');
+    return res.status(400).json({
+      success: false,
+      error: where === 'format'
+        ? 'format must be "png" or "svg"'
+        : `${where ? `${where}: ` : ''}${issue?.message ?? 'invalid request'}`
+    });
+  }
+  const options = parsed.data;
+  const renderer = options.renderer ?? 'auto';
+
+  const respondBrowser = async () => {
+    if (clients.size === 0) {
+      return res.status(503).json({ success: false, error: NO_BROWSER_TAB_ERROR });
+    }
+    try {
+      const result = await exportViaBrowserTab(options);
+      res.json({ success: true, format: result.format, data: result.data, renderer: 'browser' });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  };
+
+  if (renderer === 'browser') return respondBrowser();
+
+  try {
+    const { renderer: _renderer, ...renderOptions } = options;
+    const scene = { elements: Array.from(elements.values()), files: Object.fromEntries(files) };
+    const result = await renderScene(scene, renderOptions);
+    res.json({
+      success: true,
+      format: result.format,
+      data: result.data,
+      renderer: 'node',
+      width: result.width,
+      height: result.height,
+      ...(result.warnings.length > 0 ? { warnings: result.warnings } : {})
+    });
+  } catch (error) {
+    if (error instanceof RenderError) {
+      return res.status(error.status).json({ success: false, error: error.message });
+    }
+    logger.error('Headless image export failed:', error);
+    if (renderer === 'auto' && clients.size > 0) {
+      // The reference renderer is available; use it rather than fail
+      logger.warn('Falling back to the browser tab for this export');
+      return respondBrowser();
+    }
+    res.status(500).json({ success: false, error: (error as Error).message });
   }
 });
 
@@ -1304,6 +1344,9 @@ app.get('/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     elements_count: elements.size,
     websocket_clients: clients.size,
+    // Image renderers available right now: headless (always, in-process) and
+    // the number of browser tabs that can render on request
+    renderers: { node: true, browser: clients.size },
     // Identity for `stop`: it must only ever signal a process that both
     // identifies as this service AND self-reports its pid — never a pid
     // from a stale pidfile or an unrelated app squatting on the port.

@@ -17,11 +17,11 @@ Three interfaces drive the same live canvas. Pick the first one that applies:
    No setup needed — any canvas-touching command **auto-starts the canvas server** on `http://127.0.0.1:3000` (first `npx` run downloads the package). If the CLI is installed globally (`npm i -g mcp-excalidraw-server`), the shorter alias `excalidraw-canvas <command>` works too.
 3. **REST API** (last resort, e.g. from application code): HTTP endpoints on `http://127.0.0.1:3000` — see `references/cheatsheet.md` for payloads. The server must already be running.
 
-The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Remind the user to open that URL in a browser — screenshots, image export, mermaid conversion, and viewport control need an open tab (CLI exits with code 4 when it's missing).
+The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Screenshots and image exports render headless inside the canvas server, so you never need a browser tab to check your own work. Only mermaid conversion and viewport control need an open tab (CLI exits with code 4 when it's missing). Still tell the user the URL — opening it lets them watch you draw.
 
 ### CLI Quick Reference
 
-Results are JSON on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required.
+Results are JSON on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `mermaid` and `screenshot --renderer browser`).
 
 | Task | Command |
 |------|---------|
@@ -201,7 +201,7 @@ The intermediate waypoint `[50, -40]` lifts the arrow upward. `roundness: {type:
 Pairing `describe` with `screenshot` is what makes this skill powerful.
 
 - **`describe`** (`describe_scene` in MCP) → structured text: element IDs, types, positions, labels, connections. Use it to know *what's on the canvas* before making programmatic updates (find IDs, understand bounding boxes).
-- **`screenshot`** (`get_canvas_screenshot` in MCP) → PNG of the actual rendered canvas. Use it for *visual quality verification* — it shows exactly what the user sees, including truncation, overlap, and arrow routing. The CLI prints the saved file path as JSON; read/view that file.
+- **`screenshot`** (`get_canvas_screenshot` in MCP) → PNG rendered headless from the canonical canvas state with Excalidraw's own renderer (no browser tab needed, a few ms). Use it for *visual quality verification* — it shows exactly what the diagram looks like, including truncation, overlap, and arrow routing. The CLI prints the saved file path as JSON; read/view that file. `--scale 2` for legibility on dense diagrams, `--ids a,b` or `--frame <id>` to zoom in on a part, `--dark` for dark mode.
 
 **Feedback loop:**
 ```
@@ -233,7 +233,8 @@ Requires an open browser tab (conversion runs in the frontend; exit code 4 tells
 
 - Export scene: `export --out diagram.excalidraw` (no `--out` → JSON to stdout)
 - Import scene: `import diagram.excalidraw` (append) or `import diagram.excalidraw --replace`
-- Image: `screenshot --out diagram.png` / `screenshot --format svg --out diagram.svg` (browser tab required)
+- Image: `screenshot --out diagram.png` / `screenshot --format svg --out diagram.svg` (headless; SVGs embed their fonts)
+- Offline: `render diagram.excalidraw --out diagram.png` renders a saved file without the canvas server (CI-friendly, same flags as `screenshot`)
 - Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL
 
 This is how diagrams live in a repo: commit the `.excalidraw` file, and re-`import` + edit + `export` it when the architecture changes.
@@ -262,7 +263,7 @@ Round-trips are safe: text-element block references follow the plugin's own id r
 ## Error Recovery
 
 - **Exit code 3 (canvas unreachable)?** Auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`) or a non-loopback `EXPRESS_SERVER_URL` is set. Run `start` explicitly or fix the env.
-- **Exit code 4 (browser required)?** Open `http://127.0.0.1:3000` in a browser, then retry — screenshots, image export, viewport, and mermaid conversion render in the frontend.
+- **Exit code 4 (browser required)?** Only `mermaid` and `screenshot --renderer browser` need an open tab. Open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` — screenshots and image exports render headless.
 - **Elements not appearing?** Check `describe` — they may be off-screen. In MCP mode, use `set_viewport` with `scrollToContent: true`, or `scrollToElementIds` plus optional `viewportZoomFactor` to focus on a specific subgraph; in a browser, press the zoom-to-fit button.
 - **Arrow not connecting?** Verify element IDs with `get <id>`. Make sure `startElementId`/`endElementId` match existing element IDs.
 - **Canvas in a bad state?** `snapshot save` first, then `clear --yes` and rebuild. Or `snapshot restore` to go back.

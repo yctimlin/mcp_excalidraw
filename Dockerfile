@@ -16,6 +16,10 @@ RUN npm ci && npm cache clean --force
 # Copy backend source
 COPY src ./src
 COPY tsconfig.json ./
+# build:server also bundles Excalidraw's exporter (dist/render/excalidraw-node.mjs)
+COPY scripts ./scripts
+# The exporter bundle includes the canvas tab's scene preparation code
+COPY frontend/src/utils ./frontend/src/utils
 
 # Compile TypeScript
 RUN npm run build:server

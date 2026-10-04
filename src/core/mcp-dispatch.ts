@@ -40,6 +40,17 @@ import { exportToExcalidrawUrl } from './share-url.js';
 import { DIAGRAM_DESIGN_GUIDE } from './design-guide.js';
 import { sceneState, ensureCanvasReadyForMcpTool, toolNeedsCanvasBeforeDispatch } from './canvas-state.js';
 
+// Shared by export_to_image and get_canvas_screenshot (see IMAGE_RENDER_PROPERTIES)
+const imageRenderParams = {
+  background: z.boolean().optional(),
+  renderer: z.enum(['auto', 'node', 'browser']).optional(),
+  dark: z.boolean().optional(),
+  scale: z.number().min(1).max(4).optional(),
+  padding: z.number().min(0).optional(),
+  elementIds: z.array(z.string()).min(1).optional(),
+  frameId: z.string().optional()
+};
+
 // Points schema: accept both {x, y} objects and [x, y] tuples
 const PointObjectSchema = z.object({ x: z.number(), y: z.number() });
 const PointTupleSchema = z.tuple([z.number(), z.number()]);
@@ -516,18 +527,23 @@ export async function callExcalidrawTool(
         };
       }
       case 'export_to_image': {
-        const params = z.object({
+        const { filePath, ...params } = z.object({
           format: z.enum(['png', 'svg']),
           filePath: z.string().optional(),
-          background: z.boolean().optional()
+          ...imageRenderParams
         }).parse(args);
 
-        logger.info('Exporting to image via MCP', { format: params.format });
+        logger.info('Exporting to image via MCP', { format: params.format, renderer: params.renderer ?? 'auto' });
 
-        const result = await exportImage(params.format, params.background ?? true);
+        const result = await exportImage(params);
+        const details = [
+          `renderer: ${result.renderer ?? 'browser'}`,
+          ...(result.width !== undefined ? [`${result.width}x${result.height}px`] : []),
+          ...(result.warnings ?? []).map(w => `warning: ${w}`)
+        ].join(', ');
 
-        if (params.filePath) {
-          const safeImagePath = sanitizeFilePath(params.filePath);
+        if (filePath) {
+          const safeImagePath = sanitizeFilePath(filePath);
           if (params.format === 'svg') {
             fs.writeFileSync(safeImagePath, result.data, 'utf-8');
           } else {
@@ -536,7 +552,7 @@ export async function callExcalidrawTool(
           return {
             content: [{
               type: 'text',
-              text: `Image exported to ${safeImagePath} (format: ${params.format})`
+              text: `Image exported to ${safeImagePath} (format: ${params.format}, ${details})`
             }]
           };
         }
@@ -546,7 +562,7 @@ export async function callExcalidrawTool(
             type: 'text',
             text: params.format === 'svg'
               ? result.data
-              : `Base64 ${params.format} data (${result.data.length} chars). Use filePath to save to disk.`
+              : `Base64 ${params.format} data (${result.data.length} chars, ${details}). Use filePath to save to disk.`
           }]
         };
       }
@@ -621,13 +637,12 @@ export async function callExcalidrawTool(
         };
       }
       case 'get_canvas_screenshot': {
-        const params = z.object({
-          background: z.boolean().optional()
-        }).parse(args || {});
+        const params = z.object(imageRenderParams).parse(args || {});
 
-        logger.info('Taking canvas screenshot via MCP');
+        logger.info('Taking canvas screenshot via MCP', { renderer: params.renderer ?? 'auto' });
 
-        const result = await exportImage('png', params.background ?? true);
+        const result = await exportImage({ format: 'png', ...params });
+        const warnings = (result.warnings ?? []).map(w => ` Warning: ${w}.`).join('');
 
         return {
           content: [
@@ -638,7 +653,7 @@ export async function callExcalidrawTool(
             },
             {
               type: 'text',
-              text: 'Canvas screenshot captured. This is what the diagram currently looks like.'
+              text: `Canvas screenshot captured (${result.renderer ?? 'browser'} renderer${result.width !== undefined ? `, ${result.width}x${result.height}px` : ''}). This is what the diagram currently looks like.${warnings}`
             }
           ]
         };

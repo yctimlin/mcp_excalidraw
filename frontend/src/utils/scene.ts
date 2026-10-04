@@ -243,6 +243,49 @@ const restoreBindings = (
   });
 };
 
+const isPointList = (points: unknown): points is [number, number][] =>
+  Array.isArray(points) && points.length >= 2 && points.every(p =>
+    Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+
+// The skeleton converter is not idempotent, and every server scene passes
+// through it on every update. Text x/y is read as an alignment anchor
+// (centre text moves left by width/2, middle text up by height/2), and every
+// arrow loses 0.5px at each end. Re-run on a synced scene, both compound into
+// drift (#116). Positions and points the caller supplied are kept; the
+// converter still measures text and expands labels and bindings.
+const preserveCallerGeometry = (
+  convertedElements: readonly any[],
+  originalElements: Partial<ExcalidrawElement>[]
+): any[] => {
+  const originalMap = new Map<string, any>()
+  for (const el of originalElements) {
+    if (el.id) originalMap.set(el.id, el)
+  }
+
+  return convertedElements.map((el: any) => {
+    const orig = originalMap.get(el.id)
+    if (!orig) return el
+
+    // Shape labels are recentred afterwards; arrow labels keep their place.
+    if (el.type === 'text') {
+      return { ...el, x: orig.x, y: orig.y }
+    }
+    if ((el.type === 'arrow' || el.type === 'line') && isPointList(orig.points)) {
+      const xs = orig.points.map((p: [number, number]) => p[0])
+      const ys = orig.points.map((p: [number, number]) => p[1])
+      return {
+        ...el,
+        x: orig.x,
+        y: orig.y,
+        points: orig.points.map((p: [number, number]) => [p[0], p[1]]),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      }
+    }
+    return el
+  })
+}
+
 const isFrame = (element: Partial<ExcalidrawElement>): element is Partial<Extract<ExcalidrawElement, { type: 'frame' | 'magicframe' }>> =>
   element.type === 'frame' || element.type === 'magicframe'
 
@@ -278,7 +321,19 @@ export const assertScenePreserved = (
 }
 
 export const prepareServerScene = (
-  elements: readonly Partial<ExcalidrawElement>[]
+  elements: readonly Partial<ExcalidrawElement>[],
+  opts: {
+    /**
+     * Re-wrap and re-measure bound text from `originalText`.
+     *
+     * Off by default: on a full scene load the fonts may not be ready yet, and
+     * measuring with a fallback font would overwrite a correctly measured file
+     * with wrong numbers. Callers applying an incremental update — where a
+     * container may have been resized through the API and its label would
+     * otherwise keep the old line breaks — pass `true`.
+     */
+    refreshDimensions?: boolean
+  } = {}
 ): ExcalidrawElement[] => {
   if (!Array.isArray(elements)) throw new Error('Expected a scene element array')
   const ids = new Set<string>()
@@ -299,8 +354,11 @@ export const prepareServerScene = (
   // Native frames express membership through the children's frameId. The
   // skeleton converter instead requires frame.children and recalculates bounds.
   const skeletons = validated.filter(el => !isFrame(el) && !isImageElement(el) && !isFreedrawElement(el))
-  const converted = restoreBindings(
-    convertToExcalidrawElements(skeletons as any, { regenerateIds: false }),
+  const converted = preserveCallerGeometry(
+    restoreBindings(
+      convertToExcalidrawElements(skeletons as any, { regenerateIds: false }),
+      skeletons
+    ),
     skeletons
   )
   const convertedById = new Map(converted.map(el => [el.id, el]))
@@ -323,10 +381,28 @@ export const prepareServerScene = (
     if (!next) throw new Error(`Scene conversion lost element ${element.id}`)
     return [next, ...(generatedText.get(element.id!) || [])]
   })
+  // Excalidraw's `refreshTextDimensions` re-wraps `element.text`, not
+  // `originalText` — and `text` already carries the line breaks computed for the
+  // previous container size, as real newlines. Wrapping an already-wrapped
+  // string can never undo those breaks, so `refreshDimensions` on its own
+  // cannot re-flow a label after its container is resized. Feeding the label
+  // its unwrapped source first is what makes the re-flow actually happen.
+  const reflowed = opts.refreshDimensions
+    ? ordered.map(element => {
+        const label = element as Partial<ExcalidrawElement> & {
+          containerId?: string | null
+          originalText?: string
+        }
+        return label?.containerId && typeof label.originalText === 'string'
+          ? { ...element, text: label.originalText }
+          : element
+      })
+    : ordered
+
   const restored = restoreElements(
-    recenterBoundShapeTextElements(ordered) as ExcalidrawElement[],
+    recenterBoundShapeTextElements(reflowed) as ExcalidrawElement[],
     null,
-    { repairBindings: true }
+    { repairBindings: true, refreshDimensions: opts.refreshDimensions ?? false }
   )
   assertScenePreserved(elements, restored)
   return restored

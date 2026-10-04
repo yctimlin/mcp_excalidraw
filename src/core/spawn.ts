@@ -119,7 +119,7 @@ export async function ensureCanvasRunning(options: { timeoutMs?: number; force?:
     if (isCanvasHealth(await healthOrNull(400))) {
       markCanvasIdentityVerified();
       process.stderr.write(
-        `Canvas server running at ${EXPRESS_SERVER_URL} — open it in a browser for screenshots and mermaid conversion.\n`
+        `Canvas server running at ${EXPRESS_SERVER_URL} — screenshots render headless; open it in a browser to watch or for mermaid conversion.\n`
       );
       return { url: EXPRESS_SERVER_URL, spawned: true };
     }

@@ -9,7 +9,7 @@
 ## CLI Reference
 
 `npx -y mcp-excalidraw-server <command>` (or `excalidraw-canvas <command>` after `npm i -g`).
-JSON results on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required. Explicit `start` overrides `EXCALIDRAW_NO_AUTOSTART=1`.
+JSON results on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `mermaid` and `screenshot --renderer browser`). Explicit `start` overrides `EXCALIDRAW_NO_AUTOSTART=1`.
 
 ### Server
 
@@ -17,7 +17,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 |---------|-------------|
 | `start` | Start the canvas server (detached); prints URL + pid |
 | `stop` | Stop the canvas server (identity-checked via `/health` — never signals foreign services) |
-| `status` | Health, element count, connected browser tabs |
+| `status` | Health, element count, renderers (`node` headless + browser tabs) |
 
 ### Elements
 
@@ -35,7 +35,8 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | Command | Description |
 |---------|-------------|
 | `describe` | AI-readable scene summary (ids, positions, labels, connections) — plain text |
-| `screenshot` | PNG/SVG capture; `--out f.png`, `--format png\|svg`, `--no-background`; PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG (**browser tab required**) |
+| `screenshot` | Headless PNG/SVG render of the canvas (no browser tab); `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--renderer browser` (use an open tab instead); PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG |
+| `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` file to PNG/SVG offline — no canvas server; same flags as `screenshot` |
 | `export [--out f.excalidraw] [--format json\|obsidian]` | Scene as .excalidraw JSON (stdout without `--out`); a `.md` out path writes Obsidian's .excalidraw.md format |
 | `import [file\|-] [--replace]` | Import .excalidraw JSON or Obsidian .excalidraw.md (merge by default) |
 | `mermaid [file\|-]` | Render Mermaid onto the canvas (**browser tab required**) |
@@ -90,7 +91,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | Tool | Description | Required params |
 |------|-------------|-----------------|
 | `describe_scene` | AI-readable scene description (types, positions, labels, connections, bounding box) | (none) |
-| `get_canvas_screenshot` | Returns PNG image of canvas for visual verification | (optional) `background` |
+| `get_canvas_screenshot` | Returns a PNG of the canvas for visual verification (headless, no browser needed) | (optional) `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `renderer` ("auto"\|"node"\|"browser") |
 | `get_resource` | Get scene/library/theme/elements | `resource` |
 
 ### File I/O & Export
@@ -99,7 +100,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 |------|-------------|-----------------|
 | `export_scene` | Export to .excalidraw JSON (a `.md` filePath → Obsidian .excalidraw.md) | (optional) `filePath` |
 | `import_scene` | Import from .excalidraw JSON or Obsidian .excalidraw.md | `mode` ("replace"\|"merge"), `filePath` or `data` |
-| `export_to_image` | Export to PNG/SVG (needs browser) | `format` ("png"\|"svg"), (optional) `filePath`, `background` |
+| `export_to_image` | Export to PNG/SVG (headless, no browser needed; SVG embeds fonts) | `format` ("png"\|"svg"), (optional) `filePath`, `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `renderer` ("auto"\|"node"\|"browser") |
 | `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL | (none) |
 
 ### State Management
@@ -158,7 +159,7 @@ Notes:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/export/image` | Request image export (needs frontend) |
+| `POST` | `/api/export/image` | Render PNG/SVG headless: `{format, background?, renderer?: "auto"\|"node"\|"browser", dark?, scale?, padding?, elementIds?, frameId?, embedFonts?}` → `{data, renderer, width, height, warnings?}` |
 | `POST` | `/api/export/image/result` | Frontend posts export result back |
 
 ### Viewport
@@ -180,7 +181,7 @@ Notes:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Health check (`websocket_clients` = open browser tabs) |
+| `GET` | `/health` | Health check (`websocket_clients` = open browser tabs, `renderers` = `{node, browser}`) |
 | `GET` | `/api/sync/status` | Memory/WebSocket stats |
 
 ## Design Guide (quick version)

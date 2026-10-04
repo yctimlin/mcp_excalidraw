@@ -12,7 +12,8 @@ export function note(message: string): void {
   process.stderr.write(message + '\n');
 }
 
-// Screenshot / mermaid / viewport need a browser tab rendering the canvas.
+// Mermaid conversion and `--renderer browser` need a browser tab rendering
+// the canvas; screenshots and image exports render headless by default.
 export async function requireBrowserClient(what: string): Promise<void> {
   const health = await getHealth();
   if (health.websocket_clients === 0) {
