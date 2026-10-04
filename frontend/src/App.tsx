@@ -4,14 +4,51 @@ import {
   convertToExcalidrawElements,
   CaptureUpdateAction,
   exportToBlob,
-  exportToSvg
+  exportToSvg,
+  useHandleLibrary
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
+import type {
+  LibraryPersistedData,
+  LibraryPersistenceAdapter
+} from '@excalidraw/excalidraw/data/library'
 import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
 import type { ServerElement } from './utils/scene'
 import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
+
+const LIBRARY_STORAGE_KEY = 'excalidraw-canvas-library'
+
+/**
+ * Persists the user's library in this browser.
+ *
+ * The scene is in-memory by design, but the library is not scene data — it is a
+ * user asset: shapes they added themselves, or a pack they installed from
+ * libraries.excalidraw.com. Without an adapter the library panel resets to empty
+ * on every reload, which makes it useless, and `useHandleLibrary` below needs one
+ * to accept installs in the first place.
+ */
+const libraryAdapter: LibraryPersistenceAdapter = {
+  load: () => {
+    try {
+      const raw = window.localStorage?.getItem(LIBRARY_STORAGE_KEY)
+      return raw ? { libraryItems: JSON.parse(raw) } : null
+    } catch (error) {
+      console.warn('Failed to read library from localStorage:', error)
+      return null
+    }
+  },
+  save: (data: LibraryPersistedData) => {
+    try {
+      window.localStorage?.setItem(LIBRARY_STORAGE_KEY, JSON.stringify(data.libraryItems))
+    } catch (error) {
+      // Most likely the 5MB quota, which a large icon pack can exceed. The
+      // library stays usable for this session; it just will not survive reload.
+      console.warn('Failed to save library to localStorage:', error)
+    }
+  }
+}
 
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
@@ -72,6 +109,13 @@ function App(): JSX.Element {
   useEffect(() => {
     excalidrawAPIRef.current = excalidrawAPI
   }, [excalidrawAPI])
+
+  // Handles the `#addLibrary=...` callback that libraries.excalidraw.com sends
+  // back after "Add to Excalidraw", and loads/saves the library through the
+  // adapter above. Without this hook the Browse-libraries button opens the site
+  // and correctly points it back here, but nothing receives what it returns —
+  // the install silently does nothing.
+  useHandleLibrary({ excalidrawAPI, adapter: libraryAdapter })
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -135,13 +179,14 @@ function App(): JSX.Element {
   const applyServerScene = (
     incoming: readonly Partial<ExcalidrawElement>[],
     generation: number,
-    files?: Record<string, unknown>
+    files?: Record<string, unknown>,
+    opts: { refreshDimensions?: boolean } = {}
   ): void => {
     const api = excalidrawAPIRef.current
     if (!api || generation !== sceneGenerationRef.current) return
     // Prepare everything before replacing the visible scene. restoreElements()
     // can silently filter elements, so both conversion and API readback need checks.
-    const prepared = prepareServerScene(incoming)
+    const prepared = prepareServerScene(incoming, opts)
     const previous = api.getSceneElementsIncludingDeleted()
     try {
       if (files) api.addFiles(Object.values(files) as Parameters<typeof api.addFiles>[0])
@@ -292,7 +337,11 @@ function App(): JSX.Element {
 
         mergedElements.push(...incomingById.values())
 
-        applyServerScene(mergedElements, pauseSceneSync())
+        // `refreshDimensions` re-wraps bound text from its `originalText`. An
+        // update can resize a container (`update_element` with a new width),
+        // and without this the label keeps the line breaks computed for the old
+        // box — the shape grows, the text stays broken where it was.
+        applyServerScene(mergedElements, pauseSceneSync(), undefined, { refreshDimensions: true })
       }
 
       switch (data.type) {
