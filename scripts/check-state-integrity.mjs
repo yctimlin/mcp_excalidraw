@@ -134,6 +134,79 @@ async function checkSnapshotsAreImmutable() {
   );
 }
 
+function runCli(args) {
+  return new Promise(resolve => {
+    const cli = spawn(process.execPath, [join(repoRoot, 'dist', 'bin.js'), ...args], {
+      cwd: repoRoot,
+      env: { ...process.env, EXPRESS_SERVER_URL: baseUrl, EXCALIDRAW_NO_AUTOSTART: '1', LOG_LEVEL: 'error' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    cli.stdout.on('data', chunk => { out += chunk.toString(); });
+    cli.stderr.on('data', chunk => { out += chunk.toString(); });
+    cli.on('exit', code => resolve({ code, out }));
+  });
+}
+
+async function sceneIds() {
+  const { body } = await request('/api/elements');
+  return body.elements.map(element => element.id).sort();
+}
+
+// A browser-synced scene with a native frame, saved as a snapshot, then the
+// canvas changed. Restoring must bring the frame and its child back.
+async function seedFrameSnapshot(name) {
+  await request('/api/elements/clear', { method: 'DELETE' });
+  await request('/api/elements/sync', {
+    method: 'POST',
+    ...json({ elements: [
+      { id: 'zone', type: 'frame', x: 0, y: 0, width: 400, height: 300, name: 'Zone' },
+      { id: 'inside', type: 'rectangle', x: 20, y: 20, width: 100, height: 50, frameId: 'zone' },
+    ] }),
+  });
+  await request('/api/snapshots', { method: 'POST', ...json({ name }) });
+  await request('/api/elements/clear', { method: 'DELETE' });
+  await request('/api/elements', { method: 'POST', ...json({ id: 'later', type: 'ellipse', x: 0, y: 0 }) });
+}
+
+// A snapshot holding a type the batch schema rejects must leave the canvas as is.
+async function seedUnsupportedSnapshot(name) {
+  await request('/api/elements/clear', { method: 'DELETE' });
+  await request('/api/elements/sync', {
+    method: 'POST',
+    ...json({ elements: [{ id: 'web', type: 'embeddable', x: 0, y: 0, width: 300, height: 200 }] }),
+  });
+  await request('/api/snapshots', { method: 'POST', ...json({ name }) });
+  await request('/api/elements/clear', { method: 'DELETE' });
+  await request('/api/elements', { method: 'POST', ...json({ id: 'keep', type: 'rectangle', x: 0, y: 0 }) });
+}
+
+async function checkCliSnapshotRestore() {
+  await seedFrameSnapshot('cli-frame');
+  const restored = await runCli(['snapshot', 'restore', 'cli-frame']);
+  assert(restored.code === 0, `restore of a frame snapshot failed: ${restored.out.trim()}`);
+  assert(JSON.stringify(await sceneIds()) === '["inside","zone"]', 'frame snapshot did not restore exactly');
+  const { body } = await request('/api/elements/inside');
+  assert(body.element?.frameId === 'zone', 'restored child lost its frameId');
+
+  await seedUnsupportedSnapshot('cli-bad');
+  const rejected = await runCli(['snapshot', 'restore', 'cli-bad']);
+  assert(rejected.code !== 0, 'restore of an unsupported snapshot reported success');
+  assert(JSON.stringify(await sceneIds()) === '["keep"]', 'rejected restore changed the canvas');
+}
+
+async function checkMcpSnapshotRestore(callTool) {
+  await seedFrameSnapshot('mcp-frame');
+  const restored = await callTool('restore_snapshot', { name: 'mcp-frame' });
+  assert(!restored.isError, `restore of a frame snapshot failed: ${JSON.stringify(restored.content)}`);
+  assert(JSON.stringify(await sceneIds()) === '["inside","zone"]', 'frame snapshot did not restore exactly');
+
+  await seedUnsupportedSnapshot('mcp-bad');
+  const rejected = await callTool('restore_snapshot', { name: 'mcp-bad' });
+  assert(rejected.isError, 'restore of an unsupported snapshot reported success');
+  assert(JSON.stringify(await sceneIds()) === '["keep"]', 'rejected restore changed the canvas');
+}
+
 const child = spawn(process.execPath, [serverPath], {
   cwd: repoRoot,
   env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', LOG_LEVEL: 'error' },
@@ -146,11 +219,14 @@ child.stderr.on('data', chunk => { output += chunk.toString(); });
 try {
   await waitForHealth(child, () => output.trim());
   const { importScene } = await import('../dist/core/scene-io.js');
+  const { callExcalidrawTool } = await import('../dist/core/mcp-dispatch.js');
 
   const checks = [
     ['replace imports are atomic', () => checkReplaceImportIsAtomic(importScene)],
     ['sync input is validated before use', checkSyncValidatesBeforeUse],
     ['saved snapshots are immutable', checkSnapshotsAreImmutable],
+    ['CLI snapshot restore is atomic and keeps frames', checkCliSnapshotRestore],
+    ['MCP snapshot restore is atomic and keeps frames', () => checkMcpSnapshotRestore(callExcalidrawTool)],
   ];
 
   let failed = 0;

@@ -5,8 +5,7 @@ import {
   saveSnapshot,
   listSnapshots,
   getSnapshot,
-  clearCanvas,
-  batchCreateElementsStrict
+  replaceElementsStrict
 } from '../../core/canvas-client.js';
 
 export async function snapshot(argv: string[]): Promise<void> {
@@ -35,8 +34,8 @@ export async function snapshot(argv: string[]): Promise<void> {
       } catch {
         throw new Error(`Snapshot "${name}" not found`);
       }
-      await clearCanvas();
-      await batchCreateElementsStrict(snap.elements);
+      // One atomic replace: a snapshot the server rejects leaves the canvas as is
+      await replaceElementsStrict(snap.elements);
       printJson({ success: true, name, restored: snap.elements.length });
       return;
     }
