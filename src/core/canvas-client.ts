@@ -61,6 +61,15 @@ export async function syncToCanvas(operation: string, data: any): Promise<SyncRe
         };
         break;
 
+      case 'replace_elements':
+        url = `${EXPRESS_SERVER_URL}/api/elements/batch`;
+        options = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ elements: data, replace: true })
+        };
+        break;
+
       default:
         logger.warn(`Unknown sync operation: ${operation}`);
         return null;
@@ -116,6 +125,15 @@ export async function deleteElementOnCanvas(elementId: string): Promise<any> {
 export async function batchCreateElementsOnCanvas(elementsData: ServerElement[]): Promise<ServerElement[] | null> {
   if (!ENABLE_CANVAS_SYNC) return elementsData;
   const result = await syncToCanvas('batch_create', elementsData);
+  return result?.elements ?? null;
+}
+
+// Atomically replace the canvas only after the server validates and prepares
+// the complete incoming batch. This prevents a rejected import from erasing
+// the scene that was already on the canvas.
+export async function replaceElementsOnCanvas(elementsData: ServerElement[]): Promise<ServerElement[] | null> {
+  if (!ENABLE_CANVAS_SYNC) return elementsData;
+  const result = await syncToCanvas('replace_elements', elementsData);
   return result?.elements ?? null;
 }
 

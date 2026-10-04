@@ -601,14 +601,16 @@ function computeEdgePoint(
 }
 
 // Helper: resolve arrow bindings in a batch
-function resolveArrowBindings(batchElements: ServerElement[]): void {
+function resolveArrowBindings(batchElements: ServerElement[], includeExisting = true): void {
   const elementMap = new Map<string, ServerElement>();
   batchElements.forEach(el => elementMap.set(el.id, el));
 
   // Also check existing elements for cross-batch references
-  elements.forEach((el, id) => {
-    if (!elementMap.has(id)) elementMap.set(id, el);
-  });
+  if (includeExisting) {
+    elements.forEach((el, id) => {
+      if (!elementMap.has(id)) elementMap.set(id, el);
+    });
+  }
 
   for (const el of batchElements) {
     if (el.type !== 'arrow' && el.type !== 'line') continue;
@@ -686,12 +688,18 @@ function rerouteBoundArrows(movedId: string): ServerElement[] {
 // Batch create elements
 app.post('/api/elements/batch', (req: Request, res: Response) => {
   try {
-    const { elements: elementsToCreate } = req.body;
+    const { elements: elementsToCreate, replace = false } = req.body ?? {};
 
     if (!Array.isArray(elementsToCreate)) {
       return res.status(400).json({
         success: false,
         error: 'Expected an array of elements'
+      });
+    }
+    if (typeof replace !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'replace must be a boolean'
       });
     }
 
@@ -713,8 +721,19 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
       createdElements.push(element);
     });
 
-    // Resolve arrow bindings (computes positions, startBinding, endBinding, boundElements)
-    resolveArrowBindings(createdElements);
+    // Fully prepare the batch before mutating storage. Replacement imports do
+    // not resolve bindings against elements that are about to be discarded.
+    resolveArrowBindings(createdElements, !replace);
+
+    if (replace) {
+      const count = elements.size;
+      elements.clear();
+      broadcast({
+        type: 'canvas_cleared',
+        timestamp: new Date().toISOString()
+      });
+      logger.info(`Canvas replaced: ${count} existing elements removed`);
+    }
 
     // Store all elements after binding resolution
     createdElements.forEach(el => elements.set(el.id, el));
@@ -784,12 +803,8 @@ app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
 // Sync elements from frontend (overwrite sync)
 app.post('/api/elements/sync', (req: Request, res: Response) => {
   try {
-    const { elements: frontendElements, timestamp } = req.body;
-
-    logger.info(`Sync request received: ${frontendElements.length} elements`, {
-      timestamp,
-      elementCount: frontendElements.length
-    });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const { elements: frontendElements, timestamp } = body;
 
     // Validate input data
     if (!Array.isArray(frontendElements)) {
@@ -798,6 +813,11 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
         error: 'Expected elements to be an array'
       });
     }
+
+    logger.info(`Sync request received: ${frontendElements.length} elements`, {
+      timestamp,
+      elementCount: frontendElements.length
+    });
 
     // Record element count before sync
     const beforeCount = elements.size;
@@ -1232,7 +1252,10 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
 
     const snapshot: Snapshot = {
       name,
-      elements: Array.from(elements.values()),
+      // Snapshots are historical values, not aliases to live mutable elements.
+      // Bound-arrow rerouting mutates arrow objects in place. structuredClone
+      // is available across the supported Node.js >=20 runtime range.
+      elements: structuredClone(Array.from(elements.values())),
       createdAt: new Date().toISOString()
     };
 
