@@ -138,6 +138,14 @@ function App(): JSX.Element {
   const syncInFlightRef = useRef<boolean>(false)
   const suppressAutoSyncCountRef = useRef<number>(0)
   const userInteractedRef = useRef<boolean>(false)
+  // Image files the server already holds, so each sync uploads only new ones
+  const serverFileIdsRef = useRef<Set<string>>(new Set())
+  const rememberServerFiles = (files: unknown): void => {
+    const list = Array.isArray(files) ? files : Object.values((files as Record<string, unknown>) || {})
+    for (const file of list as { id?: unknown }[]) {
+      if (typeof file?.id === 'string') serverFileIdsRef.current.add(file.id)
+    }
+  }
   const [sceneLoadStatus, setSceneLoadStatus] = useState<SceneLoadStatus>('loading')
   const sceneLoadStatusRef = useRef<SceneLoadStatus>('loading')
   const sceneGenerationRef = useRef(0)
@@ -189,7 +197,10 @@ function App(): JSX.Element {
     const prepared = prepareServerScene(incoming, opts)
     const previous = api.getSceneElementsIncludingDeleted()
     try {
-      if (files) api.addFiles(Object.values(files) as Parameters<typeof api.addFiles>[0])
+      if (files) {
+        api.addFiles(Object.values(files) as Parameters<typeof api.addFiles>[0])
+        rememberServerFiles(files)
+      }
       applySceneUpdateWithoutAutoSync(api, { elements: prepared, captureUpdate: CaptureUpdateAction.NEVER })
       assertScenePreserved(prepared, api.getSceneElements())
     } catch (error) {
@@ -356,6 +367,14 @@ function App(): JSX.Element {
         case 'files_added':
           if (Array.isArray((data as any).files)) {
             excalidrawAPI.addFiles((data as any).files)
+            rememberServerFiles((data as any).files)
+          }
+          break
+
+        case 'file_deleted':
+          // Upload it again if an image on the canvas still uses it
+          if (typeof (data as any).fileId === 'string') {
+            serverFileIdsRef.current.delete((data as any).fileId)
           }
           break
 
@@ -701,6 +720,26 @@ function App(): JSX.Element {
 
       // Filter out deleted elements
       const activeElements = currentElements.filter(el => !el.isDeleted)
+
+      // 2. Upload image files the server lacks, before the elements that use
+      // them. An image element only holds a fileId; without the file the
+      // server keeps a dangling reference and a reload shows a broken image.
+      // One request per file keeps each body under the server's JSON limit.
+      const usedFileIds = new Set(activeElements.flatMap(el =>
+        el.type === 'image' && el.fileId ? [el.fileId as string] : []))
+      const newFiles = Object.values(api.getFiles()).filter(file =>
+        usedFileIds.has(file.id) && file.dataURL && !serverFileIdsRef.current.has(file.id))
+      for (const file of newFiles) {
+        const fileResponse = await fetch('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: [{
+            id: file.id, dataURL: file.dataURL, mimeType: file.mimeType, created: file.created
+          }] })
+        })
+        if (!fileResponse.ok) throw new Error(`Image upload failed: HTTP ${fileResponse.status}`)
+        serverFileIdsRef.current.add(file.id)
+      }
 
       // 3. Convert to backend format
       const backendElements = activeElements.map(convertToBackendFormat)
