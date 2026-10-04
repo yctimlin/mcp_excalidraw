@@ -10,6 +10,7 @@ import zlib from 'node:zlib';
 import { mixedScene, pixelFile } from '../tests/browser/fixtures.mjs';
 import { renderScene, RenderError } from '../dist/core/render/index.js';
 import { expandElementsForExport } from '../dist/core/expand-elements.js';
+import { prepareScene } from '../dist/core/render/excalidraw-node/index.js';
 import { generateKeyBetween } from 'fractional-indexing';
 
 const failures = [];
@@ -194,6 +195,31 @@ await check('export: a re-exported scene renders from its file', async () => {
   const elements = expandElementsForExport(exportSource, { deterministic: true });
   const result = await renderScene({ elements, files: {} }, { format: 'svg' });
   assert.ok(result.data.includes('Box 69'));
+});
+
+// The canvas tab runs every server scene through prepareServerScene and syncs
+// the result back, so repeated passes must not move anything (#116).
+await check('scene prep: repeated passes keep text and arrow geometry', async () => {
+  const source = [
+    { id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, label: { text: 'A' } },
+    { id: 'b', type: 'rectangle', x: 300, y: 0, width: 100, height: 50 },
+    { id: 'centre', type: 'text', x: 910, y: 100, text: 'Hello', textAlign: 'center', fontSize: 20 },
+    { id: 'right', type: 'text', x: 910, y: 300, text: 'Mid', textAlign: 'right', verticalAlign: 'middle', fontSize: 20 },
+    { id: 'up', type: 'arrow', x: 300, y: 300, width: 0, height: 40, points: [[0, 0], [0, -40]] },
+    { id: 'link', type: 'arrow', x: 100, y: 25, width: 200, height: 0, points: [[0, 0], [200, 0]],
+      start: { id: 'a' }, end: { id: 'b' }, label: { text: 'calls' } }
+  ];
+  const geometry = els => Object.fromEntries(els.map(e =>
+    [e.containerId ? `label:${e.containerId}` : e.id, [e.x, e.y, e.width, e.height, JSON.stringify(e.points ?? null)]]));
+  let elements = await prepareScene(source);
+  const first = geometry(elements);
+  for (const id of ['centre', 'right', 'up', 'link']) {
+    const src = source.find(e => e.id === id);
+    assert.deepEqual(first[id].slice(0, 2), [src.x, src.y], `${id} keeps the caller's x/y`);
+  }
+  assert.equal(first.up[3], 40, 'vertical arrow keeps its length');
+  for (let i = 0; i < 3; i++) elements = await prepareScene(elements);
+  assert.deepEqual(geometry(elements), first);
 });
 
 await check('render time: warm render under 500 ms', async () => {

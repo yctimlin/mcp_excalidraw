@@ -243,6 +243,49 @@ const restoreBindings = (
   });
 };
 
+const isPointList = (points: unknown): points is [number, number][] =>
+  Array.isArray(points) && points.length >= 2 && points.every(p =>
+    Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+
+// The skeleton converter is not idempotent, and every server scene passes
+// through it on every update. Text x/y is read as an alignment anchor
+// (centre text moves left by width/2, middle text up by height/2), and every
+// arrow loses 0.5px at each end. Re-run on a synced scene, both compound into
+// drift (#116). Positions and points the caller supplied are kept; the
+// converter still measures text and expands labels and bindings.
+const preserveCallerGeometry = (
+  convertedElements: readonly any[],
+  originalElements: Partial<ExcalidrawElement>[]
+): any[] => {
+  const originalMap = new Map<string, any>()
+  for (const el of originalElements) {
+    if (el.id) originalMap.set(el.id, el)
+  }
+
+  return convertedElements.map((el: any) => {
+    const orig = originalMap.get(el.id)
+    if (!orig) return el
+
+    // Shape labels are recentred afterwards; arrow labels keep their place.
+    if (el.type === 'text') {
+      return { ...el, x: orig.x, y: orig.y }
+    }
+    if ((el.type === 'arrow' || el.type === 'line') && isPointList(orig.points)) {
+      const xs = orig.points.map((p: [number, number]) => p[0])
+      const ys = orig.points.map((p: [number, number]) => p[1])
+      return {
+        ...el,
+        x: orig.x,
+        y: orig.y,
+        points: orig.points.map((p: [number, number]) => [p[0], p[1]]),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      }
+    }
+    return el
+  })
+}
+
 const isFrame = (element: Partial<ExcalidrawElement>): element is Partial<Extract<ExcalidrawElement, { type: 'frame' | 'magicframe' }>> =>
   element.type === 'frame' || element.type === 'magicframe'
 
@@ -299,8 +342,11 @@ export const prepareServerScene = (
   // Native frames express membership through the children's frameId. The
   // skeleton converter instead requires frame.children and recalculates bounds.
   const skeletons = validated.filter(el => !isFrame(el) && !isImageElement(el) && !isFreedrawElement(el))
-  const converted = restoreBindings(
-    convertToExcalidrawElements(skeletons as any, { regenerateIds: false }),
+  const converted = preserveCallerGeometry(
+    restoreBindings(
+      convertToExcalidrawElements(skeletons as any, { regenerateIds: false }),
+      skeletons
+    ),
     skeletons
   )
   const convertedById = new Map(converted.map(el => [el.id, el]))
