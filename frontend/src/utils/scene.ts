@@ -286,6 +286,26 @@ const preserveCallerGeometry = (
   })
 }
 
+// The converter gives a shorthand label a random id unless the label carries
+// one. A server update merged onto a tab's element carries both the shorthand
+// and the bound text from the last conversion, so each pass added another bound
+// text to the same container. The label reuses the existing bound text's id,
+// or a stable `<container-id>-label` (the id exports use), so conversion
+// replaces the label instead. The converter re-adds the text binding itself.
+const withStableLabelIds = (
+  elements: Partial<ExcalidrawElement>[]
+): Partial<ExcalidrawElement>[] =>
+  elements.map((element: any) => {
+    if (!element.id || element.type === 'text' || !element.label?.text) return element
+    const bindings = Array.isArray(element.boundElements) ? element.boundElements : []
+    const boundText = bindings.find((b: any) => b?.type === 'text')
+    return {
+      ...element,
+      label: { ...element.label, id: element.label.id ?? boundText?.id ?? `${element.id}-label` },
+      boundElements: bindings.filter((b: any) => b?.type !== 'text'),
+    }
+  })
+
 const isFrame = (element: Partial<ExcalidrawElement>): element is Partial<Extract<ExcalidrawElement, { type: 'frame' | 'magicframe' }>> =>
   element.type === 'frame' || element.type === 'magicframe'
 
@@ -353,7 +373,9 @@ export const prepareServerScene = (
   const validated = validateAndFixBindings([...elements])
   // Native frames express membership through the children's frameId. The
   // skeleton converter instead requires frame.children and recalculates bounds.
-  const skeletons = validated.filter(el => !isFrame(el) && !isImageElement(el) && !isFreedrawElement(el))
+  const skeletons = withStableLabelIds(
+    validated.filter(el => !isFrame(el) && !isImageElement(el) && !isFreedrawElement(el))
+  )
   const converted = preserveCallerGeometry(
     restoreBindings(
       convertToExcalidrawElements(skeletons as any, { regenerateIds: false }),
