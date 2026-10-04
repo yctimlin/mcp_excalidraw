@@ -36,6 +36,27 @@ export function canonicalizeKeys(v: any): any {
   return v;
 }
 
+// Excalidraw orders elements by fractional-index keys that must be valid and
+// ascending as strings: an integer part whose head letter sets its length
+// ('a' + 1 base-62 digit, 'b' + 2, 'c' + 3, ...). A decimal counter ("a10",
+// "a80") fails both rules, and Excalidraw rejects the scene on load.
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+export function orderKey(n: number): string {
+  let digits = 1;
+  let capacity = 62;
+  while (n >= capacity) {
+    n -= capacity;
+    digits++;
+    capacity *= 62;
+  }
+  let key = '';
+  for (let i = 0; i < digits; i++) {
+    key = BASE62[n % 62] + key;
+    n = Math.floor(n / 62);
+  }
+  return String.fromCharCode('a'.charCodeAt(0) + digits - 1) + key;
+}
+
 // FNV-1a 32-bit hash — stable positive int from a string
 export function fnv1a(str: string): number {
   let h = 0x811c9dc5;
@@ -64,7 +85,6 @@ export function expandElementsForExport(
 
   const cleanedExportElements: Record<string, any>[] = [];
   const boundTextElements: Record<string, any>[] = [];
-  let indexCounter = 0;
 
   // Shapes created without dimensions get the same 100x100 default the live
   // tab's skeleton converter applies, so files and headless renders agree
@@ -90,7 +110,6 @@ export function expandElementsForExport(
       opacity: rest.opacity ?? 100,
       groupIds: rest.groupIds ?? [],
       frameId: rest.frameId ?? null,
-      index: rest.index ?? `a${indexCounter++}`,
       roundness: rest.roundness ?? (
         el.type === 'rectangle' || el.type === 'diamond' || el.type === 'ellipse'
           ? { type: 3 } : null
@@ -136,8 +155,10 @@ export function expandElementsForExport(
         base.height = base.height || Math.ceil(lines.length * base.fontSize * 1.25);
       }
       base.fontFamily = normalizeFontFamily(rest.fontFamily) ?? 1;
-      base.textAlign = rest.textAlign ?? 'center';
-      base.verticalAlign = rest.verticalAlign ?? 'middle';
+      // Excalidraw's own defaults for free text, which the live canvas uses:
+      // 'center' would centre the text on its estimated box once reopened.
+      base.textAlign = rest.textAlign ?? 'left';
+      base.verticalAlign = rest.verticalAlign ?? 'top';
       base.autoResize = rest.autoResize ?? true;
       base.lineHeight = rest.lineHeight ?? 1.25;
       base.containerId = rest.containerId ?? null;
@@ -227,7 +248,6 @@ export function expandElementsForExport(
         opacity: 100,
         groupIds: [],
         frameId: null,
-        index: `a${indexCounter++}`,
         roundness: null,
         seed: seedFor(`${textId}:seed`),
         version: 1,
@@ -286,6 +306,11 @@ export function expandElementsForExport(
 
   // Append all bound text elements after their parents
   cleanedExportElements.push(...boundTextElements);
+
+  // Keys follow the final array order, so the file's z-order matches what the
+  // canvas drew. Incoming keys are replaced: a mix of kept and new keys could
+  // fall out of order.
+  cleanedExportElements.forEach((el, i) => { el.index = orderKey(i); });
 
   return deterministic ? canonicalizeKeys(cleanedExportElements) : cleanedExportElements;
 }

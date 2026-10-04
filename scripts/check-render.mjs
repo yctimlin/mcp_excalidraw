@@ -9,6 +9,9 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { mixedScene, pixelFile } from '../tests/browser/fixtures.mjs';
 import { renderScene, RenderError } from '../dist/core/render/index.js';
+import { expandElementsForExport } from '../dist/core/expand-elements.js';
+import { prepareScene } from '../dist/core/render/excalidraw-node/index.js';
+import { generateKeyBetween } from 'fractional-indexing';
 
 const failures = [];
 async function check(name, fn) {
@@ -159,6 +162,64 @@ await check('validation: bad scale, format, exclusive selectors, unknown ids', a
   await assert.rejects(renderScene(scene, { format: 'svg', elementIds: ['shape'], frameId: 'frame-repro-1' }), RenderError);
   await assert.rejects(renderScene(scene, { format: 'svg', elementIds: ['nope'] }), e => e instanceof RenderError && e.status === 404);
   await assert.rejects(renderScene(scene, { format: 'svg', frameId: 'shape' }), RenderError);
+});
+
+// More than 62 elements, so order keys must grow past one base-62 digit;
+// the labels add bound text elements appended after every shape.
+const exportSource = [
+  ...Array.from({ length: 70 }, (_, i) => ({
+    id: `box-${i}`, type: 'rectangle', x: (i % 10) * 200, y: Math.floor(i / 10) * 120,
+    width: 160, height: 60, text: `Box ${i}`
+  })),
+  { id: 'note', type: 'text', x: 0, y: 900, text: 'free text\nsecond line', fontSize: 20 }
+];
+
+await check('export: order keys are valid and ascending in array order', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const keys = elements.map(e => e.index);
+  for (const key of keys) generateKeyBetween(key, null);  // throws "invalid order key"
+  assert.deepEqual(keys, [...keys].sort(), 'keys sort as strings in array order');
+  assert.equal(new Set(keys).size, keys.length, 'keys are unique');
+});
+
+await check('export: free text is left/top aligned, shape labels stay centred', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const note = elements.find(e => e.id === 'note');
+  assert.equal(note.textAlign, 'left');
+  assert.equal(note.verticalAlign, 'top');
+  const label = elements.find(e => e.id === 'box-0-label');
+  assert.equal(label.textAlign, 'center');
+});
+
+await check('export: a re-exported scene renders from its file', async () => {
+  const elements = expandElementsForExport(exportSource, { deterministic: true });
+  const result = await renderScene({ elements, files: {} }, { format: 'svg' });
+  assert.ok(result.data.includes('Box 69'));
+});
+
+// The canvas tab runs every server scene through prepareServerScene and syncs
+// the result back, so repeated passes must not move anything (#116).
+await check('scene prep: repeated passes keep text and arrow geometry', async () => {
+  const source = [
+    { id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, label: { text: 'A' } },
+    { id: 'b', type: 'rectangle', x: 300, y: 0, width: 100, height: 50 },
+    { id: 'centre', type: 'text', x: 910, y: 100, text: 'Hello', textAlign: 'center', fontSize: 20 },
+    { id: 'right', type: 'text', x: 910, y: 300, text: 'Mid', textAlign: 'right', verticalAlign: 'middle', fontSize: 20 },
+    { id: 'up', type: 'arrow', x: 300, y: 300, width: 0, height: 40, points: [[0, 0], [0, -40]] },
+    { id: 'link', type: 'arrow', x: 100, y: 25, width: 200, height: 0, points: [[0, 0], [200, 0]],
+      start: { id: 'a' }, end: { id: 'b' }, label: { text: 'calls' } }
+  ];
+  const geometry = els => Object.fromEntries(els.map(e =>
+    [e.containerId ? `label:${e.containerId}` : e.id, [e.x, e.y, e.width, e.height, JSON.stringify(e.points ?? null)]]));
+  let elements = await prepareScene(source);
+  const first = geometry(elements);
+  for (const id of ['centre', 'right', 'up', 'link']) {
+    const src = source.find(e => e.id === id);
+    assert.deepEqual(first[id].slice(0, 2), [src.x, src.y], `${id} keeps the caller's x/y`);
+  }
+  assert.equal(first.up[3], 40, 'vertical arrow keeps its length');
+  for (let i = 0; i < 3; i++) elements = await prepareScene(elements);
+  assert.deepEqual(geometry(elements), first);
 });
 
 await check('render time: warm render under 500 ms', async () => {
