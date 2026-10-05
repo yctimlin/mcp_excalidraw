@@ -207,6 +207,41 @@ async function checkMcpSnapshotRestore(callTool) {
   assert(JSON.stringify(await sceneIds()) === '["keep"]', 'rejected restore changed the canvas');
 }
 
+async function checkMcpTypedFilters(callTool) {
+  await request('/api/elements/clear', { method: 'DELETE' });
+  const seeded = await request('/api/elements/batch', {
+    method: 'POST',
+    ...json({ elements: [
+      { id: '123', type: 'rectangle', x: 100, y: 20, width: 80, locked: true, opacity: 0 },
+      { id: 'unlocked', type: 'rectangle', x: 200, y: 20, width: 80, locked: false, opacity: 100 },
+      { id: 'outside', type: 'rectangle', x: 500, y: 20, width: 80, locked: true, opacity: 0 },
+      { id: 'ellipse', type: 'ellipse', x: 100, y: 20, width: 80, locked: true, opacity: 0 },
+    ] }),
+  });
+  assert(seeded.status === 200, `failed to seed query elements: ${JSON.stringify(seeded.body)}`);
+
+  const cases = [
+    [{ filter: { locked: true } }, ['123', 'ellipse', 'outside']],
+    [{ filter: { locked: false } }, ['unlocked']],
+    [{ filter: { x: 100 } }, ['123', 'ellipse']],
+    [{ filter: { opacity: 0 } }, ['123', 'ellipse', 'outside']],
+    [{ filter: { id: '123' } }, ['123']],
+    [{ filter: { id: 123 } }, []],
+    [{ filter: { locked: 'true' } }, []],
+    [{ filter: { missing: true } }, []],
+    [{ type: 'rectangle', bbox: { x_min: 0, x_max: 300 }, filter: { locked: true, width: 80 } }, ['123']],
+    [{ type: 'rectangle', bbox: { x_min: 0, x_max: 300 } }, ['123', 'unlocked']],
+    [{ filter: {} }, ['123', 'ellipse', 'outside', 'unlocked']],
+  ];
+  for (const [args, expected] of cases) {
+    const result = await callTool('query_elements', args);
+    assert(!result.isError, `query failed: ${JSON.stringify(result.content)}`);
+    const ids = JSON.parse(result.content[0].text).map(element => element.id).sort();
+    assert(JSON.stringify(ids) === JSON.stringify(expected),
+      `query ${JSON.stringify(args)} returned ${JSON.stringify(ids)}, expected ${JSON.stringify(expected)}`);
+  }
+}
+
 const child = spawn(process.execPath, [serverPath], {
   cwd: repoRoot,
   env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', LOG_LEVEL: 'error' },
@@ -222,6 +257,7 @@ try {
   const { callExcalidrawTool } = await import('../dist/core/mcp-dispatch.js');
 
   const checks = [
+    ['MCP queries preserve filter value types', () => checkMcpTypedFilters(callExcalidrawTool)],
     ['replace imports are atomic', () => checkReplaceImportIsAtomic(importScene)],
     ['sync input is validated before use', checkSyncValidatesBeforeUse],
     ['saved snapshots are immutable', checkSnapshotsAreImmutable],

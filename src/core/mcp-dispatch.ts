@@ -228,11 +228,6 @@ export async function callExcalidrawTool(
           // Build query parameters
           const queryParams = new URLSearchParams();
           if (type) queryParams.set('type', type);
-          if (filter) {
-            Object.entries(filter).forEach(([key, value]) => {
-              queryParams.set(key, String(value));
-            });
-          }
           if (bbox) {
             if (bbox.x_min !== undefined) queryParams.set('x_min', String(bbox.x_min));
             if (bbox.x_max !== undefined) queryParams.set('x_max', String(bbox.x_max));
@@ -241,7 +236,14 @@ export async function callExcalidrawTool(
           }
 
           // Query elements from HTTP server
-          const results = await searchElements(queryParams);
+          const elements = await searchElements(queryParams);
+          // REST query parameters are strings. Compare filters locally to
+          // preserve boolean and numeric values supplied by MCP clients.
+          const results = filter
+            ? elements.filter(element => Object.entries(filter).every(
+              ([key, value]) => (element as unknown as Record<string, unknown>)[key] === value
+            ))
+            : elements;
 
           return {
             content: [{ type: 'text', text: JSON.stringify(results, null, 2) }]
