@@ -1,5 +1,5 @@
 import { prepareScene, renderSvgWithExcalidraw } from './excalidraw-node/index.js';
-import { svgToPng } from './png.js';
+import { svgToPngIsolated } from './png.js';
 import {
   collectFontEntriesFromSvg,
   fontFaceCss,
@@ -171,7 +171,7 @@ export async function renderScene(scene: RenderableScene, rawOptions: RenderOpti
     warnings.push('non-Latin text detected: system fonts were used, so output may differ across machines');
   }
 
-  const png = svgToPng(svg, {
+  const png = await svgToPngIsolated(svg, {
     scale,
     fontFiles: fontFilesFor(fontEntries),
     loadSystemFonts,
