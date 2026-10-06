@@ -31,6 +31,23 @@ import WebSocket from 'ws';
 import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
 import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
+import {
+  CanvasFileImmutabilityError,
+  CanvasFileReferenceError,
+  CanvasPersistenceError,
+  acquireDurableStateLock,
+  commitCanvasMutation,
+  durableStatePath,
+  loadDurableState,
+  releaseDurableStateLock,
+} from './core/canvas-persistence.js';
+
+function mutationErrorStatus(error: unknown, fallback: number): number {
+  if (error instanceof CanvasPersistenceError) return 500;
+  if (error instanceof CanvasFileImmutabilityError ||
+      error instanceof CanvasFileReferenceError) return 409;
+  return fallback;
+}
 
 // Load environment variables
 dotenv.config();
@@ -78,6 +95,67 @@ function normalizeLineBreakMarkup(text: string): string {
   return text
     .replace(/<\s*b\s*r\s*\/?\s*>/gi, '\n')
     .replace(/\n{3,}/g, '\n\n');
+}
+
+function prepareFileWrites(fileList: unknown[]): ExcalidrawFile[] {
+  const durable = Boolean(durableStatePath());
+
+  // Preserve the pre-persistence endpoint exactly when durability is disabled:
+  // valid entries overwrite in request order, omitted metadata uses the same
+  // truthy defaults, and an existing file contributes no implicit defaults.
+  if (!durable) {
+    const prepared: ExcalidrawFile[] = [];
+    for (const value of fileList) {
+      if (value === null || typeof value !== 'object') continue;
+      const candidate = value as Partial<ExcalidrawFile>;
+      if (!candidate.id || !candidate.dataURL) continue;
+      prepared.push({
+        id: candidate.id,
+        dataURL: candidate.dataURL,
+        mimeType: candidate.mimeType || 'image/png',
+        created: candidate.created || Date.now(),
+      });
+    }
+    return prepared;
+  }
+
+  const prepared = new Map<string, ExcalidrawFile>();
+
+  for (const value of fileList) {
+    if (value === null || typeof value !== 'object') continue;
+    const candidate = value as Partial<ExcalidrawFile>;
+    if (typeof candidate.id !== 'string' || candidate.id.length === 0 ||
+        typeof candidate.dataURL !== 'string' || candidate.dataURL.length === 0) {
+      continue;
+    }
+
+    const previous = prepared.get(candidate.id) ?? files.get(candidate.id);
+    const mimeType = typeof candidate.mimeType === 'string' && candidate.mimeType.length > 0
+      ? candidate.mimeType
+      : previous?.mimeType ?? 'image/png';
+
+    if (previous) {
+      if (previous.dataURL !== candidate.dataURL || previous.mimeType !== mimeType) {
+        throw new CanvasFileImmutabilityError(candidate.id);
+      }
+      prepared.set(candidate.id, previous);
+      continue;
+    }
+
+    prepared.set(candidate.id, {
+      id: candidate.id,
+      dataURL: candidate.dataURL,
+      mimeType,
+      // Preserve the original in-memory endpoint's overwrite behavior:
+      // an omitted/zero timestamp is replaced with the current time. Durable
+      // retries of an existing immutable id returned above keep prior metadata.
+      created: typeof candidate.created === 'number' && Number.isFinite(candidate.created) && candidate.created > 0
+        ? candidate.created
+        : Date.now(),
+    });
+  }
+
+  return [...prepared.values()];
 }
 
 // WebSocket connection handling
@@ -290,7 +368,7 @@ app.post('/api/elements', (req: Request, res: Response) => {
       resolveArrowBindings([element]);
     }
 
-    elements.set(id, element);
+    commitCanvasMutation(() => elements.set(id, element));
 
     // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
@@ -305,7 +383,7 @@ app.post('/api/elements', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error creating element:', error);
-    res.status(400).json({
+    res.status(mutationErrorStatus(error, 400)).json({
       success: false,
       error: (error as Error).message
     });
@@ -366,22 +444,25 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
       }
     }
 
-    elements.set(id, updatedElement);
+    // Moving/resizing a shape must drag its bound arrows along. Keep the
+    // element update and every in-place arrow reroute in one durable mutation.
+    const geometryChanged = ['x', 'y', 'width', 'height']
+      .some(key => Object.prototype.hasOwnProperty.call(body, key));
+    const reroutedArrows = commitCanvasMutation(() => {
+      elements.set(id, updatedElement);
+      return geometryChanged && updatedElement.type !== 'arrow' && updatedElement.type !== 'line'
+        ? rerouteBoundArrows(id)
+        : [];
+    });
 
-    // Broadcast to all connected clients
+    // Publish only after the complete mutation has been checkpointed.
     const message: ElementUpdatedMessage = {
       type: 'element_updated',
       element: updatedElement
     };
     broadcast(message);
-
-    // Moving/resizing a shape must drag its bound arrows along
-    const geometryChanged = ['x', 'y', 'width', 'height']
-      .some(key => Object.prototype.hasOwnProperty.call(body, key));
-    if (geometryChanged && updatedElement.type !== 'arrow' && updatedElement.type !== 'line') {
-      for (const arrow of rerouteBoundArrows(id)) {
-        broadcast({ type: 'element_updated', element: arrow } as ElementUpdatedMessage);
-      }
+    for (const arrow of reroutedArrows) {
+      broadcast({ type: 'element_updated', element: arrow } as ElementUpdatedMessage);
     }
 
     res.json({
@@ -390,7 +471,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error updating element:', error);
-    res.status(400).json({
+    res.status(mutationErrorStatus(error, 400)).json({
       success: false,
       error: (error as Error).message
     });
@@ -401,7 +482,7 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
 app.delete('/api/elements/clear', (req: Request, res: Response) => {
   try {
     const count = elements.size;
-    elements.clear();
+    commitCanvasMutation(() => elements.clear());
 
     broadcast({
       type: 'canvas_cleared',
@@ -417,7 +498,7 @@ app.delete('/api/elements/clear', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error clearing canvas:', error);
-    res.status(500).json({
+    res.status(mutationErrorStatus(error, 500)).json({
       success: false,
       error: (error as Error).message
     });
@@ -443,7 +524,7 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
       });
     }
 
-    elements.delete(id);
+    commitCanvasMutation(() => elements.delete(id));
 
     // Broadcast to all connected clients
     const message: ElementDeletedMessage = {
@@ -458,7 +539,7 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error deleting element:', error);
-    res.status(500).json({
+    res.status(mutationErrorStatus(error, 500)).json({
       success: false,
       error: (error as Error).message
     });
@@ -725,18 +806,20 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
     // not resolve bindings against elements that are about to be discarded.
     resolveArrowBindings(createdElements, !replace);
 
+    const replacedCount = replace ? elements.size : 0;
+    commitCanvasMutation(() => {
+      if (replace) elements.clear();
+      createdElements.forEach(el => elements.set(el.id, el));
+    });
+
+    // Publish only after clear + replacement have reached one checkpoint.
     if (replace) {
-      const count = elements.size;
-      elements.clear();
       broadcast({
         type: 'canvas_cleared',
         timestamp: new Date().toISOString()
       });
-      logger.info(`Canvas replaced: ${count} existing elements removed`);
+      logger.info(`Canvas replaced: ${replacedCount} existing elements removed`);
     }
-
-    // Store all elements after binding resolution
-    createdElements.forEach(el => elements.set(el.id, el));
 
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
@@ -752,7 +835,7 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error batch creating elements:', error);
-    res.status(400).json({
+    res.status(mutationErrorStatus(error, 400)).json({
       success: false,
       error: (error as Error).message
     });
@@ -821,40 +904,36 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
 
     // Record element count before sync
     const beforeCount = elements.size;
-
-    // 1. Clear existing memory storage
-    elements.clear();
-    logger.info(`Cleared existing elements: ${beforeCount} elements removed`);
-
-    // 2. Batch write new data
     let successCount = 0;
     const processedElements: ServerElement[] = [];
 
-    frontendElements.forEach((element: any, index: number) => {
-      try {
-        // Ensure element has ID, generate one if missing
-        const elementId = element.id || generateId();
+    commitCanvasMutation(() => {
+      elements.clear();
+      frontendElements.forEach((element: any, index: number) => {
+        try {
+          // Ensure element has ID, generate one if missing
+          const elementId = element.id || generateId();
 
-        // Add server metadata
-        const processedElement: ServerElement = {
-          ...element,
-          id: elementId,
-          syncedAt: new Date().toISOString(),
-          source: 'frontend_sync',
-          syncTimestamp: timestamp,
-          version: 1
-        };
+          // Add server metadata
+          const processedElement: ServerElement = {
+            ...element,
+            id: elementId,
+            syncedAt: new Date().toISOString(),
+            source: 'frontend_sync',
+            syncTimestamp: timestamp,
+            version: 1
+          };
 
-        // Store to memory
-        elements.set(elementId, processedElement);
-        processedElements.push(processedElement);
-        successCount++;
-
-      } catch (elementError) {
-        logger.warn(`Failed to process element ${index}:`, elementError);
-      }
+          elements.set(elementId, processedElement);
+          processedElements.push(processedElement);
+          successCount++;
+        } catch (elementError) {
+          logger.warn(`Failed to process element ${index}:`, elementError);
+        }
+      });
     });
 
+    logger.info(`Cleared existing elements: ${beforeCount} elements removed`);
     logger.info(`Sync completed: ${successCount}/${frontendElements.length} elements synced`);
 
     // 3. Broadcast sync event to all WebSocket clients
@@ -895,26 +974,46 @@ app.get('/api/files', (_req: Request, res: Response) => {
 
 // POST add/update files (batch)
 app.post('/api/files', (req: Request, res: Response) => {
-  const body = req.body;
-  const fileList: ExcalidrawFile[] = Array.isArray(body) ? body : (body?.files || []);
-  for (const f of fileList) {
-    if (f.id && f.dataURL) {
-      files.set(f.id, { id: f.id, dataURL: f.dataURL, mimeType: f.mimeType || 'image/png', created: f.created || Date.now() });
-    }
+  try {
+    const body = req.body;
+    // Keep the existing endpoint's accepted wrapper/array shapes and count
+    // behavior. Durable mode adds publication guarantees without redefining
+    // the memory-only request contract.
+    const fileList = (Array.isArray(body) ? body : (body?.files || [])) as unknown[];
+    const preparedFiles = prepareFileWrites(fileList);
+
+    commitCanvasMutation(() => {
+      preparedFiles.forEach(file => files.set(file.id, file));
+    });
+    // Broadcast only after every referenced blob and the checkpoint are durable.
+    broadcast({ type: 'files_added', files: fileList });
+    res.json({ success: true, count: fileList.length });
+  } catch (error) {
+    logger.error('Error storing canvas files:', error);
+    if (!durableStatePath()) throw error;
+    res.status(mutationErrorStatus(error, 400)).json({
+      success: false,
+      error: (error as Error).message
+    });
   }
-  // Broadcast files to connected clients
-  broadcast({ type: 'files_added', files: fileList });
-  res.json({ success: true, count: fileList.length });
 });
 
 // DELETE a file
 app.delete('/api/files/:id', (req: Request, res: Response) => {
-  const id = req.params.id as string;
-  if (files.delete(id)) {
+  try {
+    const id = req.params.id as string;
+    if (!files.has(id)) {
+      return res.status(404).json({ success: false, error: `File with ID ${id} not found` });
+    }
+    commitCanvasMutation(() => files.delete(id));
     broadcast({ type: 'file_deleted', fileId: id });
     res.json({ success: true });
-  } else {
-    res.status(404).json({ success: false, error: `File with ID ${id} not found` });
+  } catch (error) {
+    logger.error('Error deleting canvas file:', error);
+    res.status(mutationErrorStatus(error, 500)).json({
+      success: false,
+      error: (error as Error).message
+    });
   }
 });
 
@@ -1259,7 +1358,7 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
       createdAt: new Date().toISOString()
     };
 
-    snapshots.set(name, snapshot);
+    commitCanvasMutation(() => snapshots.set(name, snapshot));
     logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
 
     res.json({
@@ -1270,7 +1369,7 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Error saving snapshot:', error);
-    res.status(500).json({
+    res.status(mutationErrorStatus(error, 500)).json({
       success: false,
       error: (error as Error).message
     });
@@ -1347,6 +1446,7 @@ app.get('/health', (req: Request, res: Response) => {
     // Image renderers available right now: headless (always, in-process) and
     // the number of browser tabs that can render on request
     renderers: { node: true, browser: clients.size },
+    ...(durableStatePath() ? { durable_state_enabled: true } : {}),
     // Identity for `stop`: it must only ever signal a process that both
     // identifies as this service AND self-reports its pid — never a pid
     // from a stale pidfile or an unrelated app squatting on the port.
@@ -1360,6 +1460,7 @@ app.get('/api/sync/status', (req: Request, res: Response) => {
   res.json({
     success: true,
     elementCount: elements.size,
+    ...(durableStatePath() ? { durableStateEnabled: true } : {}),
     timestamp: new Date().toISOString(),
     memoryUsage: {
       heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
@@ -1416,6 +1517,14 @@ async function findExistingLoopbackListener(port: number): Promise<string | null
   return null;
 }
 
+function releaseDurableStateLockSafely(): void {
+  try {
+    releaseDurableStateLock();
+  } catch (error) {
+    logger.error('Failed to release canvas data-directory lock:', error);
+  }
+}
+
 server.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EADDRINUSE') {
     const address = (error as NodeJS.ErrnoException & { address?: string }).address || HOST;
@@ -1425,10 +1534,30 @@ server.on('error', (error: NodeJS.ErrnoException) => {
   } else {
     logger.error('Failed to start canvas server:', error);
   }
+  releaseDurableStateLockSafely();
   process.exit(1);
 });
 
 async function startServer(): Promise<void> {
+  acquireDurableStateLock();
+  let durableState: ReturnType<typeof loadDurableState>;
+  try {
+    durableState = loadDurableState();
+  } catch (error) {
+    releaseDurableStateLockSafely();
+    throw error;
+  }
+
+  if (durableState.loaded) {
+    logger.info('Loaded durable canvas state', {
+      elements: durableState.elements,
+      files: durableState.files,
+      snapshots: durableState.snapshots
+    });
+  } else if (durableState.enabled) {
+    logger.info('Durable canvas state enabled; starting without an existing checkpoint');
+  }
+
   if (LOOPBACK_GUARD_HOSTS.has(HOST)) {
     const existingHost = await findExistingLoopbackListener(PORT);
     if (existingHost) {
@@ -1437,13 +1566,13 @@ async function startServer(): Promise<void> {
         `${formatHostForUrl(existingHost)}:${PORT} is already listening. ` +
         'This prevents duplicate IPv4/IPv6 canvas servers from splitting state.'
       );
+      releaseDurableStateLockSafely();
       process.exit(1);
     }
   }
 
-  // Only the process that actually wrote the pidfile may remove it —
-  // a concurrent-start loser exiting on EADDRINUSE must not delete the
-  // winner's pidfile.
+  // The pidfile identifies the listening process for CLI lifecycle commands.
+  // The data-directory lock independently protects durable-state ownership.
   let ownsPidFile = false;
 
   server.listen(PORT, HOST, () => {
@@ -1460,14 +1589,21 @@ async function startServer(): Promise<void> {
   const shutdown = (signal: NodeJS.Signals): void => {
     logger.info(`Received ${signal}, shutting down canvas server`);
     if (ownsPidFile) removePidFile(PORT);
-    server.close(() => process.exit(0));
-    // Force-exit if open sockets keep the server from closing promptly
-    setTimeout(() => process.exit(0), 2000).unref();
+    server.close(() => {
+      releaseDurableStateLockSafely();
+      process.exit(0);
+    });
+    // Force-exit if open sockets keep the server from closing promptly.
+    setTimeout(() => {
+      releaseDurableStateLockSafely();
+      process.exit(0);
+    }, 2000).unref();
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('exit', () => {
     if (ownsPidFile) removePidFile(PORT);
+    releaseDurableStateLockSafely();
   });
 }
 
@@ -1475,7 +1611,11 @@ async function startServer(): Promise<void> {
 // (`node dist/server.js`, `npm run canvas`, or spawned by the CLI/MCP
 // auto-start). Importing this module must never start the server.
 if (isMainModule(import.meta.url)) {
-  void startServer();
+  void startServer().catch(error => {
+    logger.error('Failed to start canvas server:', error);
+    releaseDurableStateLockSafely();
+    process.exit(1);
+  });
 }
 
 export { startServer };
