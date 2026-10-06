@@ -30,6 +30,13 @@ import { z } from 'zod';
 import WebSocket from 'ws';
 import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
+import {
+  durabilityEnabled,
+  acquireDataDirLock,
+  releaseDataDirLock,
+  loadScene,
+  writeCheckpoint
+} from './core/scene-persistence.js';
 import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
 
 // Load environment variables
@@ -291,6 +298,12 @@ app.post('/api/elements', (req: Request, res: Response) => {
     }
 
     elements.set(id, element);
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
 
     // Broadcast to all connected clients
     const message: ElementCreatedMessage = {
@@ -367,6 +380,12 @@ app.put('/api/elements/:id', (req: Request, res: Response) => {
     }
 
     elements.set(id, updatedElement);
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
 
     // Broadcast to all connected clients
     const message: ElementUpdatedMessage = {
@@ -402,6 +421,12 @@ app.delete('/api/elements/clear', (req: Request, res: Response) => {
   try {
     const count = elements.size;
     elements.clear();
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
 
     broadcast({
       type: 'canvas_cleared',
@@ -444,6 +469,12 @@ app.delete('/api/elements/:id', (req: Request, res: Response) => {
     }
 
     elements.delete(id);
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
 
     // Broadcast to all connected clients
     const message: ElementDeletedMessage = {
@@ -737,6 +768,12 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
 
     // Store all elements after binding resolution
     createdElements.forEach(el => elements.set(el.id, el));
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
 
     // Broadcast to all connected clients
     const message: BatchCreatedMessage = {
@@ -855,6 +892,13 @@ app.post('/api/elements/sync', (req: Request, res: Response) => {
       }
     });
 
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
+
     logger.info(`Sync completed: ${successCount}/${frontendElements.length} elements synced`);
 
     // 3. Broadcast sync event to all WebSocket clients
@@ -900,6 +944,12 @@ app.post('/api/files', (req: Request, res: Response) => {
   for (const f of fileList) {
     if (f.id && f.dataURL) {
       files.set(f.id, { id: f.id, dataURL: f.dataURL, mimeType: f.mimeType || 'image/png', created: f.created || Date.now() });
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
     }
   }
   // Broadcast files to connected clients
@@ -911,6 +961,12 @@ app.post('/api/files', (req: Request, res: Response) => {
 app.delete('/api/files/:id', (req: Request, res: Response) => {
   const id = req.params.id as string;
   if (files.delete(id)) {
+  if (!ackMutation()) {
+    return res.status(500).json({
+      success: false,
+      error: 'durable state checkpoint failed; mutation rolled back'
+    });
+  }
     broadcast({ type: 'file_deleted', fileId: id });
     res.json({ success: true });
   } else {
@@ -1260,6 +1316,12 @@ app.post('/api/snapshots', (req: Request, res: Response) => {
     };
 
     snapshots.set(name, snapshot);
+    if (!ackMutation()) {
+      return res.status(500).json({
+        success: false,
+        error: 'durable state checkpoint failed; mutation rolled back'
+      });
+    }
     logger.info(`Snapshot saved: "${name}" with ${snapshot.elements.length} elements`);
 
     res.json({
@@ -1381,6 +1443,40 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // Start server
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
+
+// Opt-in durable state (EXCALIDRAW_DATA_DIR, see core/scene-persistence.ts
+// and discussion #102): a mutation is acknowledged only after its checkpoint
+// is atomically on disk; a failed checkpoint rolls the in-memory state back
+// to the last acknowledged checkpoint.
+function ackMutation(): boolean {
+  if (!durabilityEnabled()) return true;
+  try {
+    writeCheckpoint({ elements: elements.values(), snapshots: snapshots.values(), files });
+    return true;
+  } catch (error) {
+    logger.error('Durable checkpoint failed; rolling back mutation:', (error as Error).message);
+    rollbackToCheckpoint();
+    return false;
+  }
+}
+
+function rollbackToCheckpoint(): void {
+  try {
+    // scene.json still holds the last acknowledged checkpoint (atomic rename),
+    // so reloading it restores exactly the pre-mutation state.
+    const restored = loadScene();
+    elements.clear();
+    snapshots.clear();
+    files.clear();
+    if (restored) {
+      restored.elements.forEach(el => { if (el && typeof el.id === 'string') elements.set(el.id, el); });
+      restored.snapshots.forEach(sn => { if (sn && typeof sn.name === 'string') snapshots.set(sn.name, sn); });
+      restored.files.forEach(f => files.set(f.id, f));
+    }
+  } catch (error) {
+    logger.error('Rollback to checkpoint failed; in-memory state may diverge:', (error as Error).message);
+  }
+}
 const LOOPBACK_GUARD_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '::']);
 const LOOPBACK_ADDRESSES = ['127.0.0.1', '::1'];
 
@@ -1429,6 +1525,23 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 });
 
 async function startServer(): Promise<void> {
+  // Durable state is initialized before the port is bound: a refused start
+  // (locked data dir, corrupt/unknown checkpoint) must fail before the
+  // server becomes reachable, never after.
+  if (durabilityEnabled()) {
+    try {
+      acquireDataDirLock();
+      const restored = loadScene();
+      if (restored) {
+        restored.elements.forEach(el => { if (el && typeof el.id === 'string') elements.set(el.id, el); });
+        restored.snapshots.forEach(sn => { if (sn && typeof sn.name === 'string') snapshots.set(sn.name, sn); });
+        restored.files.forEach(f => files.set(f.id, f));
+      }
+    } catch (error) {
+      logger.error((error as Error).message);
+      process.exit(1);
+    }
+  }
   if (LOOPBACK_GUARD_HOSTS.has(HOST)) {
     const existingHost = await findExistingLoopbackListener(PORT);
     if (existingHost) {
@@ -1459,6 +1572,7 @@ async function startServer(): Promise<void> {
 
   const shutdown = (signal: NodeJS.Signals): void => {
     logger.info(`Received ${signal}, shutting down canvas server`);
+    releaseDataDirLock();
     if (ownsPidFile) removePidFile(PORT);
     server.close(() => process.exit(0));
     // Force-exit if open sockets keep the server from closing promptly
@@ -1468,6 +1582,10 @@ async function startServer(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('exit', () => {
     if (ownsPidFile) removePidFile(PORT);
+    // Crash paths (uncaught exception): the lock may be stale but the
+    // takeover logic in scene-persistence handles that, so releasing here
+    // is best-effort only.
+    releaseDataDirLock();
   });
 }
 
