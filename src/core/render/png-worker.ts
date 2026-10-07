@@ -43,16 +43,25 @@ function main(): void {
     }
     try {
       const png = svgToPng(request.svg, request.options);
-      process.stdout.write(JSON.stringify({
+      const line = JSON.stringify({
         ok: true,
         data: png.data.toString('base64'),
         width: png.width,
         height: png.height
-      }) + '\n');
-      process.exit(0);
+      }) + '\n';
+      // Do NOT process.exit() right after write(): for payloads larger than
+      // the pipe buffer the write is asynchronous and exit() truncates it.
+      // Exiting from the flush callback guarantees the parent sees the full
+      // response. Fall back after 10s in case the stream never drains.
+      const killTimer = setTimeout(() => process.exit(0), 10_000);
+      killTimer.unref();
+      process.stdout.write(line, () => {
+        clearTimeout(killTimer);
+        process.exit(0);
+      });
     } catch (error) {
-      process.stdout.write(JSON.stringify({ ok: false, error: (error as Error).message ?? String(error) }) + '\n');
-      process.exit(1);
+      const line = JSON.stringify({ ok: false, error: (error as Error).message ?? String(error) }) + '\n';
+      process.stdout.write(line, () => process.exit(1));
     }
   });
   // Never let an unhandled rejection escalate to a worker crash report that
