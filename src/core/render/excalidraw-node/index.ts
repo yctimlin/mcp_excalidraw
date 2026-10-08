@@ -34,6 +34,38 @@ export async function prepareScene(elements: Record<string, any>[]): Promise<Rec
   return mod.prepareServerScene(elements.map(withDeterministicSeeds));
 }
 
+export async function serializeSceneForPng(
+  elements: Record<string, any>[],
+  files: Record<string, any>,
+  appState: Record<string, any>,
+  exportingFrame: Record<string, any> | null,
+  sourceElements: Record<string, any>[]
+): Promise<string> {
+  const mod = await loadExcalidrawNode();
+  // Match Excalidraw's frame export, including ungrouped overlapping elements.
+  const scoped = exportingFrame
+    ? mod.elementsOverlappingBBox({ elements, bounds: exportingFrame, type: 'overlap' })
+      .filter(el => !el.frameId || el.frameId === exportingFrame.id)
+    : elements;
+  // Preparation may bump versions/timestamps and generate random label seeds.
+  // Preserve source metadata; use the same stable defaults as JSON scene export.
+  const sourceById = new Map(sourceElements.map(el => [el.id, el]));
+  const exportedIds = new Set(scoped.map(el => el.id));
+  const stable = scoped.map(el => {
+    const source = sourceById.get(el.id);
+    const timestamp = Date.parse(source?.updatedAt ?? source?.createdAt ?? '');
+    return withDeterministicSeeds({
+      ...el,
+      frameId: el.frameId && !exportedIds.has(el.frameId) ? null : el.frameId,
+      seed: source?.seed,
+      versionNonce: source?.versionNonce,
+      version: source?.version ?? 1,
+      updated: typeof source?.updated === 'number' ? source.updated : Number.isNaN(timestamp) ? 1 : timestamp
+    });
+  });
+  return mod.serializeAsJSON(stable, appState, files, 'local');
+}
+
 export async function renderSvgWithExcalidraw(
   preparedElements: Record<string, any>[],
   files: Record<string, any>,

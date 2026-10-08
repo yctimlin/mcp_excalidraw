@@ -8,6 +8,8 @@
 // the tab shows: same label sizing and centering, same defaults.
 export {
   exportToSvg,
+  serializeAsJSON,
+  elementsOverlappingBBox,
   restoreElements,
   getCommonBounds,
   FONT_FAMILY

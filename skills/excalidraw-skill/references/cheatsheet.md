@@ -35,10 +35,10 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | Command | Description |
 |---------|-------------|
 | `describe` | AI-readable scene summary (ids, positions, labels, connections) — plain text |
-| `screenshot` | Headless PNG/SVG render of the canvas (no browser tab); `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--renderer browser` (use an open tab instead); PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG |
-| `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` file to PNG/SVG offline — no canvas server; same flags as `screenshot` |
+| `screenshot` | Headless PNG/SVG render of the canvas (no browser tab); `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--embed-scene` (PNG only, opt-in), `--renderer browser` (use an open tab instead); PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG |
+| `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` / embedded-scene PNG file to PNG/SVG offline — no canvas server; same flags as `screenshot` |
 | `export [--out f.excalidraw] [--format json\|obsidian]` | Scene as .excalidraw JSON (stdout without `--out`); a `.md` out path writes Obsidian's .excalidraw.md format |
-| `import [file\|-] [--replace]` | Import .excalidraw JSON or Obsidian .excalidraw.md (merge by default) |
+| `import [file\|-] [--replace]` | Import .excalidraw JSON, Obsidian .excalidraw.md, or PNG with an embedded scene (merge by default; binary stdin supported) |
 | `mermaid [file\|-]` | Render Mermaid onto the canvas (**browser tab required**) |
 | `share` | Encrypted upload → shareable excalidraw.com URL |
 | `clear --yes` | Wipe the canvas |
@@ -159,7 +159,7 @@ Notes:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/export/image` | Render PNG/SVG headless: `{format, background?, renderer?: "auto"\|"node"\|"browser", dark?, scale?, padding?, elementIds?, frameId?, embedFonts?}` → `{data, renderer, width, height, warnings?}` |
+| `POST` | `/api/export/image` | Render PNG/SVG headless: `{format, background?, renderer?: "auto"\|"node"\|"browser", dark?, scale?, padding?, elementIds?, frameId?, embedFonts?, embedScene?}` → `{data, renderer, width, height, warnings?}`; `embedScene` makes PNG editable (default false) |
 | `POST` | `/api/export/image/result` | Frontend posts export result back |
 
 ### Viewport

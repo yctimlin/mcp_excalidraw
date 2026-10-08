@@ -49,7 +49,8 @@ const imageRenderParams = {
   scale: z.number().min(1).max(4).optional(),
   padding: z.number().min(0).optional(),
   elementIds: z.array(z.string()).min(1).optional(),
-  frameId: z.string().optional()
+  frameId: z.string().optional(),
+  embedScene: z.boolean().default(false)
 };
 
 // Points schema: accept both {x, y} objects and [x, y] tuples
@@ -535,6 +536,9 @@ export async function callExcalidrawTool(
           filePath: z.string().optional(),
           ...imageRenderParams
         }).parse(args);
+        if (params.embedScene && params.format !== 'png') {
+          throw new Error('embedScene is only supported for PNG exports');
+        }
 
         logger.info('Exporting to image via MCP', { format: params.format, renderer: params.renderer ?? 'auto' });
 

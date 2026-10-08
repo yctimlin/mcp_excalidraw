@@ -1,5 +1,6 @@
-import { prepareScene, renderSvgWithExcalidraw } from './excalidraw-node/index.js';
+import { prepareScene, renderSvgWithExcalidraw, serializeSceneForPng } from './excalidraw-node/index.js';
 import { svgToPngIsolated } from './png.js';
+import { embedPngScene } from '../png-scene.js';
 import {
   collectFontEntriesFromSvg,
   fontFaceCss,
@@ -27,6 +28,7 @@ export interface RenderOptions {
   elementIds?: string[];          // render only these (plus their bound text)
   frameId?: string;               // render one frame, clipped to it
   embedFonts?: boolean;           // SVG only: inline @font-face, default true
+  embedScene?: boolean;           // PNG only: include the editable scene, default false
   systemFonts?: boolean;          // PNG only: let resvg use machine fonts; default auto (non-Latin text)
 }
 
@@ -35,6 +37,7 @@ export interface RenderableScene {
   // elements; both are prepared the way the canvas tab prepares them.
   elements: Record<string, any>[];
   files: Record<string, any>;
+  appState?: Record<string, any>;
 }
 
 export interface RenderResult {
@@ -66,6 +69,9 @@ export function validateRenderOptions(options: RenderOptions): Required<Omit<Ren
   if (options.format !== 'png' && options.format !== 'svg') {
     throw new RenderError('format must be "png" or "svg"');
   }
+  if (options.embedScene && options.format !== 'png') {
+    throw new RenderError('embedScene is only supported for PNG exports');
+  }
   const scale = options.scale ?? 1;
   if (!Number.isFinite(scale) || scale < 1 || scale > MAX_SCALE) {
     throw new RenderError(`scale must be a number between 1 and ${MAX_SCALE}`);
@@ -88,6 +94,7 @@ export function validateRenderOptions(options: RenderOptions): Required<Omit<Ren
     scale,
     padding,
     embedFonts: options.embedFonts ?? true,
+    embedScene: options.embedScene ?? false,
     elementIds: options.elementIds,
     frameId: options.frameId,
     systemFonts: options.systemFonts
@@ -126,7 +133,10 @@ function svgDimensions(svg: string): { width: number; height: number } {
 }
 
 export async function renderScene(scene: RenderableScene, rawOptions: RenderOptions): Promise<RenderResult> {
-  const options = validateRenderOptions(rawOptions);
+  const options = validateRenderOptions({
+    ...rawOptions,
+    viewBackgroundColor: rawOptions.viewBackgroundColor ?? scene.appState?.viewBackgroundColor
+  });
   const warnings: string[] = [];
 
   const live = await prepareScene(scene.elements.filter(el => el && !el.isDeleted));
@@ -177,5 +187,12 @@ export async function renderScene(scene: RenderableScene, rawOptions: RenderOpti
     loadSystemFonts,
     defaultFontFamily: 'Excalifont'
   });
-  return { format: 'png', data: png.data.toString('base64'), width: png.width, height: png.height, warnings };
+  const data = options.embedScene
+    ? embedPngScene(png.data, await serializeSceneForPng(elements, scene.files ?? {}, {
+      ...scene.appState,
+      viewBackgroundColor: options.viewBackgroundColor,
+      gridSize: scene.appState?.gridSize ?? null
+    }, exportingFrame, scene.elements))
+    : png.data;
+  return { format: 'png', data: data.toString('base64'), width: png.width, height: png.height, warnings };
 }

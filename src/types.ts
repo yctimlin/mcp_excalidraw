@@ -273,6 +273,7 @@ export interface ExportImageOptions {
   elementIds?: string[];
   frameId?: string;
   embedFonts?: boolean;
+  embedScene?: boolean;
 }
 
 export interface ExportImageRequestMessage extends WebSocketMessage {

@@ -78,8 +78,8 @@ export function parseArgs(argv: string[], spec: Record<string, FlagSpec>): Parse
   return { positionals, flags };
 }
 
-// Read all of stdin (for `add`, `import`, `mermaid`, ... piped input)
-export async function readStdin(): Promise<string> {
+// Read all of stdin without decoding binary scene inputs.
+export async function readStdinBuffer(): Promise<Buffer> {
   if (process.stdin.isTTY) {
     throw new CliUsageError('No stdin provided (pass a file argument or pipe input to stdin)');
   }
@@ -88,5 +88,10 @@ export async function readStdin(): Promise<string> {
   for await (const chunk of process.stdin) {
     chunks.push(chunk as Buffer);
   }
-  return Buffer.concat(chunks).toString('utf-8');
+  return Buffer.concat(chunks);
+}
+
+// Text-only callers retain the same stdin behavior.
+export async function readStdin(): Promise<string> {
+  return (await readStdinBuffer()).toString('utf-8');
 }
