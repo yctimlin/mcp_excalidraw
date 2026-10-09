@@ -5,6 +5,7 @@ import {
   CaptureUpdateAction,
   exportToBlob,
   exportToSvg,
+  elementsOverlappingBBox,
   useHandleLibrary
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
@@ -61,6 +62,7 @@ interface ExportImageOptions {
   padding?: number;
   elementIds?: string[];
   frameId?: string;
+  embedScene?: boolean;
 }
 
 interface WebSocketMessage {
@@ -468,6 +470,8 @@ function App(): JSX.Element {
               // Same option surface as the headless renderer (renderer:'node'),
               // so `--renderer browser` accepts identical flags.
               const opts = data.options ?? {}
+              const embedScene = opts.embedScene === true
+              if (embedScene && data.format !== 'png') throw new Error('embedScene is only supported for PNG exports')
               const allElements = excalidrawAPI.getSceneElements()
               const wanted = opts.elementIds ? new Set(opts.elementIds) : null
               const elements = wanted
@@ -477,10 +481,20 @@ function App(): JSX.Element {
                 ? (allElements.find(el => el.id === opts.frameId && (el.type === 'frame' || el.type === 'magicframe')) as any) ?? null
                 : null
               if (opts.frameId && !exportingFrame) throw new Error(`Unknown frame id: ${opts.frameId}`)
+              let exportElements = embedScene && exportingFrame
+                ? elementsOverlappingBBox({ elements, bounds: exportingFrame, type: 'overlap' })
+                  .filter((el: ExcalidrawElement) => !el.frameId || el.frameId === exportingFrame.id)
+                : elements
+              if (embedScene) {
+                const exportedIds = new Set(exportElements.map((el: ExcalidrawElement) => el.id))
+                exportElements = exportElements.map((el: ExcalidrawElement) =>
+                  el.frameId && !exportedIds.has(el.frameId) ? { ...el, frameId: null } : el)
+              }
               const appState = excalidrawAPI.getAppState()
               const exportAppState = {
                 ...appState,
                 exportBackground: data.background !== false,
+                exportEmbedScene: embedScene,
                 ...(opts.dark !== undefined ? { exportWithDarkMode: opts.dark } : {}),
                 exportScale: opts.scale ?? 1
               }
@@ -506,7 +520,7 @@ function App(): JSX.Element {
                 })
               } else {
                 const blob = await exportToBlob({
-                  elements,
+                  elements: exportElements,
                   appState: exportAppState,
                   files,
                   mimeType: 'image/png',

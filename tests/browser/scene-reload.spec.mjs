@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { frameScene, mixedScene, pixelFile } from './fixtures.mjs';
+import { extractPngScene } from '../../dist/core/png-scene.js';
 
 const syncButton = page => page.getByRole('button', { name: 'Sync to Backend', exact: true });
 const warning = page => page.getByRole('alert').filter({ hasText: 'Sync is paused' });
@@ -422,4 +423,104 @@ test('failed clear keeps the visible and saved scene protected', async ({ page, 
   await expect(warning(page)).toBeVisible();
   await expect(page.getByText('repro-frame', { exact: true })).toBeVisible();
   expect(await serverScene(request)).toEqual(before);
+});
+
+function expectEditableMixedScene(elements) {
+  expect(elements).toHaveLength(mixedScene().length + 1); // shorthand expands to a bound label
+  expect(elements.map(e => e.id)).toEqual(expect.arrayContaining(mixedScene().map(e => e.id)));
+  expectFrame(elements);
+  expect(elements.find(e => e.id === 'shape')).toMatchObject({
+    type: 'rectangle',
+    boundElements: expect.arrayContaining([{ id: 'label', type: 'text' }, { id: 'arrow', type: 'arrow' }]),
+  });
+  expect(elements.find(e => e.id === 'label')).toMatchObject({
+    type: 'text', text: 'Bound label', containerId: 'shape',
+  });
+  expect(elements.find(e => e.id === 'arrow')).toMatchObject({
+    type: 'arrow', startBinding: { elementId: 'shape' }, endBinding: null,
+  });
+  expect(elements.find(e => e.id === 'freehand')).toMatchObject({
+    type: 'freedraw', points: [[0, 0], [20, 20], [40, 0]],
+  });
+  expect(elements.filter(e => e.type === 'image')).toEqual([
+    expect.objectContaining({ id: 'image', fileId: pixelFile.id }),
+  ]);
+  const shorthandLabel = elements.find(e => e.type === 'text' && e.containerId === 'shorthand');
+  expect(shorthandLabel).toMatchObject({ text: 'Agent label' });
+  expect(elements.find(e => e.id === 'shorthand')).toMatchObject({
+    type: 'rectangle', boundElements: expect.arrayContaining([{ id: shorthandLabel.id, type: 'text' }]),
+  });
+}
+
+test('browser PNG export embeds native editable metadata and respects frame scope', async ({ page, request }) => {
+  await seed(request, mixedScene());
+  expect((await request.post('/api/files', { data: { files: [pixelFile] } })).ok()).toBeTruthy();
+  await page.goto('/');
+  expectEditableMixedScene(await sync(page, request));
+
+  const fullResponse = await request.post('/api/export/image', {
+    data: { format: 'png', renderer: 'browser', embedScene: true },
+  });
+  expect(fullResponse.ok()).toBeTruthy();
+  const fullResult = await fullResponse.json();
+  expect(fullResult.renderer).toBe('browser');
+  const fullScene = JSON.parse(extractPngScene(Buffer.from(fullResult.data, 'base64')));
+  expect(fullScene.type).toBe('excalidraw');
+  expectEditableMixedScene(fullScene.elements);
+  expect(fullScene.files[pixelFile.id]).toMatchObject({ mimeType: pixelFile.mimeType, dataURL: pixelFile.dataURL });
+
+  const frameResponse = await request.post('/api/export/image', {
+    data: { format: 'png', renderer: 'browser', embedScene: true, frameId: 'frame-repro-1' },
+  });
+  expect(frameResponse.ok()).toBeTruthy();
+  const frameResult = await frameResponse.json();
+  expect(frameResult.renderer).toBe('browser');
+  const scopedScene = JSON.parse(extractPngScene(Buffer.from(frameResult.data, 'base64')));
+  expect(scopedScene.type).toBe('excalidraw');
+  expectFrame(scopedScene.elements);
+  expect(scopedScene.elements.map(e => e.id)).toEqual(frameScene().map(e => e.id));
+
+  const childResponse = await request.post('/api/export/image', {
+    data: { format: 'png', renderer: 'browser', embedScene: true, elementIds: ['text-repro-1'] },
+  });
+  expect(childResponse.ok()).toBeTruthy();
+  const childScene = JSON.parse(extractPngScene(Buffer.from((await childResponse.json()).data, 'base64')));
+  expect(childScene.elements.map(e => e.id)).toEqual(['text-repro-1']);
+  expect(childScene.elements[0]).toMatchObject({ text: 'Hello inside frame', frameId: null });
+  // Every non-frame fixture element lies outside this frame. Exporting it
+  // must not include those editable elements or flatten the frame to an image.
+  expectEditableMixedScene(await sync(page, request));
+});
+
+test('headless embedded PNG opens as an editable native scene through a file drop', async ({ page, request }) => {
+  await seed(request, mixedScene());
+  expect((await request.post('/api/files', { data: { files: [pixelFile] } })).ok()).toBeTruthy();
+  // No tab has connected to the canvas server when this PNG is rendered.
+  const response = await request.post('/api/export/image', {
+    data: { format: 'png', renderer: 'node', embedScene: true },
+  });
+  expect(response.ok()).toBeTruthy();
+  const result = await response.json();
+  expect(result.renderer).toBe('node');
+
+  // Remove the source before opening the editor: the imported editable
+  // elements must come from the file, not the server's initial scene.
+  await seed(request, []);
+  await page.goto('/');
+  expect(await sync(page, request)).toEqual([]);
+  await page.evaluate(data => {
+    const bytes = Uint8Array.from(atob(data), character => character.charCodeAt(0));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([bytes], 'editable-scene.png', { type: 'image/png' }));
+    const target = document.querySelector('canvas.interactive') || document.querySelector('.excalidraw canvas');
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      target.dispatchEvent(new DragEvent(type, {
+        bubbles: true, cancelable: true, clientX: 500, clientY: 400, dataTransfer: transfer,
+      }));
+    }
+  }, result.data);
+  // Embedded-PNG loading is asynchronous. The native frame-name DOM node
+  // proves it completed before a manual sync reads the imported elements.
+  await expect(page.getByText('repro-frame', { exact: true })).toBeVisible();
+  expectEditableMixedScene(await sync(page, request));
 });

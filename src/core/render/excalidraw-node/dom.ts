@@ -31,6 +31,12 @@ export interface ExcalidrawNodeModule {
     opts?: { refreshDimensions?: boolean; repairBindings?: boolean }
   ) => any[];
   getCommonBounds: (elements: readonly any[]) => [number, number, number, number];
+  serializeAsJSON: (
+    elements: readonly any[], appState: Record<string, any>, files: Record<string, any>, type: 'local'
+  ) => string;
+  elementsOverlappingBBox: (options: {
+    elements: readonly any[]; bounds: Record<string, any>; type: 'overlap';
+  }) => any[];
   FONT_FAMILY: Record<string, number>;
   // The canvas tab's own scene preparation (frontend/src/utils/scene.ts)
   prepareServerScene: (elements: readonly any[]) => any[];

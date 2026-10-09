@@ -33,6 +33,10 @@ const IMAGE_RENDER_PROPERTIES = {
   frameId: {
     type: 'string',
     description: 'Render a single frame, clipped to its bounds'
+  },
+  embedScene: {
+    type: 'boolean',
+    description: 'Embed the editable scene in PNG metadata (default: false; PNG only)'
   }
 };
 
@@ -349,13 +353,13 @@ export const tools: Tool[] = [
   },
   {
     name: 'import_scene',
-    description: 'Import elements from a .excalidraw JSON file, an Obsidian .excalidraw.md file, or raw JSON data',
+    description: 'Import elements and image files from .excalidraw JSON, Obsidian .excalidraw.md, a PNG with an embedded Excalidraw scene, or raw JSON data',
     inputSchema: {
       type: 'object',
       properties: {
         filePath: {
           type: 'string',
-          description: 'Path to a .excalidraw JSON or Obsidian .excalidraw.md file'
+          description: 'Path to a .excalidraw JSON, Obsidian .excalidraw.md, or embedded-scene PNG file (such as .excalidraw.png)'
         },
         data: {
           type: 'string',
@@ -372,7 +376,7 @@ export const tools: Tool[] = [
   },
   {
     name: 'export_to_image',
-    description: 'Export the current canvas to a PNG or SVG image. Renders headless in the canvas server (no browser tab needed); SVGs embed the fonts they use.',
+    description: 'Export the current canvas to a PNG or SVG image. Renders headless in the canvas server (no browser tab needed); SVGs embed fonts. Set embedScene: true for a PNG that is also editable in Excalidraw.',
     inputSchema: {
       type: 'object',
       properties: {

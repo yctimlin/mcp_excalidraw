@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { parseArgs, CliUsageError, readStdin } from '../args.js';
+import { parseArgs, CliUsageError, readStdinBuffer } from '../args.js';
 import { printJson, note, requireBrowserClient } from '../util.js';
 import { ensureCanvasRunning } from '../../core/spawn.js';
 import {
@@ -11,15 +11,16 @@ import {
   sendMermaid
 } from '../../core/canvas-client.js';
 import { buildSceneFile, importScene } from '../../core/scene-io.js';
+import { decodeSceneInput } from '../../core/scene-input.js';
 import { wrapSceneAsObsidianMd } from '../../core/obsidian-md.js';
 import { describeScene } from '../../core/describe.js';
 import { exportToExcalidrawUrl } from '../../core/share-url.js';
 import { EXPRESS_SERVER_URL } from '../../core/config.js';
 import { IMAGE_FLAG_SPEC, imageFormatFromFlags, imageOptionsFromFlags } from '../image-options.js';
 
-async function readTextFileOrStdin(inputPath: string | undefined): Promise<string> {
-  if (!inputPath || inputPath === '-') return await readStdin();
-  return fs.readFileSync(path.resolve(inputPath), 'utf-8');
+async function readFileOrStdin(inputPath: string | undefined): Promise<Buffer> {
+  if (!inputPath || inputPath === '-') return await readStdinBuffer();
+  return fs.readFileSync(path.resolve(inputPath));
 }
 
 export async function describe(argv: string[]): Promise<void> {
@@ -108,9 +109,9 @@ export async function importCmd(argv: string[]): Promise<void> {
   // Read the file here rather than via importScene's filePath: that path is
   // sandboxed to EXCALIDRAW_EXPORT_DIR for the MCP server, but a user-invoked
   // CLI should import from wherever it is pointed.
-  const data = await readTextFileOrStdin(positionals[0]);
+  const data = decodeSceneInput(await readFileOrStdin(positionals[0]));
   if (!data.trim()) {
-    throw new CliUsageError('No scene provided (pass a .excalidraw / .excalidraw.md file or pipe JSON to stdin)');
+    throw new CliUsageError('No scene provided (pass a .excalidraw / .excalidraw.md / embedded-scene PNG file or pipe a scene to stdin)');
   }
   const result = await importScene({ data, mode });
 
@@ -120,7 +121,7 @@ export async function importCmd(argv: string[]): Promise<void> {
 export async function mermaid(argv: string[]): Promise<void> {
   const { positionals } = parseArgs(argv, {});
 
-  const diagram = await readTextFileOrStdin(positionals[0]);
+  const diagram = (await readFileOrStdin(positionals[0])).toString('utf-8');
   if (!diagram.trim()) {
     throw new CliUsageError('No Mermaid diagram provided (pass a file or pipe to stdin)');
   }

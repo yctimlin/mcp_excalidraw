@@ -11,6 +11,7 @@ import { mixedScene, pixelFile } from '../tests/browser/fixtures.mjs';
 import { renderScene, RenderError } from '../dist/core/render/index.js';
 import { expandElementsForExport } from '../dist/core/expand-elements.js';
 import { prepareScene } from '../dist/core/render/excalidraw-node/index.js';
+import { embedPngScene, extractPngScene } from '../dist/core/png-scene.js';
 import { generateKeyBetween } from 'fractional-indexing';
 
 const failures = [];
@@ -77,6 +78,76 @@ await check('png: valid file with the SVG dimensions', async () => {
 await check('png: deterministic', async () => {
   const again = await renderScene(scene, { format: 'png' });
   assert.equal(again.data, base.data);
+});
+
+await check('png: embedded scene preserves editable labels, bindings and image files', async () => {
+  const input = { ...scene, files: { ...scene.files, unused: { ...pixelFile, id: 'unused' } } };
+  const result = await renderScene(input, { format: 'png', embedScene: true });
+  const bytes = Buffer.from(result.data, 'base64');
+  const saved = JSON.parse(extractPngScene(bytes));
+  assert.equal(saved.type, 'excalidraw');
+  assert.equal(saved.elements.find(el => el.id === 'label').containerId, 'shape');
+  assert.equal(saved.elements.find(el => el.id === 'arrow').startBinding.elementId, 'shape');
+  assert.equal(saved.elements.find(el => el.id === 'shorthand-label').text, 'Agent label');
+  assert.deepEqual(saved.files, scene.files, 'only referenced image files included');
+  const restored = await renderScene(saved, { format: 'png' });
+  assert.equal(restored.data, base.data, 'saved scene recreates the same image');
+  const again = await renderScene(input, { format: 'png', embedScene: true });
+  assert.equal(again.data, result.data, 'unchanged scene produces identical committed bytes');
+  assert.throws(() => extractPngScene(Buffer.from(base.data, 'base64')), /no embedded Excalidraw scene/i);
+});
+
+await check('png: selection metadata excludes unrelated elements and files', async () => {
+  const result = await renderScene(scene, { format: 'png', embedScene: true, elementIds: ['shape'] });
+  const saved = JSON.parse(extractPngScene(Buffer.from(result.data, 'base64')));
+  assert.deepEqual(saved.elements.map(el => el.id).sort(), ['label', 'shape']);
+  assert.deepEqual(saved.files, {});
+});
+
+await check('png: selected frame children reopen without their omitted frame', async () => {
+  const result = await renderScene(scene, { format: 'png', embedScene: true, elementIds: ['text-repro-1'] });
+  const saved = JSON.parse(extractPngScene(Buffer.from(result.data, 'base64')));
+  assert.deepEqual(saved.elements.map(el => el.id), ['text-repro-1']);
+  assert.equal(saved.elements[0].frameId, null);
+  const reopened = await renderScene(saved, { format: 'svg' });
+  assert.ok(reopened.data.includes('Hello inside frame'));
+});
+
+await check('png: elbow arrows retain endpoint editing state and fixed segments', async () => {
+  const elbow = {
+    id: 'native-elbow', type: 'arrow', x: 100, y: 100, width: 100, height: 60,
+    elbowed: true, points: [[0, 0], [30, 0], [30, 30], [70, 30], [70, 60], [100, 60]],
+    fixedSegments: [{ start: [30, 30], end: [70, 30], index: 3 }],
+    startIsSpecial: true, endIsSpecial: true, startBinding: null, endBinding: null, endArrowhead: 'arrow'
+  };
+  const result = await renderScene({ elements: [elbow], files: {} }, { format: 'png', embedScene: true });
+  const saved = JSON.parse(extractPngScene(Buffer.from(result.data, 'base64')));
+  for (const element of [saved.elements[0], (await prepareScene(saved.elements))[0]]) {
+    assert.equal(element.startIsSpecial, true);
+    assert.equal(element.endIsSpecial, true);
+    assert.deepEqual(element.fixedSegments, elbow.fixedSegments);
+    assert.deepEqual(element.points, elbow.points);
+    assert.deepEqual([element.x, element.y, element.width, element.height], [100, 100, 100, 60]);
+  }
+});
+
+await check('png: frame metadata includes the frame and visible contents only', async () => {
+  const result = await renderScene(scene, { format: 'png', embedScene: true, frameId: 'frame-repro-1' });
+  const saved = JSON.parse(extractPngScene(Buffer.from(result.data, 'base64')));
+  assert.deepEqual(saved.elements.map(el => el.id).sort(), ['frame-repro-1', 'text-repro-1', 'text-repro-2']);
+  assert.deepEqual(saved.files, {});
+});
+
+await check('png: metadata replacement preserves Unicode and rejects damaged PNGs', async () => {
+  const original = Buffer.from(base.data, 'base64');
+  const oldScene = JSON.stringify({ type: 'excalidraw', elements: [], appState: {} });
+  const newScene = JSON.stringify({ type: 'excalidraw', elements: [{ type: 'text', text: '流程 café → done' }] });
+  const bytes = embedPngScene(embedPngScene(original, oldScene), newScene);
+  assert.equal(extractPngScene(bytes), newScene);
+  assert.throws(() => extractPngScene(bytes.subarray(0, bytes.length - 5)), /PNG/i);
+  const damaged = Buffer.from(bytes);
+  damaged[29] ^= 1; // Corrupt the IHDR checksum.
+  assert.throws(() => extractPngScene(damaged), /PNG|checksum|CRC/i);
 });
 
 await check('png: scale 2 doubles the dimensions', async () => {

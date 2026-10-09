@@ -273,7 +273,7 @@ const preserveCallerGeometry = (
     if ((el.type === 'arrow' || el.type === 'line') && isPointList(orig.points)) {
       const xs = orig.points.map((p: [number, number]) => p[0])
       const ys = orig.points.map((p: [number, number]) => p[1])
-      return {
+      const preserved = {
         ...el,
         x: orig.x,
         y: orig.y,
@@ -281,6 +281,13 @@ const preserveCallerGeometry = (
         width: Math.max(...xs) - Math.min(...xs),
         height: Math.max(...ys) - Math.min(...ys),
       }
+      // Fixed-segment indexes and hidden endpoint segments belong to these points.
+      if (el.type === 'arrow' && orig.elbowed === true) {
+        for (const key of ['fixedSegments', 'startIsSpecial', 'endIsSpecial'] as const) {
+          if (orig[key] !== undefined) preserved[key] = orig[key]
+        }
+      }
+      return preserved
     }
     return el
   })

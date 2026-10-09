@@ -937,6 +937,7 @@ const exportImageSchema = z.object({
   padding: z.number().min(0).optional(),
   elementIds: z.array(z.string()).min(1).optional(),
   frameId: z.string().optional(),
+  embedScene: z.boolean().default(false),
   embedFonts: z.boolean().optional()
 });
 type ExportImageBody = z.infer<typeof exportImageSchema>;
@@ -1002,6 +1003,9 @@ app.post('/api/export/image', async (req: Request, res: Response) => {
     });
   }
   const options = parsed.data;
+  if (options.embedScene && options.format !== 'png') {
+    return res.status(400).json({ success: false, error: 'embedScene is only supported for PNG exports' });
+  }
   const renderer = options.renderer ?? 'auto';
 
   const respondBrowser = async () => {

@@ -13,11 +13,12 @@ export const IMAGE_FLAG_SPEC = {
   padding: { takesValue: true },
   ids: { takesValue: true },
   frame: { takesValue: true },
+  'embed-scene': { takesValue: false },
   'no-embed-fonts': { takesValue: false }
 } as const;
 
 export const IMAGE_FLAG_USAGE =
-  '[--format png|svg] [--no-background] [--dark] [--scale N] [--padding N] [--ids a,b,c] [--frame <id>] [--no-embed-fonts]';
+  '[--format png|svg] [--no-background] [--dark] [--scale N] [--padding N] [--ids a,b,c] [--frame <id>] [--embed-scene] [--no-embed-fonts]';
 
 type Flags = Record<string, string | boolean | string[] | undefined>;
 
@@ -58,11 +59,14 @@ export function imageOptionsFromFlags(flags: Flags, format: 'png' | 'svg'): Expo
   const frameRaw = scalar(flags.frame);
   const frame = typeof frameRaw === 'string' ? frameRaw : undefined;
   if (ids && frame) throw new CliUsageError('--ids and --frame are mutually exclusive');
+  const embedScene = scalar(flags['embed-scene']) === true;
+  if (embedScene && format !== 'png') throw new CliUsageError('embedScene is only supported for PNG exports');
 
   return {
     format,
     background: !flags['no-background'],
     renderer: imageRendererFromFlags(flags),
+    embedScene,
     ...(flags.dark ? { dark: true } : {}),
     ...(numberFlag(flags, 'scale') !== undefined ? { scale: numberFlag(flags, 'scale') } : {}),
     ...(numberFlag(flags, 'padding') !== undefined ? { padding: numberFlag(flags, 'padding') } : {}),
