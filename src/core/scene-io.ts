@@ -4,6 +4,7 @@ import {
   getElements,
   getFiles,
   postFiles,
+  isDurableCanvasStateEnabled,
   batchCreateElementsOnCanvas,
   replaceElementsOnCanvas
 } from './canvas-client.js';
@@ -88,6 +89,22 @@ export async function importScene(options: {
     version: 1
   }));
 
+  let importedFileCount = 0;
+  const importFiles = sceneData.files;
+  const fileList = importFiles && typeof importFiles === 'object'
+    ? Object.values(importFiles)
+    : [];
+  const durableStateEnabled = fileList.length > 0
+    ? await isDurableCanvasStateEnabled()
+    : false;
+
+  if (durableStateEnabled) {
+    // A durable checkpoint cannot reference an image until its immutable blob
+    // is published. File failure therefore aborts before touching elements.
+    await postFiles(fileList);
+    importedFileCount = fileList.length;
+  }
+
   const created = options.mode === 'replace'
     ? await replaceElementsOnCanvas(elementsToCreate)
     : await batchCreateElementsOnCanvas(elementsToCreate);
@@ -95,17 +112,13 @@ export async function importScene(options: {
     throw new Error('Import failed: canvas rejected the batch create');
   }
 
-  // Import files if present (for image elements)
-  let importedFileCount = 0;
-  const importFiles = sceneData.files;
-  if (importFiles && typeof importFiles === 'object') {
-    const fileList = Object.values(importFiles);
-    if (fileList.length > 0) {
-      try {
-        await postFiles(fileList);
-        importedFileCount = fileList.length;
-      } catch { /* best effort */ }
-    }
+  if (!durableStateEnabled && fileList.length > 0) {
+    // Keep the original in-memory contract: elements are accepted first and
+    // file import remains best effort when persistence is disabled.
+    try {
+      await postFiles(fileList);
+      importedFileCount = fileList.length;
+    } catch { /* best effort */ }
   }
 
   return { count: elementsToCreate.length, fileCount: importedFileCount, mode: options.mode };

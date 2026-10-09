@@ -65,7 +65,7 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 | | Official Excalidraw MCP | This Project |
 |---|---|---|
 | **Approach** | Prompt in, diagram out (one-shot widget) | Programmatic element-level control (CLI + 26 MCP tools) |
-| **State** | Checkpoints inside the chat widget | Persistent live canvas with real-time sync |
+| **State** | Checkpoints inside the chat widget | Live canvas with real-time sync and optional restart-safe checkpoints |
 | **Element CRUD** | Declarative re-send with delete markers | Full create / read / update / delete per element |
 | **AI sees the canvas** | No | `describe` (structured text) + `screenshot` (image) |
 | **Iterative refinement** | Regenerate from checkpoint | Draw → look → adjust → look again, element by element |
@@ -266,9 +266,27 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `EXCALIDRAW_NO_AUTOSTART` | Set `1` to disable canvas auto-start | (unset) |
 | `EXCALIDRAW_EXPORT_DIR` | Base directory MCP file exports may write to | current working dir |
 | `EXCALIDRAW_RENDER_MAX_DIM` | Largest side of a headless PNG, in pixels | `8192` |
+| `EXCALIDRAW_DATA_DIR` | Optional local durable-state directory | (unset; in-memory) |
 | `PORT` / `HOST` | Canvas server bind address | `3000` / `127.0.0.1` |
 | `LOG_LEVEL` | Log verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 | `LOG_FILE_PATH` | Log file location | `~/Library/Logs/excalidraw-mcp.log` (macOS), `$XDG_STATE_HOME/excalidraw-mcp/excalidraw.log` (Linux), `%LOCALAPPDATA%\Excalidraw-MCP\excalidraw.log` (Windows) |
+
+#### Durable canvas state
+
+Set `EXCALIDRAW_DATA_DIR` to recover elements, server-known image files, and named snapshots after a canvas-server restart. From a source checkout after `npm run build`:
+
+```bash
+EXCALIDRAW_DATA_DIR=/absolute/private/canvas-data \
+  node dist/bin.js start
+```
+
+When the variable is unset, behavior and API semantics remain in-memory and no durable-state directory is created. When enabled, the directory contains a versioned `canvas-state-v1.json` checkpoint, a `blobs/` directory, and a runtime `canvas-state.lock/` ownership directory. Image payloads are stored once as immutable file-id blobs at a path-safe SHA-256 of each file ID; checkpoints record a separate content SHA-256 and contain references only. A new blob is flushed and atomically published before any checkpoint is allowed to reference it. Each accepted mutation flushes a temporary checkpoint and atomically renames it before the server broadcasts or acknowledges the mutation. Serialization recursively sorts object keys, preserves scene stacking order, and stores file and named-snapshot metadata in stable ID/name order. Invalid JSON, unsupported schemas, non-regular checkpoint paths, missing blobs, and blob-integrity failures stop startup rather than replacing recoverable state with an empty scene.
+
+If the checkpoint has already been renamed into place but the final directory flush fails, the request fails without a success broadcast and further mutations are refused until restart. The published scene stays in memory so it agrees with the file on disk; the failed request may appear in the recovered scene. On Windows, Node.js does not provide directory fsync, so the store flushes file contents and uses atomic publication without claiming the same directory durability barrier.
+
+The data-directory lock grants one process exclusive ownership of that durable state, including when servers use different ports. It stores one token-specific owner file so stale-lock reclamation cannot delete a newer owner's evidence. The existing pidfile has a separate job: it identifies a listening process for `start` / `stop` lifecycle commands. Local filesystems and one writer are supported; network filesystems, shared multi-writer access, automatic blob garbage collection, databases, and cloud persistence are out of scope.
+
+> **Privacy:** durable state contains the diagram and embedded image payloads. Keep the directory outside repositories and shared folders, restrict its permissions, and mount it as a private writable volume when using containers.
 
 ---
 
@@ -609,7 +627,7 @@ No. Screenshots and PNG/SVG exports render headless inside the canvas server (se
 
 ### Are my diagrams persistent?
 
-The canvas is in-memory by design (restart = blank canvas). Persist by exporting `.excalidraw` files into your repo (`export --out docs/architecture.excalidraw`) or with named `snapshot`s while working. Re-`import` a file to keep refining it later.
+By default the canvas is in-memory (restart = blank canvas). Set `EXCALIDRAW_DATA_DIR` for automatic local restart recovery of elements, server-known image files, and named snapshots. Portable, reviewable artifacts should still be exported as `.excalidraw` files and committed to your repo when appropriate.
 
 ### Are excalidraw.com share links private?
 
@@ -634,7 +652,7 @@ Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-se
 
 ## Known Issues / TODO
 
-- [ ] **Persistent storage**: Elements are stored in-memory — restarting the server clears everything. Use `export` / snapshots as a workaround.
+- [x] **Optional persistent storage**: set `EXCALIDRAW_DATA_DIR` for atomic local restart recovery; the default remains in-memory.
 - [ ] **Mermaid conversion requires a browser**: `mermaid` / `create_from_mermaid` lay out the diagram in the frontend. Image export and screenshots are headless since v2.1.
 - [ ] **Canvas page fonts come from a CDN**: serving them from the canvas server would make the page work fully offline.
 

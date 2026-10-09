@@ -46,6 +46,9 @@ jobs:
       - name: Run canvas state integrity checks
         run: node scripts/check-state-integrity.mjs
 
+      - name: Run durable canvas state checks
+        run: node scripts/check-durable-state.mjs
+
       - name: Install Chromium for canvas regression tests
         run: npx playwright install --with-deps chromium
 
