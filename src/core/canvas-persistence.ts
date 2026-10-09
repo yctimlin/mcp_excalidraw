@@ -20,7 +20,6 @@ import {
   elements,
   files,
   snapshots,
-  EXCALIDRAW_ELEMENT_TYPES,
 } from '../types.js';
 import type {
   ExcalidrawFile,
@@ -34,7 +33,6 @@ const LOCK_FILE_NAME = 'canvas-state.lock';
 const BLOB_DIRECTORY_NAME = 'blobs';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
-const VALID_ELEMENT_TYPES = new Set<string>(Object.values(EXCALIDRAW_ELEMENT_TYPES));
 
 interface DurableFileRecordV1 {
   id: string;
@@ -64,7 +62,9 @@ export class CanvasPersistenceError extends Error {
   override name = 'CanvasPersistenceError';
 
   constructor(cause: unknown) {
-    super('Failed to checkpoint canvas state', { cause });
+    // Surface the cause: this message is the route's error response.
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`Failed to checkpoint canvas state: ${detail}`, { cause });
   }
 }
 
@@ -670,7 +670,10 @@ function validateElementArray(value: unknown, label: string): ServerElement[] {
   for (const element of value) {
     if (!isRecord(element) ||
         typeof element.id !== 'string' || element.id.length === 0 ||
-        typeof element.type !== 'string' || !VALID_ELEMENT_TYPES.has(element.type) ||
+        // Any non-empty type: the sync endpoint accepts native Excalidraw
+        // types the server enum omits (embeddable, iframe, magicframe), and a
+        // checkpoint must be able to hold whatever the canvas accepted.
+        typeof element.type !== 'string' || element.type.length === 0 ||
         typeof element.x !== 'number' || !Number.isFinite(element.x) ||
         typeof element.y !== 'number' || !Number.isFinite(element.y)) {
       throw new Error(`${label} contains an invalid element`);
