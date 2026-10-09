@@ -404,7 +404,7 @@ try {
     created: 2,
   }]);
   assert.equal(rejectedFile.response.status, 500);
-  assert.equal(rejectedFile.body.error, 'Failed to checkpoint canvas state');
+  assert.match(rejectedFile.body.error, /^Failed to checkpoint canvas state: /);
   const rolledBackFiles = await request(writeFailure, '/api/files');
   assert.deepEqual(rolledBackFiles.body.files, {});
   assert.equal(readdirSync(join(writeFailureDirectory, 'blobs')).length, 1, 'blob was not durable before checkpoint publication');
@@ -534,7 +534,7 @@ try {
   mkdirSync(invalidElementTypeDirectory);
   writeFileSync(join(invalidElementTypeDirectory, 'canvas-state-v1.json'), JSON.stringify({
     schemaVersion: 1,
-    elements: [{ id: 'bad-type', type: 'not-a-real-type', x: 0, y: 0 }],
+    elements: [{ id: 'bad-type', type: 42, x: 0, y: 0 }],
     files: [],
     snapshots: [],
   }));
@@ -585,6 +585,28 @@ try {
     /invalid lock directory/,
     { expectLockRemoved: false },
   );
+
+  // Native Excalidraw types outside the server's enum (a tab can sync them)
+  // must checkpoint and restore like any other element.
+  const nativeTypesDirectory = join(fixtureRoot, 'native element types');
+  const nativeTypes = ['embeddable', 'iframe', 'magicframe'];
+  let nativeTypesServer = spawnCanvas(nativeTypesDirectory, firstPort + 19);
+  try {
+    await waitForHealth(nativeTypesServer);
+    const nativeSync = await postJson(nativeTypesServer, '/api/elements/sync', {
+      elements: nativeTypes.map((type, index) => ({
+        id: `native-${type}`, type, x: index * 400, y: 0, width: 300, height: 200,
+      })),
+    });
+    assert.equal(nativeSync.response.status, 200, `native element sync failed: ${JSON.stringify(nativeSync.body)}`);
+    await stopCanvas(nativeTypesServer);
+    nativeTypesServer = spawnCanvas(nativeTypesDirectory, firstPort + 19);
+    await waitForHealth(nativeTypesServer);
+    const restoredNative = await request(nativeTypesServer, '/api/elements');
+    assert.deepEqual(restoredNative.body.elements.map(element => element.type), nativeTypes);
+  } finally {
+    await stopCanvas(nativeTypesServer);
+  }
 
   // Reuse the configured client port so importScene exercises the same
   // compiled canvas-client module against a memory-only server.
