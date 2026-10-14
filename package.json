@@ -22,7 +22,7 @@
     "prepublishOnly": "npm run build",
     "sync:skills": "node scripts/sync-skills.mjs",
     "test": "npm run test:mcp && npm run test:bind && npm run test:render && npm run test:state && npm run test:durable",
-    "test:bind": "npm run build:server && node scripts/check-local-bind.mjs",
+    "test:bind": "npm run build:server && node scripts/check-local-bind.mjs && node --test scripts/check-local-bind.test.mjs",
     "test:mcp": "npm run build:server && node scripts/check-mcp-stdio.mjs",
     "test:render": "npm run build:server && node scripts/check-render.mjs",
     "test:state": "npm run build:server && node scripts/check-state-integrity.mjs",

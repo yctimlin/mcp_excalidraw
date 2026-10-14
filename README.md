@@ -549,7 +549,7 @@ curl http://127.0.0.1:3000/health
 ```bash
 npm test
 npm run test:mcp      # MCP stdio wire protocol (see below)
-npm run test:bind     # default loopback bind, duplicate-start refusal
+npm run test:bind     # loopback bind, duplicate-start refusal, memory-mode isolation
 npm run test:render   # headless renderer, export order keys, scene-prep stability
 npm run test:state    # atomic import and snapshot restore, sync validation
 ```
