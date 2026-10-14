@@ -49,6 +49,9 @@ jobs:
       - name: Run durable canvas state checks
         run: node scripts/check-durable-state.mjs
 
+      - name: Run local bind isolation checks
+        run: npm run test:bind
+
       - name: Install Chromium for canvas regression tests
         run: npx playwright install --with-deps chromium
 

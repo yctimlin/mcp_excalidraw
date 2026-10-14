@@ -20,6 +20,11 @@ function spawnCanvas(host) {
     ...process.env,
     PORT: String(port),
     LOG_LEVEL: 'error',
+    // Keep the harness on the default in-memory server. dotenv.config() in
+    // src/server.ts does not override a variable already present in the child
+    // environment, so an empty value both drops a caller export and blocks
+    // re-injection from the repo-local .env.
+    EXCALIDRAW_DATA_DIR: '',
   };
   if (host) {
     env.HOST = host;
