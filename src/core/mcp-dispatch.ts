@@ -679,7 +679,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `Diagram exported to excalidraw.com!\n\nShareable URL: ${shareUrl}\n\nAnyone with this link can view and edit the diagram.`
+            text: `Diagram exported to ${new URL(shareUrl).host}!\n\nShareable URL: ${shareUrl}\n\nAnyone with this link can view and edit the diagram.`
           }]
         };
       }

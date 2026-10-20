@@ -12,3 +12,11 @@ export const EXCALIDRAW_NO_AUTOSTART = process.env.EXCALIDRAW_NO_AUTOSTART === '
 
 // Safe file path validation base directory (see sanitizeFilePath)
 export const ALLOWED_EXPORT_DIR = process.env.EXCALIDRAW_EXPORT_DIR || process.cwd();
+
+// Share target for `share` / `export_to_excalidraw_url`. Defaults to excalidraw.com;
+// point both at a self-hosted Excalidraw whose storage backend speaks the
+// excalidraw-json API (e.g. alswl/excalidraw-storage-backend) to keep links in-house.
+export const EXCALIDRAW_SHARE_UPLOAD_URL =
+  process.env.EXCALIDRAW_SHARE_UPLOAD_URL?.trim() || 'https://json.excalidraw.com/api/v2/post/';
+export const EXCALIDRAW_SHARE_BASE_URL =
+  (process.env.EXCALIDRAW_SHARE_BASE_URL?.trim() || 'https://excalidraw.com').replace(/\/+$/, '');

@@ -2,6 +2,7 @@ import { deflateSync } from 'zlib';
 import { webcrypto } from 'crypto';
 import { ServerElement } from '../types.js';
 import { expandElementsForExport } from './expand-elements.js';
+import { EXCALIDRAW_SHARE_UPLOAD_URL, EXCALIDRAW_SHARE_BASE_URL } from './config.js';
 
 // Excalidraw's concatBuffers: [4-byte version=1][4-byte len][chunk]...
 function concatBuffers(...bufs: Uint8Array[]): Uint8Array {
@@ -20,7 +21,8 @@ function concatBuffers(...bufs: Uint8Array[]): Uint8Array {
   return out;
 }
 
-// Export elements to a shareable excalidraw.com URL. The diagram is
+// Export elements to a shareable Excalidraw URL (excalidraw.com unless
+// EXCALIDRAW_SHARE_UPLOAD_URL / EXCALIDRAW_SHARE_BASE_URL point elsewhere). The diagram is
 // encrypted client-side (AES-GCM 128) and uploaded; the decryption key only
 // lives in the URL fragment.
 export async function exportToExcalidrawUrl(urlExportElements: ServerElement[]): Promise<string> {
@@ -77,14 +79,14 @@ export async function exportToExcalidrawUrl(urlExportElements: ServerElement[]):
   const ciphertext = new Uint8Array(encrypted);
   const payload = concatBuffers(encodingMeta, iv, ciphertext);
 
-  // POST to excalidraw.com JSON store
-  const uploadResponse = await fetch('https://json.excalidraw.com/api/v2/post/', {
+  // POST to the excalidraw-json store
+  const uploadResponse = await fetch(EXCALIDRAW_SHARE_UPLOAD_URL, {
     method: 'POST',
     body: Buffer.from(payload)
   });
 
   if (!uploadResponse.ok) {
-    throw new Error(`Upload to excalidraw.com failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+    throw new Error(`Upload to ${new URL(EXCALIDRAW_SHARE_UPLOAD_URL).host} failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
   }
 
   const uploadResult = await uploadResponse.json() as { id: string };
@@ -93,5 +95,5 @@ export async function exportToExcalidrawUrl(urlExportElements: ServerElement[]):
   const jwk = await webcrypto.subtle.exportKey('jwk', cryptoKey);
 
   // Build shareable URL
-  return `https://excalidraw.com/#json=${uploadResult.id},${jwk.k}`;
+  return `${EXCALIDRAW_SHARE_BASE_URL}/#json=${uploadResult.id},${jwk.k}`;
 }

@@ -267,6 +267,8 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `EXCALIDRAW_EXPORT_DIR` | Base directory MCP file exports may write to | current working dir |
 | `EXCALIDRAW_RENDER_MAX_DIM` | Largest side of a headless PNG, in pixels | `8192` |
 | `EXCALIDRAW_DATA_DIR` | Optional local durable-state directory | (unset; in-memory) |
+| `EXCALIDRAW_SHARE_UPLOAD_URL` | Where `share` uploads the encrypted scene (an excalidraw-json `POST` endpoint) | `https://json.excalidraw.com/api/v2/post/` |
+| `EXCALIDRAW_SHARE_BASE_URL` | Excalidraw app that share links open in | `https://excalidraw.com` |
 | `PORT` / `HOST` | Canvas server bind address | `3000` / `127.0.0.1` |
 | `LOG_LEVEL` | Log verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 | `LOG_FILE_PATH` | Log file location | `~/Library/Logs/excalidraw-mcp.log` (macOS), `$XDG_STATE_HOME/excalidraw-mcp/excalidraw.log` (Linux), `%LOCALAPPDATA%\Excalidraw-MCP\excalidraw.log` (Windows) |
@@ -635,9 +637,21 @@ By default the canvas is in-memory (restart = blank canvas). Set `EXCALIDRAW_DAT
 
 `share` encrypts the scene locally with AES-GCM before uploading; the decryption key is only in the URL fragment, which excalidraw.com's server never sees. Anyone you give the full link to can view the diagram.
 
+### Can share links point at a self-hosted Excalidraw?
+
+Yes. Set `EXCALIDRAW_SHARE_UPLOAD_URL` to your storage backend's scene endpoint and `EXCALIDRAW_SHARE_BASE_URL` to your Excalidraw app. Any backend that speaks the excalidraw-json API works, for example [alswl/excalidraw-storage-backend](https://github.com/alswl/excalidraw-storage-backend), whose endpoint is `<storage>/api/v2/scenes/`:
+
+```bash
+EXCALIDRAW_SHARE_UPLOAD_URL=https://draw.example.com/api/v2/scenes/ \
+EXCALIDRAW_SHARE_BASE_URL=https://draw.example.com \
+  npx -y mcp-excalidraw-server share
+```
+
+Your app must load `#json=` links from that same backend (for the alswl fork: `VITE_APP_BACKEND_V2_GET_URL`).
+
 ### Does it need an API key or cloud service?
 
-No API key is required. Core drawing runs locally under MIT license. Outbound traffic is limited to the canvas page loading Excalidraw's fonts from the esm.sh CDN and the optional `share` upload to excalidraw.com. The CLI, MCP server and headless renderer make no other network calls.
+No API key is required. Core drawing runs locally under MIT license. Outbound traffic is limited to the canvas page loading Excalidraw's fonts from the esm.sh CDN and the optional `share` upload to excalidraw.com (or your own instance, see above). The CLI, MCP server and headless renderer make no other network calls.
 
 ### Can I use it without configuring MCP?
 
