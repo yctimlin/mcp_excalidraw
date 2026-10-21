@@ -4,11 +4,21 @@ import logger from '../utils/logger.js';
 import { packageVersion } from './version.js';
 import { tools } from './mcp-tools.js';
 import { callExcalidrawTool } from './mcp-dispatch.js';
+import { EXPRESS_SERVER_URL } from './config.js';
 
 const SERVER_NAME = 'mcp-excalidraw-server';
 const SERVER_DESCRIPTION =
   'Programmatic canvas toolkit for Excalidraw with file I/O, image export, and real-time sync';
 const SERVER_VERSION = packageVersion();
+
+// Surfaced to the agent at connect time so it always tells the user both links:
+// the local canvas for cooperative editing, and excalidraw.com for sharing.
+const SERVER_INSTRUCTIONS =
+  `The live canvas is served at ${EXPRESS_SERVER_URL}. Whenever you draw on or change the canvas, ` +
+  `tell the user this URL so they can open it to watch and co-edit with you in real time. ` +
+  `By default it runs on the user's machine, so other people usually cannot open it. When the ` +
+  `user wants to share the diagram with others, call export_to_excalidraw_url and give them the returned excalidraw.com link (an ` +
+  `encrypted upload anyone with the link can view); offer it rather than uploading unprompted.`;
 
 // `tools/list` and `server/discover` are cacheable results on 2026-07-28
 // (SEP-2549): both are derived from the static tool table in `mcp-tools.ts`, so
@@ -36,6 +46,7 @@ export function createExcalidrawMcpServer(ctx?: McpRequestContext): McpServer {
     },
     {
       capabilities: { tools: {} },
+      instructions: SERVER_INSTRUCTIONS,
       cacheHints: {
         'tools/list': STATIC_SURFACE_CACHE_HINT,
         'server/discover': STATIC_SURFACE_CACHE_HINT
