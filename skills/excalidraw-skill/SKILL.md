@@ -17,7 +17,7 @@ Three interfaces drive the same live canvas. Pick the first one that applies:
    No setup needed — any canvas-touching command **auto-starts the canvas server** on `http://127.0.0.1:3000` (first `npx` run downloads the package). If the CLI is installed globally (`npm i -g mcp-excalidraw-server`), the shorter alias `excalidraw-canvas <command>` works too.
 3. **REST API** (last resort, e.g. from application code): HTTP endpoints on `http://127.0.0.1:3000` — see `references/cheatsheet.md` for payloads. The server must already be running.
 
-The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Screenshots and image exports render headless inside the canvas server, so you never need a browser tab to check your own work. Only mermaid conversion and viewport control need an open tab (CLI exits with code 4 when it's missing). Still tell the user the URL — opening it lets them watch you draw.
+The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Screenshots and image exports render headless inside the canvas server, so you never need a browser tab to check your own work. Only mermaid conversion and viewport control need an open tab (CLI exits with code 4 when it's missing). Still tell the user the URL — opening it lets them watch you draw and co-edit live. That URL usually only works on their machine; when they want to share the diagram with someone else, offer `share` for an excalidraw.com link.
 
 ### CLI Quick Reference
 

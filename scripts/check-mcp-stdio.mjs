@@ -240,6 +240,14 @@ async function checkLegacyInitialize() {
   assertEqual(initResult.serverInfo?.name, 'mcp-excalidraw-server', 'initialize: serverInfo.name');
   assert(initResult.capabilities?.tools !== undefined, 'initialize: tools capability must be advertised');
   assert(initResult.resultType === undefined, 'initialize: 2025-era results must not carry resultType');
+  assert(
+    typeof initResult.instructions === 'string' && initResult.instructions.includes('http://127.0.0.1:3000'),
+    'initialize: instructions must advertise the live canvas URL'
+  );
+  assert(
+    initResult.instructions.includes('export_to_excalidraw_url'),
+    'initialize: instructions must point at export_to_excalidraw_url for sharing'
+  );
 
   const listResult = resultOf(responses.find(r => r.id === 2), 'legacy tools/list');
   assert(Array.isArray(listResult.tools) && listResult.tools.length > 0, 'legacy tools/list: expected a non-empty tool list');

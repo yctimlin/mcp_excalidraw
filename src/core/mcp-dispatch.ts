@@ -7,7 +7,7 @@ import {
   ServerElement,
   ExcalidrawElementType
 } from '../types.js';
-import { EXPRESS_SERVER_URL } from './config.js';
+import { EXPRESS_SERVER_URL, CANVAS_LINKS_NOTE } from './config.js';
 import {
   updateElementOnCanvas,
   deleteElementOnCanvas,
@@ -164,7 +164,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `Element created successfully!\n\n${JSON.stringify(canvasElement, null, 2)}\n\n✅ Synced to canvas`
+            text: `Element created successfully!\n\n${JSON.stringify(canvasElement, null, 2)}\n\n✅ Synced to canvas\n\n${CANVAS_LINKS_NOTE}`
           }]
         };
       }
@@ -417,7 +417,7 @@ export async function callExcalidrawTool(
           return {
             content: [{
               type: 'text',
-              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.`
+              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.\n\n${CANVAS_LINKS_NOTE}`
             }]
           };
         } catch (error) {
@@ -451,7 +451,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `${result.count} elements created successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${result.syncedToCanvas ? '✅ All elements synced to canvas' : '⚠️  Canvas sync failed (elements still created locally)'}`
+            text: `${result.count} elements created successfully!\n\n${JSON.stringify(result, null, 2)}\n\n${result.syncedToCanvas ? '✅ All elements synced to canvas' : '⚠️  Canvas sync failed (elements still created locally)'}\n\n${CANVAS_LINKS_NOTE}`
           }]
         };
       }
@@ -526,7 +526,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `Imported ${result.count} elements${result.fileCount > 0 ? ` and ${result.fileCount} files` : ''} (mode: ${result.mode})\n\n✅ Synced to canvas`
+            text: `Imported ${result.count} elements${result.fileCount > 0 ? ` and ${result.fileCount} files` : ''} (mode: ${result.mode})\n\n✅ Synced to canvas\n\n${CANVAS_LINKS_NOTE}`
           }]
         };
       }
@@ -591,7 +591,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `Duplicated ${duplicates.length} elements (offset: ${offsetX}, ${offsetY})\n\n${JSON.stringify(canvasElements, null, 2)}\n\n✅ Synced to canvas`
+            text: `Duplicated ${duplicates.length} elements (offset: ${offsetX}, ${offsetY})\n\n${JSON.stringify(canvasElements, null, 2)}\n\n✅ Synced to canvas\n\n${CANVAS_LINKS_NOTE}`
           }]
         };
       }
@@ -679,7 +679,7 @@ export async function callExcalidrawTool(
         return {
           content: [{
             type: 'text',
-            text: `Diagram exported to excalidraw.com!\n\nShareable URL: ${shareUrl}\n\nAnyone with this link can view and edit the diagram.`
+            text: `Diagram exported to excalidraw.com!\n\nShareable URL: ${shareUrl}\n\nAnyone with this link can view and edit the diagram.\n\nThe live canvas for co-editing stays at ${EXPRESS_SERVER_URL}.`
           }]
         };
       }
