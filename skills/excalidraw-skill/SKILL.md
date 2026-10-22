@@ -235,7 +235,7 @@ Requires an open browser tab (conversion runs in the frontend; exit code 4 tells
 - Import scene: `import diagram.excalidraw` (append) or `import diagram.excalidraw --replace`
 - Image: `screenshot --out diagram.png` / `screenshot --format svg --out diagram.svg` (headless; SVGs embed their fonts)
 - Offline: `render diagram.excalidraw --out diagram.png` renders a saved file without the canvas server (CI-friendly, same flags as `screenshot`)
-- Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL
+- Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL (or a self-hosted instance when `EXCALIDRAW_SHARE_UPLOAD_URL` / `EXCALIDRAW_SHARE_BASE_URL` are set)
 
 This is how diagrams live in a repo: commit the `.excalidraw` file, and re-`import` + edit + `export` it when the architecture changes.
 
