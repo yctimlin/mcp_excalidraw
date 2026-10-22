@@ -478,7 +478,7 @@ Config location: `~/.gemini/antigravity/mcp_config.json`
 ### Notes
 
 - **Docker networking**: Use `host.docker.internal` to reach the canvas server running on your host machine. On Linux, you may need `--add-host=host.docker.internal:host-gateway` or use `172.17.0.1`. The Docker MCP image sets `EXCALIDRAW_NO_AUTOSTART=1` (it has no frontend build) — run the canvas as its own container.
-- **In-memory storage**: The canvas server stores elements in memory. Restarting the server clears all elements — use `export` / `snapshot` for persistence.
+- **Canvas persistence**: By default, elements and named snapshots are held in memory and are lost on server restart. Set `EXCALIDRAW_DATA_DIR` for restart recovery of elements, server-known image files, and named snapshots (see [Durable canvas state](#durable-canvas-state)). Use `export` to save a standalone `.excalidraw` file; taking a snapshot alone does not provide restart recovery in the default in-memory mode.
 
 ## MCP Tools (26 Total)
 
