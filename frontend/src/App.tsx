@@ -6,6 +6,7 @@ import {
   exportToBlob,
   exportToSvg,
   elementsOverlappingBBox,
+  hashElementsVersion,
   useHandleLibrary
 } from '@excalidraw/excalidraw'
 import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types'
@@ -141,6 +142,10 @@ function App(): JSX.Element {
   const syncInFlightRef = useRef<boolean>(false)
   const suppressAutoSyncCountRef = useRef<number>(0)
   const userInteractedRef = useRef<boolean>(false)
+  // Version hash of the scene the server holds. Excalidraw calls onChange on
+  // every re-render, including the one each sync causes, so autosync only
+  // runs when the scene differs from this.
+  const serverSceneHashRef = useRef<number | null>(null)
   // Image files the server already holds, so each sync uploads only new ones
   const serverFileIdsRef = useRef<Set<string>>(new Set())
   const rememberServerFiles = (files: unknown): void => {
@@ -206,6 +211,7 @@ function App(): JSX.Element {
       }
       applySceneUpdateWithoutAutoSync(api, { elements: prepared, captureUpdate: CaptureUpdateAction.NEVER })
       assertScenePreserved(prepared, api.getSceneElements())
+      serverSceneHashRef.current = hashElementsVersion(api.getSceneElements())
     } catch (error) {
       applySceneUpdateWithoutAutoSync(api, { elements: previous, captureUpdate: CaptureUpdateAction.NEVER })
       throw error
@@ -765,6 +771,7 @@ function App(): JSX.Element {
     try {
       // 1. Get current elements
       const currentElements = api.getSceneElements()
+      const syncedHash = hashElementsVersion(currentElements)
       console.log(`Syncing ${currentElements.length} elements to backend`)
 
       // Filter out deleted elements
@@ -807,6 +814,7 @@ function App(): JSX.Element {
 
       if (response.ok) {
         const result: ApiResponse = await response.json()
+        serverSceneHashRef.current = syncedHash
         setLastSyncTime(new Date())
         console.log(`Sync successful: ${result.count} elements synced`)
 
@@ -840,6 +848,9 @@ function App(): JSX.Element {
       return
     }
     if (suppressAutoSyncCountRef.current > 0) {
+      return
+    }
+    if (hashElementsVersion(excalidrawAPI.getSceneElements()) === serverSceneHashRef.current) {
       return
     }
     if (autoSyncTimerRef.current) {
