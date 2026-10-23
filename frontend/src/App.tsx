@@ -52,6 +52,23 @@ const libraryAdapter: LibraryPersistenceAdapter = {
   }
 }
 
+/**
+ * Takes an element link (`?element=<id>`) out of the URL before Excalidraw mounts.
+ *
+ * Excalidraw resolves the link once, while it mounts. Here the scene comes from
+ * the server after that, so the lookup always runs on an empty scene and shows
+ * "Linked object wasn't found". The link is resolved after the first scene loads.
+ */
+const takeElementLink = (): string | null => {
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has('element')) return null
+  const link = url.href
+  url.searchParams.delete('element')
+  window.history.replaceState(window.history.state, '', url)
+  return link
+}
+let pendingElementLink = typeof window === 'undefined' ? null : takeElementLink()
+
 // Type definitions
 type ExcalidrawAPIRefValue = ExcalidrawImperativeAPI;
 
@@ -212,6 +229,13 @@ function App(): JSX.Element {
     }
     sceneLoadStatusRef.current = 'ready'
     setSceneLoadStatus('ready')
+    if (pendingElementLink) {
+      const link = pendingElementLink
+      pendingElementLink = null
+      // Put the link back so the address bar still shows it
+      window.history.replaceState(window.history.state, '', link)
+      api.scrollToContent(link, { animate: false })
+    }
   }
 
   useEffect(() => {
