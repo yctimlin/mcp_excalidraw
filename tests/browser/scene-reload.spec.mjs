@@ -413,6 +413,43 @@ test('normal select-all deletion can still autosync an empty scene', async ({ pa
   expect(await sync(page, request)).toEqual([]);
 });
 
+function recordSyncWrites(page) {
+  const writes = [];
+  page.on('request', r => {
+    if (r.method() === 'POST' && r.url().endsWith('/api/elements/sync')) writes.push(r);
+  });
+  return writes;
+}
+
+// Each sync re-renders the app, and Excalidraw calls onChange on every
+// re-render. An unchanged scene must not schedule another sync.
+test('a click without an edit does not start an autosync loop', async ({ page, request }) => {
+  await seed(request, frameScene());
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  const writes = recordSyncWrites(page);
+  await page.mouse.click(850, 650);
+  await page.waitForTimeout(5000);
+  expect(writes).toHaveLength(0);
+});
+
+test('one edit autosyncs once and then stays idle', async ({ page, request }) => {
+  await seed(request, frameScene());
+  await page.goto('/');
+  await expect(syncButton(page)).toBeEnabled();
+  const writes = recordSyncWrites(page);
+  await page.mouse.click(850, 650);
+  await page.keyboard.press('r');
+  await expect(page.getByRole('radio', { name: 'Rectangle', exact: true })).toBeChecked();
+  await page.mouse.move(750, 450);
+  await page.mouse.down();
+  await page.mouse.move(850, 550, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await serverScene(request)).some(e => e.type === 'rectangle')).toBe(true);
+  await page.waitForTimeout(5000);
+  expect(writes).toHaveLength(1);
+});
+
 test('failed clear keeps the visible and saved scene protected', async ({ page, request }) => {
   await seed(request, frameScene());
   await page.goto('/');
