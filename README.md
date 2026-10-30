@@ -265,7 +265,7 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `EXPRESS_SERVER_URL` | URL of the canvas server | `http://127.0.0.1:3000` |
 | `ENABLE_CANVAS_SYNC` | Enable real-time canvas sync | `true` |
 | `EXCALIDRAW_NO_AUTOSTART` | Set `1` to disable canvas auto-start | (unset) |
-| `EXCALIDRAW_EXPORT_DIR` | Base directory MCP file exports may write to | current working dir |
+| `EXCALIDRAW_EXPORT_DIR` | Directory MCP file tools may read and write (symlinks resolved; `.excalidraw`, `.json`, `.md`, `.png`, `.svg` files only) | current working dir |
 | `EXCALIDRAW_RENDER_MAX_DIM` | Largest side of a headless PNG, in pixels | `8192` |
 | `EXCALIDRAW_DATA_DIR` | Optional local durable-state directory | (unset; in-memory) |
 | `EXCALIDRAW_SHARE_UPLOAD_URL` | Where `share` uploads the encrypted scene (an excalidraw-json `POST` endpoint) | `https://json.excalidraw.com/api/v2/post/` |

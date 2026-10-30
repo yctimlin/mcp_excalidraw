@@ -25,7 +25,7 @@ import {
   sendMermaid,
   ApiResponse
 } from './canvas-client.js';
-import { sanitizeFilePath, prepareElement, prepareElementUpdate } from './normalize.js';
+import { sanitizeFilePath, SCENE_FILE_EXTENSIONS, prepareElement, prepareElementUpdate } from './normalize.js';
 import {
   alignElements,
   distributeElements,
@@ -491,7 +491,7 @@ export async function callExcalidrawTool(
         const { scene, elementCount } = await buildSceneFile();
 
         if (params.filePath) {
-          const safePath = sanitizeFilePath(params.filePath);
+          const safePath = sanitizeFilePath(params.filePath, SCENE_FILE_EXTENSIONS);
           const asObsidianMd = params.filePath.endsWith('.md');
           const output = asObsidianMd
             ? wrapSceneAsObsidianMd(scene)
@@ -550,7 +550,7 @@ export async function callExcalidrawTool(
         ].join(', ');
 
         if (filePath) {
-          const safeImagePath = sanitizeFilePath(filePath);
+          const safeImagePath = sanitizeFilePath(filePath, [`.${params.format}`]);
           if (params.format === 'svg') {
             fs.writeFileSync(safeImagePath, result.data, 'utf-8');
           } else {

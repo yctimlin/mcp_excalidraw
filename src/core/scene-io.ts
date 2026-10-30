@@ -8,7 +8,7 @@ import {
   batchCreateElementsOnCanvas,
   replaceElementsOnCanvas
 } from './canvas-client.js';
-import { sanitizeFilePath } from './normalize.js';
+import { sanitizeFilePath, IMPORT_FILE_EXTENSIONS } from './normalize.js';
 import { decodeSceneInput } from './scene-input.js';
 import { expandElementsForExport } from './expand-elements.js';
 
@@ -62,7 +62,7 @@ export async function importScene(options: {
 }): Promise<ImportResult> {
   let input: Buffer | string;
   if (options.filePath) {
-    const safeImportPath = sanitizeFilePath(options.filePath);
+    const safeImportPath = sanitizeFilePath(options.filePath, IMPORT_FILE_EXTENSIONS);
     input = fs.readFileSync(safeImportPath);
   } else if (options.data) {
     input = options.data;
