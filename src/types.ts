@@ -186,8 +186,14 @@ export type WebSocketMessageType =
   | 'canvas_cleared'
   | 'export_image_request'
   | 'set_viewport'
+  | 'selection_updated'
   | 'files_added'
   | 'file_deleted';
+
+export interface SelectionUpdatedMessage extends WebSocketMessage {
+  type: 'selection_updated';
+  selectedElementIds: string[];
+}
 
 export interface InitialElementsMessage extends WebSocketMessage {
   type: 'initial_elements';
