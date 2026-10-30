@@ -561,3 +561,23 @@ test('headless embedded PNG opens as an editable native scene through a file dro
   await expect(page.getByText('repro-frame', { exact: true })).toBeVisible();
   expectEditableMixedScene(await sync(page, request));
 });
+
+// Excalidraw resolves `?element=` once, while it mounts. The scene arrives
+// from the server later, so the link must be resolved after the first load.
+const notFoundToast = page => page.getByText("Linked object wasn't found on canvas.");
+
+test('an element link scrolls to an element the server scene contains', async ({ page, request }) => {
+  const [frame] = frameScene();
+  await seed(request, [{ ...frame, x: 4000, y: 3000, name: 'far-frame' }]);
+  await page.goto(`/?element=${frame.id}`);
+  await expect(syncButton(page)).toBeEnabled();
+  await expect(page.getByText('far-frame', { exact: true })).toBeInViewport();
+  await expect(notFoundToast(page)).toHaveCount(0);
+});
+
+test('an element link to a missing element still reports it', async ({ page, request }) => {
+  await seed(request, frameScene());
+  await page.goto('/?element=missing-element');
+  await expect(syncButton(page)).toBeEnabled();
+  await expect(notFoundToast(page)).toBeVisible();
+});
