@@ -32,6 +32,7 @@ Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or account
 - [CLI Reference](#cli-reference)
 - [Headless Rendering](#headless-rendering)
 - [Configure MCP Clients](#configure-mcp-clients)
+  - [Remote Canvas and HTTP-Only MCP Clients](#remote-canvas-and-http-only-mcp-clients)
   - [Claude Desktop](#claude-desktop)
   - [Claude Code](#claude-code)
   - [Cursor](#cursor)
@@ -255,7 +256,7 @@ The renderer bundle is built by `npm run build:server` (`dist/render/excalidraw-
 
 ## Configure MCP Clients
 
-The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no clone, no absolute paths, and the canvas auto-starts:
+The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no clone, no absolute paths, and the canvas auto-starts. If your MCP client and canvas are on different machines, start with [Remote Canvas and HTTP-Only MCP Clients](#remote-canvas-and-http-only-mcp-clients).
 
 ### Environment Variables
 
@@ -272,6 +273,47 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `PORT` / `HOST` | Canvas server bind address | `3000` / `127.0.0.1` |
 | `LOG_LEVEL` | Log verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 | `LOG_FILE_PATH` | Log file location | `~/Library/Logs/excalidraw-mcp.log` (macOS), `$XDG_STATE_HOME/excalidraw-mcp/excalidraw.log` (Linux), `%LOCALAPPDATA%\Excalidraw-MCP\excalidraw.log` (Windows) |
+
+### Remote Canvas and HTTP-Only MCP Clients
+
+There are two separate connections:
+
+- **MCP client ↔ MCP process:** an MCP client that supports local commands launches the stdio MCP process and owns its stdin/stdout.
+- **MCP process ↔ canvas:** `EXPRESS_SERVER_URL` points to the canvas server's REST API. The browser UI uses a WebSocket on that same server and port.
+
+The canvas HTTP URL is not an MCP HTTP endpoint. This project does not expose MCP at `/mcp` or `/sse`; those paths are not part of its transport.
+
+To keep a remote canvas on its default loopback-only binding, run the MCP process on your workstation and tunnel the canvas port to that machine:
+
+```bash
+# Keep this running. The remote canvas remains bound to remote 127.0.0.1:3000.
+ssh -N -L 13000:127.0.0.1:3000 user@canvas-host
+```
+
+Then configure the local MCP process against the local end of the tunnel. The URL port must match the first port in the SSH command:
+
+```json
+{
+  "mcpServers": {
+    "excalidraw": {
+      "command": "npx",
+      "args": ["-y", "mcp-excalidraw-server"],
+      "env": {
+        "EXPRESS_SERVER_URL": "http://127.0.0.1:13000",
+        "EXCALIDRAW_NO_AUTOSTART": "1"
+      }
+    }
+  }
+}
+```
+
+Start the tunnel before the MCP client and leave it open while tools run. In this example the MCP process and browser run on the workstation, so both can use `http://127.0.0.1:13000`; the WebSocket also follows the page's host and port. `127.0.0.1` always means the machine or container running that process. If the MCP process runs in a container, the workstation's loopback tunnel is not that container's loopback: run the tunnel in the same network namespace as the MCP process, or configure a canvas address that is reachable from the container and protect any listener exposed beyond loopback.
+
+If an Open WebUI, LM Studio, or other MCP client setup accepts only HTTP-based MCP connections, it cannot use the canvas URL in place of MCP. It needs a separately configured stdio-to-HTTP MCP bridge in front of this stdio server; bridge setup and client transport support are outside this project.
+
+As a direct-LAN alternative, run the canvas process with an explicit non-loopback bind, for example from a built source checkout: `HOST=0.0.0.0 PORT=3000 node dist/server.js`. Then set the MCP process's `EXPRESS_SERVER_URL` to `http://canvas-host:3000`. The canvas container already binds `HOST=0.0.0.0`, and Compose publishes `3000:3000`; scope that port mapping or bind it to a trusted interface when possible. The CLI `start` command only auto-starts a loopback canvas, so it is not the way to create this LAN listener. The source default remains `HOST=127.0.0.1`.
+
+Direct LAN access exposes the canvas REST and WebSocket APIs, which have no built-in authentication and use permissive CORS middleware. Restrict that port to a trusted network/VPN with firewall or network-level access controls; do not expose it to the public internet.
 
 #### Durable canvas state
 
@@ -656,6 +698,10 @@ No API key is required. Core drawing runs locally under MIT license. Outbound tr
 ### Can I use it without configuring MCP?
 
 Yes — that's the recommended path for coding agents: `npx -y mcp-excalidraw-server install-skill --dir <skills-root>` and the agent drives everything through the CLI. MCP configuration is only needed for chat clients like Claude Desktop.
+
+### Can the MCP client and canvas run on different machines?
+
+Yes, if the MCP process can reach the canvas server. Keep the MCP process on the machine that launches it and set `EXPRESS_SERVER_URL` to that canvas location. The canvas HTTP/WebSocket URL is not an MCP endpoint; for an HTTP-only MCP client, configure a separate stdio-to-HTTP bridge. See [Remote Canvas and HTTP-Only MCP Clients](#remote-canvas-and-http-only-mcp-clients) for a loopback-preserving SSH tunnel and matching JSON configuration.
 
 ## Troubleshooting
 
