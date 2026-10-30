@@ -122,6 +122,8 @@ const AUTO_SYNC_DEBOUNCE_MS = 1200;
 const SCENE_MUTATIONS = new Set([
   'element_created', 'element_updated', 'element_deleted', 'elements_batch_created'
 ]);
+// Excalidraw hides its theme toggle once the theme prop is set.
+const UI_OPTIONS = { canvasActions: { toggleTheme: true } };
 
 function App(): JSX.Element {
   const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawAPIRefValue | null>(null)
@@ -971,6 +973,10 @@ function App(): JSX.Element {
           style={{ width: '100%', height: '100%' }}
         >
           <Excalidraw
+            // Controlled: Excalidraw resets to light when an action result
+            // omits the theme and no theme prop is set (e.g. copy element link).
+            theme={theme}
+            UIOptions={UI_OPTIONS}
             viewModeEnabled={sceneLoadStatus !== 'ready'}
             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
             onChange={(_elements, appState) => {
