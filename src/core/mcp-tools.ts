@@ -331,6 +331,14 @@ export const tools: Tool[] = [
     }
   },
   {
+    name: 'get_selection',
+    description: 'Get the IDs of currently selected elements on the canvas',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
     name: 'clear_canvas',
     description: 'Clear all elements from the canvas',
     inputSchema: {

@@ -172,6 +172,10 @@ async function checkDirectCallWithoutInitialization() {
     listResult.tools.some(tool => tool.name === CANVAS_FREE_TOOL),
     `tools/list: expected ${CANVAS_FREE_TOOL} to be advertised`
   );
+  assert(
+    listResult.tools.some(tool => tool.name === 'get_selection'),
+    'tools/list: expected get_selection to be advertised'
+  );
   assertModernResult(listResult, 'tools/list');
   assertCacheFields(listResult, 'tools/list');
 

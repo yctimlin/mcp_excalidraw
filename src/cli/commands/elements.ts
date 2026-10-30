@@ -7,7 +7,8 @@ import {
   deleteElementStrict,
   getElementStrict,
   getElements,
-  searchElements
+  searchElements,
+  getCanvasSelection
 } from '../../core/canvas-client.js';
 import { ensureCanvasRunning } from '../../core/spawn.js';
 import { ServerElement } from '../../types.js';
@@ -143,6 +144,16 @@ export async function get(argv: string[]): Promise<void> {
 
   await ensureCanvasRunning();
   printJson(await getElementStrict(id));
+}
+
+export async function selection(_argv: string[]): Promise<void> {
+  await ensureCanvasRunning();
+  const selectedElementIds = await getCanvasSelection();
+  printJson({
+    success: true,
+    selectedElementIds,
+    count: selectedElementIds.length
+  });
 }
 
 // Coerce "true"/"false"/numeric strings so --filter locked=true works against

@@ -24,6 +24,7 @@ const COMMANDS: Record<string, Command> = {
   update: { handler: elements.update, summary: 'Update one element', usage: 'update <id> --set \'{"backgroundColor":"#ffc9c9"}\'' },
   delete: { handler: elements.del, summary: 'Delete elements by id', usage: 'delete <id> [<id> ...]' },
   get: { handler: elements.get, summary: 'Get one element by id', usage: 'get <id>' },
+  selection: { handler: elements.selection, summary: 'Get currently selected element IDs on canvas', usage: 'selection' },
   query: { handler: elements.query, summary: 'Query elements (server + typed client-side filters)', usage: 'query [--type rectangle] [--bbox x0,y0,x1,y1] [--filter locked=true] [--filter-json \'{...}\']' },
   describe: { handler: scene.describe, summary: 'AI-readable scene description (plain text)', usage: 'describe' },
   screenshot: { handler: scene.screenshot, summary: 'Render the canvas to PNG/SVG (headless; no browser tab needed)', usage: `screenshot [--out file.png|file.svg] [--renderer auto|node|browser] ${IMAGE_FLAG_USAGE}` },
