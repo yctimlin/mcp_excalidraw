@@ -1,12 +1,46 @@
+import fs from 'fs';
 import path from 'path';
 import { generateId, ServerElement, normalizeFontFamily } from '../types.js';
 import { ALLOWED_EXPORT_DIR } from './config.js';
 
-// Safe file path validation to prevent path traversal attacks
-export function sanitizeFilePath(filePath: string): string {
-  const resolved = path.resolve(filePath);
-  const allowedDir = path.resolve(ALLOWED_EXPORT_DIR);
-  if (!resolved.startsWith(allowedDir + path.sep) && resolved !== allowedDir) {
+// File types MCP tools may read or write (see sanitizeFilePath)
+export const SCENE_FILE_EXTENSIONS = ['.excalidraw', '.json', '.md'] as const;
+export const IMPORT_FILE_EXTENSIONS = [...SCENE_FILE_EXTENSIONS, '.png'] as const;
+
+// Resolve symlinks in the part of `target` that exists; the missing rest
+// cannot be a link. A broken link is refused: writing through it would
+// create its target, wherever that points.
+function realpathOfExisting(target: string): string {
+  const missing: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...missing);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+      let isLink = false;
+      try { isLink = fs.lstatSync(current).isSymbolicLink(); } catch { /* does not exist */ }
+      if (isLink) throw new Error(`Path blocked: "${current}" is a broken symbolic link.`);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return target;
+    missing.unshift(path.basename(current));
+    current = parent;
+  }
+}
+
+// Validate a path an MCP tool reads or writes: it must have one of the
+// allowed extensions and, with symlinks resolved, sit inside the allowed
+// directory. Returns the resolved path, so the file accessed is the one checked.
+export function sanitizeFilePath(filePath: string, allowedExtensions: readonly string[]): string {
+  const extension = path.extname(filePath).toLowerCase();
+  if (!allowedExtensions.includes(extension)) {
+    throw new Error(`File type blocked: "${filePath}" must end in ${allowedExtensions.join(', ')}.`);
+  }
+  const allowedDir = realpathOfExisting(path.resolve(ALLOWED_EXPORT_DIR));
+  const resolved = realpathOfExisting(path.resolve(filePath));
+  if (!resolved.startsWith(allowedDir + path.sep)) {
     throw new Error(
       `Path traversal blocked: "${filePath}" resolves outside the allowed directory "${allowedDir}". ` +
       `Set EXCALIDRAW_EXPORT_DIR to change the allowed base directory.`

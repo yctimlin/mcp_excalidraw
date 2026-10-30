@@ -52,6 +52,9 @@ jobs:
       - name: Run share URL checks
         run: node scripts/check-share-url.mjs
 
+      - name: Run file path containment checks
+        run: node scripts/check-file-paths.mjs
+
       - name: Install Chromium for canvas regression tests
         run: npx playwright install --with-deps chromium
 

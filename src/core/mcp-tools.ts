@@ -387,7 +387,7 @@ export const tools: Tool[] = [
         },
         filePath: {
           type: 'string',
-          description: 'Optional file path to save the image'
+          description: 'Optional file path to save the image (.png or .svg, matching format)'
         },
         ...IMAGE_RENDER_PROPERTIES
       },
