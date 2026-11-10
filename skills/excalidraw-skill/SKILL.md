@@ -30,13 +30,14 @@ Results are JSON on stdout — except `describe` (plain text) and raw-content ou
 | Multi-op patch in one call | `apply patch.json` — `{"create":[...],"update":[{"id":"a","set":{...}}],"delete":[...]}` |
 | Read one / query many | `get <id>`, `query [--type t] [--bbox x0,y0,x1,y1] [--filter k=v] [--filter-json '{...}']` |
 | Update / delete | `update <id> --set '{...}'`, `delete <id> [...]` |
+| Read the current selection | `selection` (selected element IDs and count) |
 | Understand the scene | `describe` (plain-text summary: ids, positions, labels, connections) |
 | See the scene | `screenshot [--out f.png]` (PNG without `--out` → temp file path in JSON; SVG without `--out` → raw SVG) |
 | Layout operations | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate --ids a,b,c [--to left\|horizontal\|...]` |
 | Scene files | `export [--out scene.excalidraw]`, `import [scene.excalidraw|-] [--replace]` — a `.excalidraw.md` out path writes Obsidian's format (see File I/O) |
 | Mermaid → canvas | `mermaid [diagram.mmd|-]` (or stdin) |
 | Snapshots | `snapshot save\|list\|restore <name>` |
-| Share link | `share` (encrypted upload → excalidraw.com URL) |
+| Share link | `share` (encrypted upload → excalidraw.com or a configured self-hosted URL) |
 | Wipe canvas | `clear --yes` |
 | Install / upgrade this skill | `install-skill --dir <skills-root>` (agent chooses project/global root) |
 
@@ -214,7 +215,7 @@ add elements
 
 ## Workflow: Refine an Existing Diagram
 
-1. `describe` to understand current state — note element IDs and positions.
+1. `describe` to understand current state — note element IDs and positions. If the user refers to selected elements, use `selection` (`get_selection` in MCP) to get their IDs. The last selection change among connected tabs wins; selection is in memory only.
 2. Identify elements by `id` or label text (not by x/y coordinates — they change).
 3. `update <id> --set '{...}'` to resize/recolor/move; `delete <id>` to remove; or bundle everything in one `apply` patch. **Bound arrows re-route automatically when you move or resize their endpoints** — no need to delete and recreate them.
 4. `screenshot` to confirm the change looks right.
@@ -234,8 +235,11 @@ Requires an open browser tab (conversion runs in the frontend; exit code 4 tells
 - Export scene: `export --out diagram.excalidraw` (no `--out` → JSON to stdout)
 - Import scene: `import diagram.excalidraw` (append) or `import diagram.excalidraw --replace`
 - Image: `screenshot --out diagram.png` / `screenshot --format svg --out diagram.svg` (headless; SVGs embed their fonts)
+- Editable PNG: `screenshot --out diagram.excalidraw.png --embed-scene` (PNG only, off by default; MCP: `embedScene: true`). `import diagram.excalidraw.png` or `render diagram.excalidraw.png --out preview.png` reads the embedded scene.
 - Offline: `render diagram.excalidraw --out diagram.png` renders a saved file without the canvas server (CI-friendly, same flags as `screenshot`)
 - Share link: `share` — encrypts the scene and returns a shareable excalidraw.com URL (or a self-hosted instance when `EXCALIDRAW_SHARE_UPLOAD_URL` / `EXCALIDRAW_SHARE_BASE_URL` are set)
+
+MCP file paths are restricted to `EXCALIDRAW_EXPORT_DIR`, with symlinks resolved and broken symlinks refused. Scene export accepts `.excalidraw`, `.json` and `.md`; import also accepts embedded-scene `.png`; image export accepts `.png` or `.svg` matching the format. CLI file I/O is unrestricted by this setting.
 
 This is how diagrams live in a repo: commit the `.excalidraw` file, and re-`import` + edit + `export` it when the architecture changes.
 
@@ -256,6 +260,8 @@ Round-trips are safe: text-element block references follow the plugin's own id r
 2. Make changes, evaluate with `describe` / `screenshot`.
 3. `snapshot restore <name>` to roll back if needed. `snapshot list` shows what's saved.
 
+By default, snapshots are in memory and lost on restart. Set `EXCALIDRAW_DATA_DIR` on the canvas server to persist elements, image files and named snapshots; only one process can own the directory.
+
 ## Workflow: Duplication
 
 `arrange duplicate --ids a,b --offset 40,40` (default offset 20,20). Useful for repeated patterns or copying layouts.
@@ -268,10 +274,9 @@ Round-trips are safe: text-element block references follow the plugin's own id r
 - **Arrow not connecting?** Verify element IDs with `get <id>`. Make sure `startElementId`/`endElementId` match existing element IDs.
 - **Canvas in a bad state?** `snapshot save` first, then `clear --yes` and rebuild. Or `snapshot restore` to go back.
 - **Element won't update?** It may be locked — `arrange unlock --ids <id>` first.
-- **Duplicate text elements / element count doubling?** The frontend auto-sync timer periodically writes the full Excalidraw scene back to the server. Excalidraw internally generates a bound text element for every shape with a label; clearing and re-sending elements can re-inject cached bound texts. Clean up: `query --type text` to find elements with a `containerId`, `delete` the unwanted ones, wait a few seconds for auto-sync to settle. The safest prevention: **never put labels on background zone rectangles** — use free-standing text elements.
 
 ---
 
 ## References
 
-- `references/cheatsheet.md`: full CLI reference, the 26 MCP tools, REST API endpoints + payload shapes, and the diagram design guide (colors, sizing).
+- `references/cheatsheet.md`: full CLI reference, the 27 MCP tools, REST API endpoints + payload shapes, and the diagram design guide (colors, sizing).

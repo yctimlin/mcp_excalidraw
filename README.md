@@ -10,10 +10,10 @@
 One canvas, three ways to drive it:
 
 - **Agent Skill + CLI** — recommended for coding agents (Claude Code, Codex CLI, Cursor, OpenCode): `npx -y mcp-excalidraw-server <command>`. Zero config, auto-starts the canvas, composable JSON in/out.
-- **MCP Server** — 26 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...). Speaks MCP `2026-07-28` (`server/discover`, per-request `_meta` envelope, tool calls without a handshake) and stays compatible with 2025-era clients that open with `initialize`.
+- **MCP Server** — 27 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...). Speaks MCP `2026-07-28` (`server/discover`, per-request `_meta` envelope, tool calls without a handshake) and stays compatible with 2025-era clients that open with `initialize`.
 - **REST API** — plain HTTP for LangChain and custom frameworks.
 
-Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or accounts. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com. The canvas page loads Excalidraw's fonts from the esm.sh CDN.
+Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or accounts. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com by default (or your own instance). The canvas page loads Excalidraw's fonts from the esm.sh CDN.
 
 ## Demo
 
@@ -39,7 +39,7 @@ Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or account
   - [Codex CLI](#codex-cli)
   - [OpenCode](#opencode)
   - [Antigravity (Google)](#antigravity-google)
-- [MCP Tools (26 Total)](#mcp-tools-26-total)
+- [MCP Tools (27 Total)](#mcp-tools-27-total)
 - [Quick Start (From Source / Docker)](#quick-start-from-source--docker)
 - [Testing](#testing)
 - [FAQ](#faq)
@@ -65,7 +65,7 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 | | Official Excalidraw MCP | This Project |
 |---|---|---|
-| **Approach** | Prompt in, diagram out (one-shot widget) | Programmatic element-level control (CLI + 26 MCP tools) |
+| **Approach** | Prompt in, diagram out (one-shot widget) | Programmatic element-level control (CLI + 27 MCP tools) |
 | **State** | Checkpoints inside the chat widget | Live canvas with real-time sync and optional restart-safe checkpoints |
 | **Element CRUD** | Declarative re-send with delete markers | Full create / read / update / delete per element |
 | **AI sees the canvas** | No | `describe` (structured text) + `screenshot` (image) |
@@ -83,7 +83,20 @@ Excalidraw has an [official MCP](https://github.com/excalidraw/excalidraw-mcp) �
 
 ## What's New
 
-Current package version: **2.1.2**. The current release line is **v2.1 — Headless Rendering**.
+Current package version: **2.2.0**. The current release line is **v2.2 — Editable PNGs & Durable Canvas**.
+
+### v2.2.0 — Editable PNGs & Durable Canvas
+
+- **Editable PNGs:** `--embed-scene` / `embedScene: true` embeds the scene in a PNG (PNG only, off by default). Import or `render` it later — one `.excalidraw.png` is both the README preview and editable source. (#132, thanks @FortniteGamer747)
+- **Durable canvas (opt-in):** set `EXCALIDRAW_DATA_DIR` to keep elements, image files and named snapshots across restarts. Each change is saved before it is acknowledged; one process owns the directory at a time. Unset, the canvas stays in-memory. Native `embeddable`, `iframe` and `magicframe` elements sync in durable mode too. (#130, thanks @IndelibleVivi; #133)
+- **Self-hosted share links:** point `share` / `export_to_excalidraw_url` at your own instance with `EXCALIDRAW_SHARE_UPLOAD_URL` and `EXCALIDRAW_SHARE_BASE_URL`. Defaults still go to excalidraw.com. (#138, thanks @j2ali)
+- **Selection-aware agents:** `get_selection` (MCP) and `selection` (CLI) return selected element IDs. With several tabs, the tab that last changed the selection wins; selection is in memory only. (#149, thanks @Totopo27; requested in #147 by @fgeierst)
+- **Safer MCP file tools:** paths stay inside `EXCALIDRAW_EXPORT_DIR` after resolving symlinks; broken symlinks and file types inappropriate for the tool are refused. The CLI is unaffected. (#148, fixes #146 reported by @niananto)
+- A crashing PNG renderer returns an error without taking down the canvas; large PNGs are delivered in full. (#127, #131, thanks @Red44)
+- `query_elements` preserves boolean and numeric filter types. (#126, thanks @sanjayy0612)
+- A click no longer triggers an idle sync loop that overwrites concurrent agent writes; `?element=` links scroll after the scene loads; copy link, copy as SVG and wrap in frame preserve dark mode. (#142, #141, #143, thanks @tomerSP)
+- Docker images are ~70–80% smaller in the author's local builds; the canvas runtime uses Alpine with Node 24. (#112, thanks @hermes-carpet)
+- Docs clarify MCP transport, SSH tunnels and snapshot persistence defaults. (#144, #140, thanks @IndelibleVivi) CI builds Docker images for fork PRs without pushing them. (#129)
 
 ### v2.1.2 — Fixes
 
@@ -229,6 +242,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `get <id>` / `delete <id...>` | Read / remove elements |
 | `update <id> --set '{...}'` | Update an element |
 | `query` | `--type`, `--bbox x0,y0,x1,y1`, `--filter k=v` (typed, nested keys), `--filter-json '{...}'` |
+| `selection` | Current canvas selection: `selectedElementIds` and `count` |
 | `describe` | AI-readable scene summary (plain text) |
 | `screenshot` | Render the canvas headless (no browser tab): `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--embed-scene` (editable PNG); `--renderer browser` uses an open tab instead |
 | `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` / embedded-scene PNG file to PNG/SVG offline — no canvas server, same flags as `screenshot` |
@@ -236,7 +250,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `mermaid [file\|-]` | Mermaid → canvas (browser tab required) |
 | `snapshot save\|list\|restore <name>` | Named snapshots |
 | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate` | Layout ops (`--ids a,b,c`, `--to left\|horizontal\|...`) |
-| `share` | Encrypted upload → shareable excalidraw.com URL |
+| `share` | Encrypted upload → shareable URL (excalidraw.com by default; configurable self-hosted target) |
 | `clear --yes` | Wipe the canvas |
 | `install-skill [--dir <skills-root>]` | Install the portable agent skill |
 
@@ -247,7 +261,7 @@ Labels and arrow bindings use the agent-friendly format everywhere in the CLI: `
 Since v2.1, `screenshot`, `export_to_image` and `get_canvas_screenshot` render without a browser. Inside the canvas server, the scene is prepared with the canvas tab's own code (label sizing, wrapping and centering, defaults) and Excalidraw's own `exportToSvg` draws it under Node (a small jsdom shim supplies the DOM it expects, and text is measured with the bundled fonts' real glyph widths); [resvg](https://github.com/thx/resvg-js) rasterizes the SVG to PNG. The output is what the Excalidraw canvas draws — same SVG structure as a browser export, text within half a pixel — and it is deterministic: an unchanged scene renders to byte-identical SVG and PNG, so committed images stay diff-clean.
 
 - **Fonts**: Excalifont, Virgil, Cascadia Code and Liberation Sans ship as TTFs in `assets/fonts` (all SIL OFL 1.1; see `assets/fonts/LICENSES.md`). SVGs embed the faces they use, so they look right in browsers, GitHub and editors. Nunito, Lilita One and Comic Shanns render with the closest bundled face for now. Text in other scripts (CJK, emoji) falls back to the machine's fonts, with a warning.
-- **Options** (CLI flags / REST body / MCP params): `background`, `dark`, `scale` 1–4 (PNG), `padding`, `elementIds` or `frameId` to render a subset, `embedFonts`, `embedScene` (PNG only, default false). `EXCALIDRAW_RENDER_MAX_DIM` (default 8192) caps the PNG's largest side.
+- **Options** (CLI flags / REST body / MCP params): `background`, `dark`, `scale` 1–4 (PNG), `padding`, `elementIds` or `frameId` to render a subset, `embedFonts` (CLI/REST only), `embedScene` (PNG only, default false). `EXCALIDRAW_RENDER_MAX_DIM` (default 8192) caps the PNG's largest side.
 - **`--renderer browser`** asks an open canvas tab to render instead (the pre-2.1 path). Useful for a second opinion; it is slower and the tab's unsynced edits are discarded first.
 - **Offline**: `render docs/arch.excalidraw --out docs/arch.png` needs no canvas server at all — a natural fit for CI jobs that keep images next to committed diagrams.
 - **Still browser-bound**: Mermaid conversion (`mermaid`, `create_from_mermaid`) and `set_viewport`.
@@ -267,6 +281,7 @@ The MCP server runs over stdio. Since v1.1 the simplest config is `npx` — no c
 | `EXCALIDRAW_NO_AUTOSTART` | Set `1` to disable canvas auto-start | (unset) |
 | `EXCALIDRAW_EXPORT_DIR` | Directory MCP file tools may read and write (symlinks resolved; `.excalidraw`, `.json`, `.md`, `.png`, `.svg` files only) | current working dir |
 | `EXCALIDRAW_RENDER_MAX_DIM` | Largest side of a headless PNG, in pixels | `8192` |
+| `EXCALIDRAW_PNG_WORKER_TIMEOUT_MS` | Timeout for the isolated PNG rasterizer, in milliseconds | `120000` |
 | `EXCALIDRAW_DATA_DIR` | Optional local durable-state directory | (unset; in-memory) |
 | `EXCALIDRAW_SHARE_UPLOAD_URL` | Where `share` uploads the encrypted scene (an excalidraw-json `POST` endpoint) | `https://json.excalidraw.com/api/v2/post/` |
 | `EXCALIDRAW_SHARE_BASE_URL` | Excalidraw app that share links open in | `https://excalidraw.com` |
@@ -524,18 +539,22 @@ Config location: `~/.gemini/antigravity/mcp_config.json`
 - **Docker networking**: Use `host.docker.internal` to reach the canvas server running on your host machine. On Linux, you may need `--add-host=host.docker.internal:host-gateway` or use `172.17.0.1`. The Docker MCP image sets `EXCALIDRAW_NO_AUTOSTART=1` (it has no frontend build) — run the canvas as its own container.
 - **Canvas persistence**: By default, elements and named snapshots are held in memory and are lost on server restart. Set `EXCALIDRAW_DATA_DIR` for restart recovery of elements, server-known image files, and named snapshots (see [Durable canvas state](#durable-canvas-state)). Use `export` to save a standalone `.excalidraw` file; taking a snapshot alone does not provide restart recovery in the default in-memory mode.
 
-## MCP Tools (26 Total)
+## MCP Tools (27 Total)
 
 | Category | Tools |
 |---|---|
 | **Element CRUD** | `create_element`, `get_element`, `update_element`, `delete_element`, `query_elements`, `batch_create_elements`, `duplicate_elements` |
 | **Layout** | `align_elements`, `distribute_elements`, `group_elements`, `ungroup_elements`, `lock_elements`, `unlock_elements` |
-| **Scene Awareness** | `describe_scene`, `get_canvas_screenshot` |
+| **Scene Awareness** | `describe_scene`, `get_canvas_screenshot`, `get_selection` |
 | **File I/O** | `export_scene`, `import_scene`, `export_to_image`, `export_to_excalidraw_url`, `create_from_mermaid` |
 | **State Management** | `clear_canvas`, `snapshot_scene`, `restore_snapshot` |
 | **Viewport** | `set_viewport` |
 | **Design Guide** | `read_diagram_guide` |
 | **Resources** | `get_resource` |
+
+`get_selection` / CLI `selection` return `selectedElementIds` and `count`. Select elements in an open canvas tab first; among connected tabs, the last selection change wins. With no selection, the list is empty. Selection is not persisted, even in durable mode.
+
+MCP file paths must stay inside `EXCALIDRAW_EXPORT_DIR` after symlink resolution; broken symlinks are refused. `export_scene` accepts `.excalidraw`, `.json` and `.md`; `import_scene` also accepts embedded-scene `.png`; `export_to_image` accepts `.png` or `.svg` matching its format. These restrictions do not apply to CLI file I/O.
 
 Full schemas are discoverable via `tools/list` or in `skills/excalidraw-skill/references/cheatsheet.md`.
 
@@ -588,7 +607,7 @@ curl http://127.0.0.1:3000/health
 
 ### Regression Checks
 
-`npm test` builds the server and runs four suites, each also available on its own:
+`npm test` builds the server and runs seven suites, each also available on its own:
 
 ```bash
 npm test
@@ -596,6 +615,9 @@ npm run test:mcp      # MCP stdio wire protocol (see below)
 npm run test:bind     # default loopback bind, duplicate-start refusal
 npm run test:render   # headless renderer, export order keys, scene-prep stability
 npm run test:state    # atomic import and snapshot restore, sync validation
+npm run test:durable  # restart recovery, checkpoint failures, directory ownership
+npm run test:share    # default and self-hosted share targets
+npm run test:paths    # MCP file containment, symlinks, allowed file types
 ```
 
 ### Canvas Browser Regression Tests
