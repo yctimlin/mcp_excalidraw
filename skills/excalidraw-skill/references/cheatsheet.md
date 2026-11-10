@@ -5,6 +5,9 @@
 - Canvas base URL: `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`); CLI also accepts `--url <canvasUrl>`
 - Canvas health: `GET /health` or `npx -y mcp-excalidraw-server status`
 - Auto-start: any canvas-touching CLI command starts the server if it's down (opt out with `EXCALIDRAW_NO_AUTOSTART=1`)
+- Persistence: `EXCALIDRAW_DATA_DIR` keeps elements, image files and named snapshots across restarts; unset means in-memory only. Selection is never persisted.
+- Sharing: `EXCALIDRAW_SHARE_UPLOAD_URL` and `EXCALIDRAW_SHARE_BASE_URL` select a self-hosted backend/app; defaults use excalidraw.com.
+- PNG rasterizer timeout: `EXCALIDRAW_PNG_WORKER_TIMEOUT_MS` (default `120000` milliseconds).
 
 ## CLI Reference
 
@@ -34,13 +37,14 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Command | Description |
 |---------|-------------|
+| `selection` | Current `selectedElementIds` and `count`; last selection change among connected tabs wins |
 | `describe` | AI-readable scene summary (ids, positions, labels, connections) — plain text |
 | `screenshot` | Headless PNG/SVG render of the canvas (no browser tab); `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--embed-scene` (PNG only, opt-in), `--renderer browser` (use an open tab instead); PNG without `--out` → temp file path in JSON, SVG without `--out` → raw SVG |
 | `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` / embedded-scene PNG file to PNG/SVG offline — no canvas server; same flags as `screenshot` |
 | `export [--out f.excalidraw] [--format json\|obsidian]` | Scene as .excalidraw JSON (stdout without `--out`); a `.md` out path writes Obsidian's .excalidraw.md format |
 | `import [file\|-] [--replace]` | Import .excalidraw JSON, Obsidian .excalidraw.md, or PNG with an embedded scene (merge by default; binary stdin supported) |
 | `mermaid [file\|-]` | Render Mermaid onto the canvas (**browser tab required**) |
-| `share` | Encrypted upload → shareable excalidraw.com URL |
+| `share` | Encrypted upload → shareable URL (excalidraw.com or a configured self-hosted target) |
 | `clear --yes` | Wipe the canvas |
 | `snapshot save\|list\|restore [name]` | Named canvas snapshots |
 
@@ -61,7 +65,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | `install-skill --dir <skills-root>` | Install this skill into an agent-chosen project/global skills root (replaces any existing copy) |
 | `help [command]`, `--version` | Usage and version |
 
-## MCP Tools (26 total)
+## MCP Tools (27 total)
 
 ### Element CRUD
 
@@ -90,8 +94,9 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
+| `get_selection` | Current selected element IDs and count; last selection change among connected tabs wins, in memory only | (none) |
 | `describe_scene` | AI-readable scene description (types, positions, labels, connections, bounding box) | (none) |
-| `get_canvas_screenshot` | Returns a PNG of the canvas for visual verification (headless, no browser needed) | (optional) `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `renderer` ("auto"\|"node"\|"browser") |
+| `get_canvas_screenshot` | Returns a PNG of the canvas for visual verification (headless, no browser needed) | (optional) `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `embedScene` (PNG only, default false), `renderer` ("auto"\|"node"\|"browser") |
 | `get_resource` | Get scene/library/theme/elements | `resource` |
 
 ### File I/O & Export
@@ -99,9 +104,9 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | Tool | Description | Required params |
 |------|-------------|-----------------|
 | `export_scene` | Export to .excalidraw JSON (a `.md` filePath → Obsidian .excalidraw.md) | (optional) `filePath` |
-| `import_scene` | Import from .excalidraw JSON or Obsidian .excalidraw.md | `mode` ("replace"\|"merge"), `filePath` or `data` |
-| `export_to_image` | Export to PNG/SVG (headless, no browser needed; SVG embeds fonts) | `format` ("png"\|"svg"), (optional) `filePath`, `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `renderer` ("auto"\|"node"\|"browser") |
-| `export_to_excalidraw_url` | Upload & get shareable excalidraw.com URL | (none) |
+| `import_scene` | Import from .excalidraw JSON, Obsidian .excalidraw.md or embedded-scene PNG | `mode` ("replace"\|"merge"), `filePath` or `data` |
+| `export_to_image` | Export to PNG/SVG (headless, no browser needed; SVG embeds fonts) | `format` ("png"\|"svg"), (optional) `filePath`, `background`, `dark`, `scale` (1-4), `padding`, `elementIds`, `frameId`, `embedScene` (PNG only, default false), `renderer` ("auto"\|"node"\|"browser") |
+| `export_to_excalidraw_url` | Upload & get shareable URL (default excalidraw.com; configurable) | (none) |
 
 ### State Management
 
@@ -130,6 +135,9 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | `create_from_mermaid` | Mermaid diagram to Excalidraw | `mermaidDiagram` |
 
 Notes:
+
+- **MCP file paths**: must stay inside `EXCALIDRAW_EXPORT_DIR` after resolving symlinks; broken symlinks are refused. Scene export: `.excalidraw`, `.json`, `.md`; import: the same plus `.png`; image export: `.png` / `.svg` matching format. CLI file I/O is unaffected.
+- **Snapshots**: in memory by default; survive restarts only with `EXCALIDRAW_DATA_DIR`.
 - **CLI + MCP**: Set `text` on shapes to label them (auto-converts to `label.text`). Use `startElementId`/`endElementId` on arrows.
 - **CLI `apply.update`**: Update entries can use either direct fields (`{"id":"a","x":120}`) or a `set` object (`{"id":"a","set":{"x":120}}`). Do not mix both forms in one update entry.
 - **Raw REST**: Use `"label": {"text": "..."}` for shape labels. Use `"start": {"id": "..."}` / `"end": {"id": "..."}` for arrow binding. (Different format!)
@@ -144,6 +152,7 @@ Notes:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/api/selection` | Current selection: `{success, selectedElementIds, count}` |
 | `GET` | `/api/elements` | List all elements |
 | `GET` | `/api/elements/:id` | Get element by ID |
 | `POST` | `/api/elements` | Create element |
