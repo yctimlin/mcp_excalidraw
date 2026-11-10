@@ -167,6 +167,7 @@ function App(): JSX.Element {
   const serverSceneHashRef = useRef<number | null>(null)
   // Image files the server already holds, so each sync uploads only new ones
   const serverFileIdsRef = useRef<Set<string>>(new Set())
+  const lastReportedSelectionRef = useRef<string>('')
   const rememberServerFiles = (files: unknown): void => {
     const list = Array.isArray(files) ? files : Object.values((files as Record<string, unknown>) || {})
     for (const file of list as { id?: unknown }[]) {
@@ -986,6 +987,25 @@ function App(): JSX.Element {
                   window.localStorage?.setItem('excalidraw-canvas-theme', appState.theme)
                 } catch (error) {
                   console.warn('Failed to save theme to localStorage:', error)
+                }
+              }
+              if (appState?.selectedElementIds && websocketRef.current?.readyState === WebSocket.OPEN) {
+                const selectedIds = Object.keys(appState.selectedElementIds)
+                  .filter((id) => appState.selectedElementIds[id])
+                  .sort()
+                const serialized = selectedIds.join(',')
+                if (serialized !== lastReportedSelectionRef.current) {
+                  lastReportedSelectionRef.current = serialized
+                  try {
+                    websocketRef.current.send(
+                      JSON.stringify({
+                        type: 'selection_updated',
+                        selectedElementIds: selectedIds
+                      })
+                    )
+                  } catch (error) {
+                    console.warn('Failed to report selection update:', error)
+                  }
                 }
               }
               scheduleAutoSync()

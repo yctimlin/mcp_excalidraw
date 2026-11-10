@@ -76,6 +76,28 @@ app.use('/assets/fonts', express.static(
 // WebSocket connections
 const clients = new Set<WebSocket>();
 
+// In-memory canvas selection tracked across active tabs.
+// The most recently active tab wins; cleared when its tab closes.
+interface TabSelection {
+  selectedElementIds: string[];
+  updatedAt: number;
+}
+const clientSelections = new Map<WebSocket, TabSelection>();
+
+function getActiveSelection(): string[] {
+  let latestTab: TabSelection | null = null;
+  for (const [ws, sel] of clientSelections.entries()) {
+    if (ws.readyState === WebSocket.OPEN) {
+      if (!latestTab || sel.updatedAt > latestTab.updatedAt) {
+        latestTab = sel;
+      }
+    } else {
+      clientSelections.delete(ws);
+    }
+  }
+  return latestTab ? latestTab.selectedElementIds : [];
+}
+
 // Broadcast to all connected clients
 function broadcast(message: WebSocketMessage): void {
   const data = JSON.stringify(message);
@@ -181,14 +203,30 @@ wss.on('connection', (ws: WebSocket) => {
   };
   ws.send(JSON.stringify(syncMessage));
 
+  ws.on('message', (raw: WebSocket.Data) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg && msg.type === 'selection_updated' && Array.isArray(msg.selectedElementIds)) {
+        clientSelections.set(ws, {
+          selectedElementIds: msg.selectedElementIds.filter((id: unknown) => typeof id === 'string'),
+          updatedAt: Date.now()
+        });
+      }
+    } catch {
+      // Ignore malformed client frames
+    }
+  });
+
   ws.on('close', () => {
     clients.delete(ws);
+    clientSelections.delete(ws);
     logger.info('WebSocket connection closed');
   });
 
   ws.on('error', (error) => {
     logger.error('WebSocket error:', error);
     clients.delete(ws);
+    clientSelections.delete(ws);
   });
 });
 
@@ -327,6 +365,16 @@ const UpdateElementSchema = z.object({
 }).passthrough();
 
 // API Routes
+
+// Get current canvas selection
+app.get('/api/selection', (_req: Request, res: Response) => {
+  const selectedElementIds = getActiveSelection();
+  res.json({
+    success: true,
+    selectedElementIds,
+    count: selectedElementIds.length
+  });
+});
 
 // Get all elements
 app.get('/api/elements', (req: Request, res: Response) => {

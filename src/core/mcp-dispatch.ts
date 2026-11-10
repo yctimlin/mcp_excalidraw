@@ -18,6 +18,7 @@ import {
   getElements,
   searchElements,
   clearCanvas,
+  getCanvasSelection,
   exportImage,
   setViewport,
   saveSnapshot,
@@ -466,6 +467,19 @@ export async function callExcalidrawTool(
 
         return {
           content: [{ type: 'text', text: JSON.stringify(element, null, 2) }]
+        };
+      }
+
+      case 'get_selection': {
+        const selectedElementIds = await getCanvasSelection();
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              selectedElementIds,
+              count: selectedElementIds.length
+            }, null, 2)
+          }]
         };
       }
 

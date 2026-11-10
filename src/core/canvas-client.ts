@@ -185,6 +185,11 @@ export async function clearCanvas(): Promise<ApiResponse> {
   return requestJson<ApiResponse>('/api/elements/clear', { method: 'DELETE' });
 }
 
+export async function getCanvasSelection(): Promise<string[]> {
+  const data = await requestJson<{ success: boolean; selectedElementIds: string[] }>('/api/selection');
+  return data.selectedElementIds || [];
+}
+
 export async function getFiles(): Promise<Record<string, any>> {
   const data = await requestJson<{ files?: Record<string, any> }>('/api/files');
   return data.files || {};
