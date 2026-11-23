@@ -751,35 +751,49 @@ function resolveArrowBindings(batchElements: ServerElement[], includeExisting = 
     const startEl = startRef ? elementMap.get(startRef.id) : undefined;
     const endEl = endRef ? elementMap.get(endRef.id) : undefined;
 
+    // Waypoints the caller gave (anything between the first and last point) are kept
+    // where they were put. Only the two ends are re-anchored, each facing the waypoint
+    // next to it instead of the other shape. With no waypoints this is the edge-to-edge
+    // line it has always been.
+    const given = Array.isArray(el.points) && el.points.length > 2
+      ? (el.points as number[][]).map(([px, py]) => ({ x: el.x + (px ?? 0), y: el.y + (py ?? 0) }))
+      : null;
+    const waypoints = given ? given.slice(1, -1) : [];
+
     // Calculate arrow path from edge to edge
     const startCenter = startEl
       ? { x: startEl.x + (startEl.width || 0) / 2, y: startEl.y + (startEl.height || 0) / 2 }
-      : { x: el.x, y: el.y };
+      : given?.[0] ?? { x: el.x, y: el.y };
     const endCenter = endEl
       ? { x: endEl.x + (endEl.width || 0) / 2, y: endEl.y + (endEl.height || 0) / 2 }
-      : { x: el.x + 100, y: el.y };
+      : given?.[given.length - 1] ?? { x: el.x + 100, y: el.y };
 
     const GAP = 8;
+    const startFaces = waypoints[0] ?? endCenter;
+    const endFaces = waypoints[waypoints.length - 1] ?? startCenter;
     const startPt = startEl
-      ? computeEdgePoint(startEl, endCenter.x, endCenter.y)
+      ? computeEdgePoint(startEl, startFaces.x, startFaces.y)
       : startCenter;
     const endPt = endEl
-      ? computeEdgePoint(endEl, startCenter.x, startCenter.y)
+      ? computeEdgePoint(endEl, endFaces.x, endFaces.y)
       : endCenter;
 
     // Apply gap: move start point slightly away from source, end point slightly away from target
-    const startDx = endPt.x - startPt.x;
-    const startDy = endPt.y - startPt.y;
+    const startAim = waypoints[0] ?? endPt;
+    const endAim = waypoints[waypoints.length - 1] ?? startPt;
+    const startDx = startAim.x - startPt.x;
+    const startDy = startAim.y - startPt.y;
     const startDist = Math.sqrt(startDx * startDx + startDy * startDy) || 1;
-    const endDx = startPt.x - endPt.x;
-    const endDy = startPt.y - endPt.y;
+    const endDx = endAim.x - endPt.x;
+    const endDy = endAim.y - endPt.y;
     const endDist = Math.sqrt(endDx * endDx + endDy * endDy) || 1;
 
-    const finalStart = {
+    // An unbound end of a routed arrow stays exactly where the caller put it.
+    const finalStart = given && !startEl ? startPt : {
       x: startPt.x + (startDx / startDist) * GAP,
       y: startPt.y + (startDy / startDist) * GAP
     };
-    const finalEnd = {
+    const finalEnd = given && !endEl ? endPt : {
       x: endPt.x + (endDx / endDist) * GAP,
       y: endPt.y + (endDy / endDist) * GAP
     };
@@ -787,7 +801,11 @@ function resolveArrowBindings(batchElements: ServerElement[], includeExisting = 
     // Set arrow position and points
     el.x = finalStart.x;
     el.y = finalStart.y;
-    el.points = [[0, 0], [finalEnd.x - finalStart.x, finalEnd.y - finalStart.y]];
+    el.points = [
+      [0, 0],
+      ...waypoints.map(pt => [pt.x - finalStart.x, pt.y - finalStart.y]),
+      [finalEnd.x - finalStart.x, finalEnd.y - finalStart.y]
+    ];
 
     // Do NOT delete `start` and `end` here.
     // Excalidraw's frontend `convertToExcalidrawElements` method looks for these exact properties
