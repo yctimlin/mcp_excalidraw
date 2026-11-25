@@ -7,7 +7,6 @@ import {
   ServerElement,
   ExcalidrawElementType
 } from '../types.js';
-import { EXPRESS_SERVER_URL } from './config.js';
 import {
   updateElementOnCanvas,
   deleteElementOnCanvas,

@@ -121,6 +121,8 @@ async function checkMerge() {
   assert(scene.body.elements.some(e => e.id === 'existing'), 'conversion removed existing elements');
   assert(scene.body.count === 1 + first.body.count + second.body.count, 'conversion did not merge additively');
   assert(new Set(scene.body.elements.map(e => e.id)).size === scene.body.count, 'repeat conversion produced duplicate ids');
+  const indices = scene.body.elements.map(e => e.index).filter(index => index !== undefined && index !== null);
+  assert(new Set(indices).size === indices.length, `repeat conversion produced colliding fractional indices: ${JSON.stringify(indices)}`);
 }
 
 async function checkImageFallback() {

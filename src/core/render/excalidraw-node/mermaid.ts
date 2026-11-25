@@ -25,6 +25,10 @@ export async function convertMermaid(
   const parsed = await mod.parseMermaidToExcalidraw(definition, options.config);
   // Regenerate ids so repeated conversions of the same diagram (Mermaid emits
   // stable ids like "A", "B") can't collide with elements already on the canvas.
-  const elements = mod.convertToExcalidrawElements(parsed.elements, { regenerateIds: true });
+  // The converter also assigns fractional `index` values starting at "a0",
+  // which would collide with every earlier diagram's. The server's other create
+  // paths leave `index` unset and let the canvas assign it, so do the same.
+  const elements = mod.convertToExcalidrawElements(parsed.elements, { regenerateIds: true })
+    .map(({ index: _index, ...element }: Record<string, any>) => element);
   return { elements, files: parsed.files ?? {} };
 }

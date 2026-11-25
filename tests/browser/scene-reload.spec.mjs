@@ -226,6 +226,15 @@ test('reconnect and server incremental updates preserve an existing frame', asyn
 
 test('successful Mermaid import and SVG export retain the frame scene', async ({ page, request }) => {
   await seed(request, frameScene());
+  // Observe the server's push instead of sleeping: resolves once the tab has
+  // received the converted elements over its WebSocket.
+  const batchReceived = new Promise(resolve => {
+    page.on('websocket', socket => socket.on('framereceived', frame => {
+      try {
+        if (JSON.parse(String(frame.payload)).type === 'elements_batch_created') resolve();
+      } catch { /* not a JSON frame */ }
+    }));
+  });
   await page.goto('/');
   await expect(syncButton(page)).toBeEnabled();
   // The server converts the diagram itself; the open tab only receives the
@@ -234,7 +243,9 @@ test('successful Mermaid import and SVG export retain the frame scene', async ({
   expect(imported.ok()).toBeTruthy();
   const { count } = await imported.json();
   expect(count).toBeGreaterThan(0);
-  await page.waitForTimeout(500);
+  await batchReceived;
+  // Let the tab apply the batch before its scene is read back
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   // Round-tripping the tab's scene back must keep the frame and the diagram
   // exactly once (no duplicated labels from the tab re-importing it).
   const scene = await sync(page, request);
@@ -315,7 +326,7 @@ for (const [name, badElement] of [
   ['unknown element type', { id: 'bad', type: 'future-element', x: 0, y: 0, width: 100, height: 100 }],
   ['silently filtered tiny frame', { id: 'bad', type: 'frame', x: 0, y: 0, width: 0, height: 0 }],
 ]) {
-  test(`${name} blocks manual and automatic sync without changing server data`, async ({ page, request }) => {
+  test(`${name} blocks tab sync, and a server-side Mermaid import leaves the existing scene intact`, async ({ page, request }) => {
     await seed(request, [...frameScene(), badElement]);
     const before = await serverScene(request);
     const writes = [];
@@ -328,9 +339,16 @@ for (const [name, badElement] of [
     await expect(page.getByRole('button', { name: 'Clear Canvas', exact: true })).toBeDisabled();
     await page.mouse.click(500, 400);
     await page.keyboard.press('Delete');
+    // The server converts and stores this itself; the blocked tab must neither
+    // write anything back nor disturb the data that was already there.
+    const imported = await request.post('/api/elements/from-mermaid', { data: { mermaidDiagram: 'flowchart LR; A-->B' } });
+    expect(imported.ok()).toBeTruthy();
+    const { count } = await imported.json();
     await page.waitForTimeout(1600); // cover the actual 1200 ms autosync debounce
     expect(writes).toHaveLength(0);
-    expect(await serverScene(request)).toEqual(before);
+    const after = await serverScene(request);
+    expect(after).toHaveLength(before.length + count);
+    for (const element of before) expect(after.find(e => e.id === element.id)).toEqual(element);
     await seed(request, frameScene());
     await page.getByRole('button', { name: 'Retry loading' }).click();
     expectFrame(await sync(page, request));
