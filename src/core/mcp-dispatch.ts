@@ -389,10 +389,10 @@ export async function callExcalidrawTool(
         const params = z.object({
           mermaidDiagram: z.string(),
           config: z.object({
-            startOnLoad: z.boolean().optional(),
-            flowchart: z.object({
-              curve: z.enum(['linear', 'basis']).optional()
-            }).optional(),
+            elbow: z.union([
+              z.boolean(),
+              z.object({ flowchart: z.boolean().optional(), state: z.boolean().optional() })
+            ]).optional(),
             themeVariables: z.object({
               fontSize: z.string().optional()
             }).optional(),
@@ -407,18 +407,18 @@ export async function callExcalidrawTool(
         });
 
         try {
-          // Send the Mermaid diagram to the frontend via the API
-          // The frontend will use mermaid-to-excalidraw to convert it
+          // The canvas server converts the diagram in Node; no browser tab is needed.
           const result = await sendMermaid(params.mermaidDiagram, params.config);
 
-          logger.info('Mermaid diagram sent to frontend for conversion', {
-            success: result.success
+          logger.info('Mermaid diagram converted', {
+            success: result.success,
+            count: result.count
           });
 
           return {
             content: [{
               type: 'text',
-              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.`
+              text: JSON.stringify(result, null, 2)
             }]
           };
         } catch (error) {

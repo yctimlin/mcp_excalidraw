@@ -17,11 +17,11 @@ Three interfaces drive the same live canvas. Pick the first one that applies:
    No setup needed — any canvas-touching command **auto-starts the canvas server** on `http://127.0.0.1:3000` (first `npx` run downloads the package). If the CLI is installed globally (`npm i -g mcp-excalidraw-server`), the shorter alias `excalidraw-canvas <command>` works too.
 3. **REST API** (last resort, e.g. from application code): HTTP endpoints on `http://127.0.0.1:3000` — see `references/cheatsheet.md` for payloads. The server must already be running.
 
-The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Screenshots and image exports render headless inside the canvas server, so you never need a browser tab to check your own work. Only mermaid conversion and viewport control need an open tab (CLI exits with code 4 when it's missing). Still tell the user the URL — opening it lets them watch you draw.
+The canvas URL comes from `EXPRESS_SERVER_URL` (default `http://127.0.0.1:3000`). Screenshots and image exports render headless inside the canvas server, so you never need a browser tab to check your own work. Mermaid conversion is headless too; only viewport control needs an open tab, and `screenshot --renderer browser` (CLI exits with code 4 when the tab is missing). Still tell the user the URL — opening it lets them watch you draw.
 
 ### CLI Quick Reference
 
-Results are JSON on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `mermaid` and `screenshot --renderer browser`).
+Results are JSON on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `screenshot --renderer browser`).
 
 | Task | Command |
 |------|---------|
@@ -228,7 +228,7 @@ echo 'graph TD
   A[Client] --> B[API]
   B --> C[(DB)]' | npx -y mcp-excalidraw-server mermaid
 ```
-Requires an open browser tab (conversion runs in the frontend; exit code 4 tells you to open the canvas URL). Afterwards `screenshot` to verify layout. If the auto-layout is poor (nodes crowded, edges crossing), find problem elements with `describe` and reposition them with `update`.
+Conversion runs in the canvas server, so no browser tab is needed; any open tab just receives the new elements. Diagram types without native conversion (e.g. pie) come back as a single SVG image. Afterwards `screenshot` to verify layout. If the auto-layout is poor (nodes crowded, edges crossing), find problem elements with `describe` and reposition them with `update`.
 
 ## Workflow: File I/O
 
@@ -269,7 +269,7 @@ By default, snapshots are in memory and lost on restart. Set `EXCALIDRAW_DATA_DI
 ## Error Recovery
 
 - **Exit code 3 (canvas unreachable)?** Auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`) or a non-loopback `EXPRESS_SERVER_URL` is set. Run `start` explicitly or fix the env.
-- **Exit code 4 (browser required)?** Only `mermaid` and `screenshot --renderer browser` need an open tab. Open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` — screenshots and image exports render headless.
+- **Exit code 4 (browser required)?** Only `screenshot --renderer browser` needs an open tab. Open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` — screenshots and image exports render headless.
 - **Elements not appearing?** Check `describe` — they may be off-screen. In MCP mode, use `set_viewport` with `scrollToContent: true`, or `scrollToElementIds` plus optional `viewportZoomFactor` to focus on a specific subgraph; in a browser, press the zoom-to-fit button.
 - **Arrow not connecting?** Verify element IDs with `get <id>`. Make sure `startElementId`/`endElementId` match existing element IDs.
 - **Canvas in a bad state?** `snapshot save` first, then `clear --yes` and rebuild. Or `snapshot restore` to go back.

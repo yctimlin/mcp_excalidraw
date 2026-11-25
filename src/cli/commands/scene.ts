@@ -15,7 +15,6 @@ import { decodeSceneInput } from '../../core/scene-input.js';
 import { wrapSceneAsObsidianMd } from '../../core/obsidian-md.js';
 import { describeScene } from '../../core/describe.js';
 import { exportToExcalidrawUrl } from '../../core/share-url.js';
-import { EXPRESS_SERVER_URL } from '../../core/config.js';
 import { IMAGE_FLAG_SPEC, imageFormatFromFlags, imageOptionsFromFlags } from '../image-options.js';
 
 async function readFileOrStdin(inputPath: string | undefined): Promise<Buffer> {
@@ -127,12 +126,9 @@ export async function mermaid(argv: string[]): Promise<void> {
   }
 
   await ensureCanvasRunning();
-  // Conversion happens in the browser (mermaid-to-excalidraw needs DOM access)
-  await requireBrowserClient('mermaid conversion');
-
+  // Converted in the canvas server; open tabs just receive the new elements.
   const result = await sendMermaid(diagram);
-  note(`Conversion happens in the open canvas tab at ${EXPRESS_SERVER_URL}.`);
-  printJson({ success: result.success ?? true, message: result.message });
+  printJson({ success: result.success ?? true, count: result.count, elementIds: result.elementIds, message: result.message });
 }
 
 export async function share(argv: string[]): Promise<void> {

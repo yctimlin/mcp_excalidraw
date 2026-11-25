@@ -25,10 +25,21 @@ await build({
   // The exporter never spins up the font-subsetting worker (skipInliningFonts),
   // but the reference to it must not be resolved as a bundle entry.
   external: ['jsdom', '*.chunk.js'],
-  // Mermaid (and the cytoscape/katex/parser tree behind it) is only reachable
-  // from the editor's text-to-diagram dialog; swapping it for a stub keeps the
-  // exporter bundle small.
-  alias: { '@excalidraw/mermaid-to-excalidraw': mermaidStub, mermaid: mermaidStub },
+  // The editor's text-to-diagram dialog pulls in its own copy of
+  // mermaid-to-excalidraw (v2, which drags in mermaid and the cytoscape/katex/
+  // parser tree). The exporter never opens that dialog, so that copy and
+  // `mermaid` are swapped for a stub. The server's own Mermaid conversion (the
+  // top-level v3 package, which has no such dependencies) stays real.
+  alias: { mermaid: mermaidStub },
+  plugins: [{
+    name: 'stub-editor-mermaid',
+    setup(b) {
+      b.onResolve({ filter: /^@excalidraw\/mermaid-to-excalidraw$/ }, args =>
+        args.importer.includes(`${path.sep}@excalidraw${path.sep}excalidraw${path.sep}`)
+          ? { path: mermaidStub }
+          : undefined);
+    }
+  }],
   define: { 'process.env.NODE_ENV': '"production"' },
   legalComments: 'none',
   logLevel: 'warning'

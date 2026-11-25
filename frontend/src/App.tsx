@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
   Excalidraw,
-  convertToExcalidrawElements,
   CaptureUpdateAction,
   exportToBlob,
   exportToSvg,
@@ -15,11 +14,9 @@ import type {
   LibraryPersistedData,
   LibraryPersistenceAdapter
 } from '@excalidraw/excalidraw/data/library'
-import { convertMermaidToExcalidraw, DEFAULT_MERMAID_CONFIG } from './utils/mermaidConverter'
 import { cleanElementForExcalidraw, prepareServerScene, assertScenePreserved } from './utils/scene'
 import { preloadCanvasFonts } from './utils/fonts'
 import type { ServerElement } from './utils/scene'
-import type { MermaidConfig } from '@excalidraw/mermaid-to-excalidraw'
 
 const LIBRARY_STORAGE_KEY = 'excalidraw-canvas-library'
 
@@ -94,8 +91,6 @@ interface WebSocketMessage {
   count?: number;
   timestamp?: string;
   source?: string;
-  mermaidDiagram?: string;
-  config?: MermaidConfig;
   requestId?: string;
   scrollToContent?: boolean;
   scrollToElementId?: string;
@@ -692,48 +687,6 @@ function App(): JSX.Element {
                   error: (viewportError as Error).message
                 })
               }).catch(() => { })
-            }
-          }
-          break
-
-        case 'mermaid_convert':
-          console.log('Received Mermaid conversion request from MCP')
-          if (data.mermaidDiagram) {
-            try {
-              if (!canSyncScene()) throw new Error('Scene is not fully loaded; Mermaid import is paused')
-              const generation = sceneGenerationRef.current
-              const result = await convertMermaidToExcalidraw(data.mermaidDiagram, data.config || DEFAULT_MERMAID_CONFIG)
-              if (!canSyncScene() || generation !== sceneGenerationRef.current) return
-
-              if (result.error) {
-                console.error('Mermaid conversion error:', result.error)
-                return
-              }
-
-              if (result.elements && result.elements.length > 0) {
-                // Regenerate ids so repeated conversions of the same diagram
-                // (mermaid emits stable ids like "A", "B") can't collide with
-                // elements already on the canvas.
-                const convertedElements = convertToExcalidrawElements([...result.elements] as Parameters<typeof convertToExcalidrawElements>[0], { regenerateIds: true })
-                // Merge with the existing scene — updateScene() replaces the
-                // element list wholesale, and syncToBackend() would otherwise
-                // propagate that wipe to the server.
-                applySceneUpdateWithoutAutoSync(excalidrawAPI, {
-                  elements: [...excalidrawAPI.getSceneElements(), ...convertedElements],
-                  captureUpdate: CaptureUpdateAction.IMMEDIATELY
-                })
-
-                if (result.files) {
-                  excalidrawAPI.addFiles(Object.values(result.files))
-                }
-
-                console.log('Mermaid diagram converted successfully:', result.elements.length, 'elements')
-
-                // Sync to backend automatically after creating elements
-                await syncToBackend()
-              }
-            } catch (error) {
-              console.error('Error converting Mermaid diagram from WebSocket:', error)
             }
           }
           break

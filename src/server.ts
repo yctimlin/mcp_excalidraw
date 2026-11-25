@@ -31,6 +31,7 @@ import WebSocket from 'ws';
 import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
 import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
+import { convertMermaid } from './core/render/excalidraw-node/mermaid.js';
 import {
   CanvasFileImmutabilityError,
   CanvasFileReferenceError,
@@ -890,15 +891,23 @@ app.post('/api/elements/batch', (req: Request, res: Response) => {
   }
 });
 
-// Convert Mermaid diagram to Excalidraw elements
-app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
+// Convert a Mermaid diagram to Excalidraw elements. Conversion runs here in
+// Node (no browser tab needed); the result is merged into the scene and pushed
+// to any connected tabs as ordinary element/file messages.
+app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
   try {
-    const { mermaidDiagram, config } = req.body;
+    const { mermaidDiagram, config } = req.body ?? {};
 
     if (!mermaidDiagram || typeof mermaidDiagram !== 'string') {
       return res.status(400).json({
         success: false,
         error: 'Mermaid diagram definition is required'
+      });
+    }
+    if (config !== undefined && (config === null || typeof config !== 'object' || Array.isArray(config))) {
+      return res.status(400).json({
+        success: false,
+        error: 'config must be an object'
       });
     }
 
@@ -907,24 +916,56 @@ app.post('/api/elements/from-mermaid', (req: Request, res: Response) => {
       hasConfig: !!config
     });
 
-    // Broadcast to all WebSocket clients to process the Mermaid diagram
-    broadcast({
-      type: 'mermaid_convert',
-      mermaidDiagram,
-      config: config || {},
-      timestamp: new Date().toISOString()
+    let converted;
+    try {
+      converted = await convertMermaid(mermaidDiagram, { config });
+    } catch (error) {
+      logger.warn('Mermaid conversion failed:', error);
+      return res.status(400).json({
+        success: false,
+        error: `Mermaid conversion failed: ${(error as Error).message}`
+      });
+    }
+    if (converted.elements.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Mermaid diagram produced no elements'
+      });
+    }
+
+    const now = new Date().toISOString();
+    const createdElements: ServerElement[] = converted.elements.map(element => ({
+      ...element,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    } as ServerElement));
+    const fileList = Object.values(converted.files);
+    const preparedFiles = prepareFileWrites(fileList);
+
+    commitCanvasMutation(() => {
+      preparedFiles.forEach(file => files.set(file.id, file));
+      createdElements.forEach(el => elements.set(el.id, el));
     });
 
-    // Return the diagram for frontend processing
+    // Files first so image elements find their data when they arrive.
+    if (fileList.length > 0) broadcast({ type: 'files_added', files: fileList });
+    const message: BatchCreatedMessage = {
+      type: 'elements_batch_created',
+      elements: createdElements
+    };
+    broadcast(message);
+
     res.json({
       success: true,
-      mermaidDiagram,
-      config: config || {},
-      message: 'Mermaid diagram sent to frontend for conversion.'
+      count: createdElements.length,
+      elementIds: createdElements.map(el => el.id),
+      fileCount: fileList.length,
+      message: `Converted Mermaid diagram into ${createdElements.length} element${createdElements.length === 1 ? '' : 's'}.`
     });
   } catch (error) {
     logger.error('Error processing Mermaid diagram:', error);
-    res.status(400).json({
+    res.status(mutationErrorStatus(error, 400)).json({
       success: false,
       error: (error as Error).message
     });

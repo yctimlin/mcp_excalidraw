@@ -245,7 +245,7 @@ export const tools: Tool[] = [
   },
   {
     name: 'create_from_mermaid',
-    description: 'Convert a Mermaid diagram to Excalidraw elements and render them on the canvas',
+    description: 'Convert a Mermaid diagram (flowchart, sequence, state, class, ER, ...) to Excalidraw elements and add them to the canvas. Runs in the canvas server; no browser tab is required.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -257,12 +257,18 @@ export const tools: Tool[] = [
           type: 'object',
           description: 'Optional Mermaid configuration',
           properties: {
-            startOnLoad: { type: 'boolean' },
-            flowchart: {
-              type: 'object',
-              properties: {
-                curve: { type: 'string', enum: ['linear', 'basis'] }
-              }
+            elbow: {
+              description: 'Draw edges as elbow arrows: true for all, or per diagram type',
+              oneOf: [
+                { type: 'boolean' },
+                {
+                  type: 'object',
+                  properties: {
+                    flowchart: { type: 'boolean' },
+                    state: { type: 'boolean' }
+                  }
+                }
+              ]
             },
             themeVariables: {
               type: 'object',

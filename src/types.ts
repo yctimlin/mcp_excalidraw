@@ -182,7 +182,6 @@ export type WebSocketMessageType =
   | 'elements_batch_created'
   | 'elements_synced'
   | 'sync_status'
-  | 'mermaid_convert'
   | 'canvas_cleared'
   | 'export_image_request'
   | 'set_viewport'
@@ -226,19 +225,10 @@ export interface SyncStatusMessage extends WebSocketMessage {
   timestamp: string;
 }
 
-export interface MermaidConvertMessage extends WebSocketMessage {
-  type: 'mermaid_convert';
-  mermaidDiagram: string;
-  config?: MermaidConfig;
-  timestamp: string;
-}
-
 // Mermaid conversion types
 export interface MermaidConfig {
-  startOnLoad?: boolean;
-  flowchart?: {
-    curve?: 'linear' | 'basis';
-  };
+  // Edges as elbow arrows: everywhere, or per diagram type
+  elbow?: boolean | { flowchart?: boolean; state?: boolean };
   themeVariables?: {
     fontSize?: string;
   };
@@ -252,8 +242,8 @@ export interface MermaidConversionRequest {
 }
 
 export interface MermaidConversionResponse extends ApiResponse {
-  elements: ServerElement[];
-  files?: any;
+  elementIds: string[];
+  fileCount: number;
   count: number;
 }
 
