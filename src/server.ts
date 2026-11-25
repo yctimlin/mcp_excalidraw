@@ -31,7 +31,7 @@ import WebSocket from 'ws';
 import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
 import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
-import { convertMermaid } from './core/render/excalidraw-node/mermaid.js';
+import { convertMermaid, MermaidInputError } from './core/render/excalidraw-node/mermaid.js';
 import { parseMermaidConfig, describeConfigError } from './core/mermaid-config.js';
 import {
   CanvasFileImmutabilityError,
@@ -924,8 +924,16 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
     try {
       converted = await convertMermaid(mermaidDiagram, { config: parsedConfig.config });
     } catch (error) {
-      logger.warn('Mermaid conversion failed:', error);
-      return res.status(400).json({
+      if (error instanceof MermaidInputError) {
+        logger.warn('Mermaid conversion rejected the diagram:', error.message);
+        return res.status(400).json({
+          success: false,
+          error: `Mermaid conversion failed: ${error.message}`
+        });
+      }
+      // Not the caller's fault: the renderer bundle or DOM shim failed.
+      logger.error('Mermaid conversion failed internally:', error);
+      return res.status(500).json({
         success: false,
         error: `Mermaid conversion failed: ${(error as Error).message}`
       });
@@ -953,7 +961,7 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
     });
 
     // Files first so image elements find their data when they arrive.
-    if (fileList.length > 0) broadcast({ type: 'files_added', files: fileList });
+    if (preparedFiles.length > 0) broadcast({ type: 'files_added', files: preparedFiles });
     const message: BatchCreatedMessage = {
       type: 'elements_batch_created',
       elements: createdElements
@@ -964,7 +972,7 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
       success: true,
       count: createdElements.length,
       elementIds: createdElements.map(el => el.id),
-      fileCount: fileList.length,
+      fileCount: preparedFiles.length,
       ...(parsedConfig.warnings.length > 0 ? { warnings: parsedConfig.warnings } : {}),
       message: `Converted Mermaid diagram into ${createdElements.length} element${createdElements.length === 1 ? '' : 's'}.`
     });
