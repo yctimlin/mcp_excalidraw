@@ -273,11 +273,11 @@ export const tools: Tool[] = [
             themeVariables: {
               type: 'object',
               properties: {
-                fontSize: { type: 'string' }
+                fontSize: { type: 'string', description: 'Pixel size from 8px to 72px, e.g. "20px"' }
               }
             },
-            maxEdges: { type: 'number' },
-            maxTextSize: { type: 'number' }
+            maxEdges: { type: 'integer', minimum: 1, maximum: 1000 },
+            maxTextSize: { type: 'integer', minimum: 1, maximum: 100000 }
           }
         }
       },

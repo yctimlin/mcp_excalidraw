@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { MermaidConfigSchema } from './mermaid-config.js';
 import fs from 'fs';
 import logger from '../utils/logger.js';
 import {
@@ -387,17 +388,7 @@ export async function callExcalidrawTool(
       case 'create_from_mermaid': {
         const params = z.object({
           mermaidDiagram: z.string(),
-          config: z.object({
-            elbow: z.union([
-              z.boolean(),
-              z.object({ flowchart: z.boolean().optional(), state: z.boolean().optional() })
-            ]).optional(),
-            themeVariables: z.object({
-              fontSize: z.string().optional()
-            }).optional(),
-            maxEdges: z.number().optional(),
-            maxTextSize: z.number().optional()
-          }).optional()
+          config: MermaidConfigSchema.optional()
         }).parse(args);
 
         logger.info('Creating Excalidraw elements from Mermaid diagram via MCP', {

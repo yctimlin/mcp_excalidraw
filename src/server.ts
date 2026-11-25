@@ -32,6 +32,7 @@ import { isMainModule } from './core/entry.js';
 import { writePidFile, removePidFile } from './core/pidfile.js';
 import { renderScene, RenderError, MAX_SCALE } from './core/render/index.js';
 import { convertMermaid } from './core/render/excalidraw-node/mermaid.js';
+import { parseMermaidConfig, describeConfigError } from './core/mermaid-config.js';
 import {
   CanvasFileImmutabilityError,
   CanvasFileReferenceError,
@@ -904,10 +905,13 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
         error: 'Mermaid diagram definition is required'
       });
     }
-    if (config !== undefined && (config === null || typeof config !== 'object' || Array.isArray(config))) {
+    let parsedConfig;
+    try {
+      parsedConfig = parseMermaidConfig(config);
+    } catch (error) {
       return res.status(400).json({
         success: false,
-        error: 'config must be an object'
+        error: `Invalid config: ${describeConfigError(error)}`
       });
     }
 
@@ -918,7 +922,7 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
 
     let converted;
     try {
-      converted = await convertMermaid(mermaidDiagram, { config });
+      converted = await convertMermaid(mermaidDiagram, { config: parsedConfig.config });
     } catch (error) {
       logger.warn('Mermaid conversion failed:', error);
       return res.status(400).json({
@@ -961,6 +965,7 @@ app.post('/api/elements/from-mermaid', async (req: Request, res: Response) => {
       count: createdElements.length,
       elementIds: createdElements.map(el => el.id),
       fileCount: fileList.length,
+      ...(parsedConfig.warnings.length > 0 ? { warnings: parsedConfig.warnings } : {}),
       message: `Converted Mermaid diagram into ${createdElements.length} element${createdElements.length === 1 ? '' : 's'}.`
     });
   } catch (error) {

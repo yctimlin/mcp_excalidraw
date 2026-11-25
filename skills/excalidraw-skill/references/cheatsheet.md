@@ -132,7 +132,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `create_from_mermaid` | Mermaid diagram to Excalidraw | `mermaidDiagram` |
+| `create_from_mermaid` | Mermaid diagram to Excalidraw (headless) | `mermaidDiagram`; optional `config`: `elbow`, `themeVariables.fontSize`, `maxEdges` (≤ 1000), `maxTextSize` (≤ 100000) |
 
 Notes:
 

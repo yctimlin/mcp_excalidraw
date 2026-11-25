@@ -139,6 +139,51 @@ async function checkImageFallback() {
   assert(render.status === 200, 'image fallback did not render');
 }
 
+function edges(count) {
+  return `flowchart TD\n${Array.from({ length: count }, (_, i) => `  N${i} --> N${i + 1}`).join('\n')}`;
+}
+
+async function checkLimitsAndConfig() {
+  await clear();
+  const atLimit = await post('/api/elements/from-mermaid', { mermaidDiagram: edges(500) });
+  assert(atLimit.status === 200 && atLimit.body.success, 'a 500-edge diagram should convert (default limit)');
+  await clear();
+  const overLimit = await post('/api/elements/from-mermaid', { mermaidDiagram: edges(501) });
+  assert(overLimit.status === 400 && /limit/i.test(overLimit.body.error), `501 edges should hit the default limit: ${JSON.stringify(overLimit.body)}`);
+  assert((await request('/api/elements')).body.count === 0, 'a rejected diagram must not change the scene');
+
+  // Callers can lower the limits but not raise them past the server ceilings:
+  // conversion is synchronous and would otherwise block the event loop.
+  const raised = await post('/api/elements/from-mermaid', { mermaidDiagram: edges(10), config: { maxEdges: 100000 } });
+  assert(raised.status === 400 && /maxEdges/.test(raised.body.error), 'maxEdges above the ceiling should be rejected');
+  const textRaised = await post('/api/elements/from-mermaid', { mermaidDiagram: 'flowchart TD\n A-->B', config: { maxTextSize: 1e7 } });
+  assert(textRaised.status === 400, 'maxTextSize above the ceiling should be rejected');
+  const lowered = await post('/api/elements/from-mermaid', { mermaidDiagram: edges(10), config: { maxEdges: 5 } });
+  assert(lowered.status === 400 && /limit/i.test(lowered.body.error), 'a lowered maxEdges should be enforced');
+
+  for (const config of [{ themeVariables: { fontSize: '1000000px' } }, { themeVariables: { fontSize: 'abc' } }, { themeVariables: 5 }, { maxEdges: 1.5 }, { maxEdges: -1 }, 'nope', null]) {
+    const bad = await post('/api/elements/from-mermaid', { mermaidDiagram: 'flowchart TD\n A-->B', config });
+    assert(bad.status === 400 && bad.body.success === false, `config ${JSON.stringify(config)} should be rejected with 400`);
+  }
+
+  // Elbow arrows are a supported option
+  await clear();
+  const elbow = await post('/api/elements/from-mermaid', { mermaidDiagram: 'flowchart TD\n  A --> B\n  B --> C', config: { elbow: true } });
+  assert(elbow.body.success, `elbow flowchart failed: ${JSON.stringify(elbow.body)}`);
+  const arrows = (await request('/api/elements')).body.elements.filter(e => e.type === 'arrow');
+  assert(arrows.length > 0 && arrows.every(a => a.elbowed === true), 'config { elbow: true } should give elbow arrows');
+
+  // Options of the old mermaid.js engine are accepted and reported as ignored
+  await clear();
+  const legacy = await post('/api/elements/from-mermaid', {
+    mermaidDiagram: 'flowchart TD\n A-->B',
+    config: { startOnLoad: false, flowchart: { curve: 'linear' }, maxEdges: 500, maxTextSize: 50000, themeVariables: { fontSize: '20px' } },
+  });
+  assert(legacy.status === 200 && legacy.body.success, `legacy config should still convert: ${JSON.stringify(legacy.body)}`);
+  assert(legacy.body.warnings?.some(w => w.includes('startOnLoad')) && legacy.body.warnings.some(w => w.includes('flowchart')),
+    `ignored keys should be reported: ${JSON.stringify(legacy.body.warnings)}`);
+}
+
 async function checkErrors() {
   const empty = await post('/api/elements/from-mermaid', {});
   assert(empty.status === 400, 'missing diagram should be rejected');
@@ -187,6 +232,8 @@ async function checkMcpTool() {
   const result = await callExcalidrawTool('create_from_mermaid', { mermaidDiagram: DIAGRAMS.sequence });
   const body = JSON.parse(result.content[0].text);
   assert(body.success && body.count > 0, `unexpected MCP result: ${result.content[0].text}`);
+  const tooBig = await callExcalidrawTool('create_from_mermaid', { mermaidDiagram: 'flowchart TD\n A-->B', config: { maxEdges: 100000 } });
+  assert(tooBig.isError === true, 'MCP should reject maxEdges above the ceiling');
   assert(!/browser|open the canvas/i.test(result.content[0].text), 'MCP result still tells the user to open a tab');
 }
 
@@ -209,6 +256,7 @@ try {
       [`headless ${name} converts and renders with no tab`, () => checkHeadlessDiagram(name, definition)]),
     ['conversions merge into the scene with unique ids', checkMerge],
     ['image-fallback diagrams store their files', checkImageFallback],
+    ['size limits and config validation', checkLimitsAndConfig],
     ['invalid input is rejected', checkErrors],
     ['connected tab receives the converted elements once', checkConnectedTab],
     ['mermaid CLI works with no tab open', checkCli],

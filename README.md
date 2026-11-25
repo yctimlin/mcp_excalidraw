@@ -264,7 +264,7 @@ Since v2.1, `screenshot`, `export_to_image` and `get_canvas_screenshot` render w
 - **Options** (CLI flags / REST body / MCP params): `background`, `dark`, `scale` 1–4 (PNG), `padding`, `elementIds` or `frameId` to render a subset, `embedFonts` (CLI/REST only), `embedScene` (PNG only, default false). `EXCALIDRAW_RENDER_MAX_DIM` (default 8192) caps the PNG's largest side.
 - **`--renderer browser`** asks an open canvas tab to render instead (the pre-2.1 path). Useful for a second opinion; it is slower and the tab's unsynced edits are discarded first.
 - **Offline**: `render docs/arch.excalidraw --out docs/arch.png` needs no canvas server at all — a natural fit for CI jobs that keep images next to committed diagrams.
-- **Mermaid** (`mermaid`, `create_from_mermaid`) also converts headless: `@excalidraw/mermaid-to-excalidraw` v3 (Pele layout engine) runs in the server under the same jsdom setup and bundled font metrics, and open tabs just receive the resulting elements.
+- **Mermaid** (`mermaid`, `create_from_mermaid`) also converts headless: `@excalidraw/mermaid-to-excalidraw` v3 (Pele layout engine) runs in the server under the same jsdom setup and bundled font metrics, and open tabs just receive the resulting elements. Optional `config` (REST/MCP): `elbow` (`true`, or `{flowchart, state}`), `themeVariables.fontSize` (`8px`–`72px`), and lower-only limits `maxEdges` (≤ 1000, default 500) and `maxTextSize` (≤ 100000, default 50000); old mermaid.js options such as `startOnLoad` are ignored and reported in `warnings`.
 - **Still browser-bound**: `set_viewport`.
 
 The renderer bundle is built by `npm run build:server` (`dist/render/excalidraw-node.mjs`); `npm run test:render` exercises it without a browser.
