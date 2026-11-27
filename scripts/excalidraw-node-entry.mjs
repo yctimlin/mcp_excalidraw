@@ -11,7 +11,9 @@ export {
   serializeAsJSON,
   elementsOverlappingBBox,
   restoreElements,
+  convertToExcalidrawElements,
   getCommonBounds,
   FONT_FAMILY
 } from '@excalidraw/excalidraw';
+export { parseMermaidToExcalidraw } from '@excalidraw/mermaid-to-excalidraw';
 export { prepareServerScene, cleanElementForExcalidraw } from '../frontend/src/utils/scene.ts';

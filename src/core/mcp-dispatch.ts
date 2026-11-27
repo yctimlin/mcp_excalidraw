@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { MermaidConfigSchema } from './mermaid-config.js';
 import fs from 'fs';
 import logger from '../utils/logger.js';
 import {
@@ -7,7 +8,6 @@ import {
   ServerElement,
   ExcalidrawElementType
 } from '../types.js';
-import { EXPRESS_SERVER_URL } from './config.js';
 import {
   updateElementOnCanvas,
   deleteElementOnCanvas,
@@ -388,17 +388,7 @@ export async function callExcalidrawTool(
       case 'create_from_mermaid': {
         const params = z.object({
           mermaidDiagram: z.string(),
-          config: z.object({
-            startOnLoad: z.boolean().optional(),
-            flowchart: z.object({
-              curve: z.enum(['linear', 'basis']).optional()
-            }).optional(),
-            themeVariables: z.object({
-              fontSize: z.string().optional()
-            }).optional(),
-            maxEdges: z.number().optional(),
-            maxTextSize: z.number().optional()
-          }).optional()
+          config: MermaidConfigSchema.optional()
         }).parse(args);
 
         logger.info('Creating Excalidraw elements from Mermaid diagram via MCP', {
@@ -407,18 +397,18 @@ export async function callExcalidrawTool(
         });
 
         try {
-          // Send the Mermaid diagram to the frontend via the API
-          // The frontend will use mermaid-to-excalidraw to convert it
+          // The canvas server converts the diagram in Node; no browser tab is needed.
           const result = await sendMermaid(params.mermaidDiagram, params.config);
 
-          logger.info('Mermaid diagram sent to frontend for conversion', {
-            success: result.success
+          logger.info('Mermaid diagram converted', {
+            success: result.success,
+            count: result.count
           });
 
           return {
             content: [{
               type: 'text',
-              text: `Mermaid diagram sent for conversion!\n\n${JSON.stringify(result, null, 2)}\n\n⚠️  Note: The actual conversion happens in the frontend canvas with DOM access. Open the canvas at ${EXPRESS_SERVER_URL} to see the diagram rendered.`
+              text: JSON.stringify(result, null, 2)
             }]
           };
         } catch (error) {

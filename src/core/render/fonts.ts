@@ -83,6 +83,16 @@ export function collectFontEntriesFromSvg(svg: string): FontEntry[] {
   return [...seen.values()];
 }
 
+// SVG images embedded in a scene (e.g. Mermaid diagrams that fall back to an
+// image) carry their own text in a base64 data URL, invisible to the scan
+// above. Make sure the bundled sans and monospace faces are loaded for them.
+export function withEmbeddedSvgFonts(entries: FontEntry[], svg: string): FontEntry[] {
+  if (!svg.includes('data:image/svg+xml')) return entries;
+  const have = new Set(entries.map(e => e.id));
+  const extra = [9, 3].filter(id => !have.has(id)).map(id => REGISTRY[id]!);
+  return [...entries, ...extra];
+}
+
 export function fontFilePath(entry: FontEntry): string {
   return path.join(FONTS_DIR, entry.file);
 }

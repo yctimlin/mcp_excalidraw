@@ -45,7 +45,7 @@ USER nodejs
 COPY --chown=nodejs:nodejs package*.json ./
 
 # Install only production dependencies.
-# The frontend libs (react, mermaid, @excalidraw/*) are devDependencies —
+# The frontend libs (react, @excalidraw/*) are devDependencies —
 # the MCP stdio server never imports them at runtime.
 RUN npm ci --omit=dev && npm cache clean --force
 

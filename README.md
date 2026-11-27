@@ -13,7 +13,7 @@ One canvas, three ways to drive it:
 - **MCP Server** — 27 tools over stdio for any Model Context Protocol client (Claude Desktop, Cursor, Codex CLI, Antigravity, ...). Speaks MCP `2026-07-28` (`server/discover`, per-request `_meta` envelope, tool calls without a handshake) and stays compatible with 2025-era clients that open with `initialize`.
 - **REST API** — plain HTTP for LangChain and custom frameworks.
 
-Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or accounts. Mermaid conversion runs in the local browser canvas; `share` is optional and uploads an encrypted scene to excalidraw.com by default (or your own instance). The canvas page loads Excalidraw's fonts from the esm.sh CDN.
+Core drawing runs locally (Node ≥ 20, MIT licensed) — no API keys or accounts. Mermaid conversion runs headless in the canvas server (Pele layout, no browser tab); `share` is optional and uploads an encrypted scene to excalidraw.com by default (or your own instance). The canvas page loads Excalidraw's fonts from the esm.sh CDN.
 
 ## Demo
 
@@ -181,7 +181,7 @@ No clone, no config:
 ```bash
 # start the canvas (drawing commands auto-start it too) and open it
 npx -y mcp-excalidraw-server start
-open http://127.0.0.1:3000   # optional: watch live (only mermaid needs the tab)
+open http://127.0.0.1:3000   # optional: watch live (no tab is required for any command except `set_viewport` and `--renderer browser`)
 
 # draw something
 echo '[
@@ -232,7 +232,7 @@ Where the skill shines:
 
 `npx -y mcp-excalidraw-server <command>` or (after `npm i -g mcp-excalidraw-server`) `excalidraw-canvas <command>`.
 
-Conventions: JSON results on stdout — except `describe` (plain text by design) and raw-content output when `--out` is omitted (`export` prints the scene JSON, `screenshot --format svg` prints SVG). Diagnostics on stderr. Exit codes: `0` ok, `1` error, `2` usage, `3` canvas unreachable, `4` browser tab required (only `mermaid` and `screenshot --renderer browser`). Canvas URL from `EXPRESS_SERVER_URL` or `--url`. Canvas-driving commands auto-start the server; `status` only reports current state. Explicit `start` overrides the `EXCALIDRAW_NO_AUTOSTART=1` opt-out (it's user intent, not auto-start).
+Conventions: JSON results on stdout — except `describe` (plain text by design) and raw-content output when `--out` is omitted (`export` prints the scene JSON, `screenshot --format svg` prints SVG). Diagnostics on stderr. Exit codes: `0` ok, `1` error, `2` usage, `3` canvas unreachable, `4` browser tab required (only `screenshot --renderer browser`). Canvas URL from `EXPRESS_SERVER_URL` or `--url`. Canvas-driving commands auto-start the server; `status` only reports current state. Explicit `start` overrides the `EXCALIDRAW_NO_AUTOSTART=1` opt-out (it's user intent, not auto-start).
 
 | Command | Description |
 |---------|-------------|
@@ -247,7 +247,7 @@ Conventions: JSON results on stdout — except `describe` (plain text by design)
 | `screenshot` | Render the canvas headless (no browser tab): `--out f.png\|f.svg`, `--format png\|svg`, `--scale 1-4`, `--dark`, `--padding N`, `--no-background`, `--ids a,b`, `--frame <id>`, `--no-embed-fonts`, `--embed-scene` (editable PNG); `--renderer browser` uses an open tab instead |
 | `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` / embedded-scene PNG file to PNG/SVG offline — no canvas server, same flags as `screenshot` |
 | `export [--out f.excalidraw] [--format json\|obsidian]` / `import [file\|-] [--replace]` | Scene file I/O — a `.md` out path writes Obsidian's `.excalidraw.md` format; `import` also reads PNGs with embedded scenes |
-| `mermaid [file\|-]` | Mermaid → canvas (browser tab required) |
+| `mermaid [file\|-]` | Mermaid → canvas, converted headless in the server (no browser tab) |
 | `snapshot save\|list\|restore <name>` | Named snapshots |
 | `arrange align\|distribute\|group\|ungroup\|lock\|unlock\|duplicate` | Layout ops (`--ids a,b,c`, `--to left\|horizontal\|...`) |
 | `share` | Encrypted upload → shareable URL (excalidraw.com by default; configurable self-hosted target) |
@@ -264,7 +264,8 @@ Since v2.1, `screenshot`, `export_to_image` and `get_canvas_screenshot` render w
 - **Options** (CLI flags / REST body / MCP params): `background`, `dark`, `scale` 1–4 (PNG), `padding`, `elementIds` or `frameId` to render a subset, `embedFonts` (CLI/REST only), `embedScene` (PNG only, default false). `EXCALIDRAW_RENDER_MAX_DIM` (default 8192) caps the PNG's largest side.
 - **`--renderer browser`** asks an open canvas tab to render instead (the pre-2.1 path). Useful for a second opinion; it is slower and the tab's unsynced edits are discarded first.
 - **Offline**: `render docs/arch.excalidraw --out docs/arch.png` needs no canvas server at all — a natural fit for CI jobs that keep images next to committed diagrams.
-- **Still browser-bound**: Mermaid conversion (`mermaid`, `create_from_mermaid`) and `set_viewport`.
+- **Mermaid** (`mermaid`, `create_from_mermaid`) also converts headless: `@excalidraw/mermaid-to-excalidraw` v3 (Pele layout engine) runs in the server under the same jsdom setup and bundled font metrics, and open tabs just receive the resulting elements. Optional `config` (REST/MCP): `elbow` (`true`, or `{flowchart, state}`), `themeVariables.fontSize` (`8px`–`72px`), and lower-only limits `maxEdges` (≤ 1000, default 500) and `maxTextSize` (≤ 100000, default 50000); old mermaid.js options such as `startOnLoad` are ignored and reported in `warnings`.
+- **Still browser-bound**: `set_viewport`.
 
 The renderer bundle is built by `npm run build:server` (`dist/render/excalidraw-node.mjs`); `npm run test:render` exercises it without a browser.
 
@@ -691,7 +692,7 @@ Yes — that's the core feature. `describe` returns a structured text summary (i
 
 ### Do I need a browser open?
 
-No. Screenshots and PNG/SVG exports render headless inside the canvas server (see [Headless Rendering](#headless-rendering)), and everything else — creating, querying, updating elements, `.excalidraw` files — never needed one. Only two things still need an open tab: Mermaid conversion (it lays out in the browser) and viewport control (it moves a camera). The CLI exits with code `4` and tells you when that is the case. Opening the URL is still the way for a human to watch the agent draw.
+No. Screenshots and PNG/SVG exports render headless inside the canvas server (see [Headless Rendering](#headless-rendering)), and everything else — creating, querying, updating elements, `.excalidraw` files — never needed one. Only viewport control (it moves a camera) still needs an open tab, plus the optional `--renderer browser` screenshot path. Mermaid conversion runs in the canvas server. The CLI exits with code `4` and tells you when that is the case. Opening the URL is still the way for a human to watch the agent draw.
 
 ### Are my diagrams persistent?
 
@@ -728,7 +729,7 @@ Yes, if the MCP process can reach the canvas server. Keep the MCP process on the
 ## Troubleshooting
 
 - **CLI exit code 3** (canvas unreachable): the server is not running for an inspecting command such as `status`, auto-start is disabled (`EXCALIDRAW_NO_AUTOSTART=1`), or `EXPRESS_SERVER_URL` points at a non-loopback host. Run `start` explicitly or fix the env.
-- **CLI exit code 4** (browser required): only `mermaid` and `screenshot --renderer browser` need an open tab — open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` to render headless.
+- **CLI exit code 4** (browser required): only `screenshot --renderer browser` needs an open tab — open `http://127.0.0.1:3000` in a browser and retry, or drop `--renderer browser` to render headless.
 - **Headless PNG shows boxes instead of CJK/emoji text**: the bundled fonts cover Latin scripts; for other scripts resvg falls back to the machine's fonts (a warning is printed). Install a CJK font on the machine running the canvas server.
 - **Canvas not updating**: confirm `EXPRESS_SERVER_URL` points at the running canvas server (`status` shows the URL in use).
 - **Canvas page shows plain fonts offline**: the page loads Excalidraw's hand-drawn fonts from the esm.sh CDN, so without internet access it falls back to system fonts. Headless screenshots and `render` use the bundled fonts and are unaffected.
@@ -737,7 +738,7 @@ Yes, if the MCP process can reach the canvas server. Keep the MCP process on the
 ## Known Issues / TODO
 
 - [x] **Optional persistent storage**: set `EXCALIDRAW_DATA_DIR` for atomic local restart recovery; the default remains in-memory.
-- [ ] **Mermaid conversion requires a browser**: `mermaid` / `create_from_mermaid` lay out the diagram in the frontend. Image export and screenshots are headless since v2.1.
+- [x] **Mermaid conversion without a browser**: `mermaid` / `create_from_mermaid` convert in the canvas server with `@excalidraw/mermaid-to-excalidraw` v3 (Pele). Image export and screenshots have been headless since v2.1.
 - [ ] **Canvas page fonts come from a CDN**: serving them from the canvas server would make the page work fully offline.
 
 Contributions welcome!

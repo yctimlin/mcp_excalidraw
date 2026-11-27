@@ -12,7 +12,7 @@
 ## CLI Reference
 
 `npx -y mcp-excalidraw-server <command>` (or `excalidraw-canvas <command>` after `npm i -g`).
-JSON results on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `mermaid` and `screenshot --renderer browser`). Explicit `start` overrides `EXCALIDRAW_NO_AUTOSTART=1`.
+JSON results on stdout — except `describe` (plain text) and raw-content output when `--out` is omitted (`export` scene JSON, `screenshot --format svg`). Diagnostics on stderr. Exit codes: 0 ok, 1 error, 2 usage, 3 canvas unreachable, 4 browser tab required (only `screenshot --renderer browser`). Explicit `start` overrides `EXCALIDRAW_NO_AUTOSTART=1`.
 
 ### Server
 
@@ -43,7 +43,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 | `render [file\|-]` | Render a `.excalidraw` / `.excalidraw.md` / embedded-scene PNG file to PNG/SVG offline — no canvas server; same flags as `screenshot` |
 | `export [--out f.excalidraw] [--format json\|obsidian]` | Scene as .excalidraw JSON (stdout without `--out`); a `.md` out path writes Obsidian's .excalidraw.md format |
 | `import [file\|-] [--replace]` | Import .excalidraw JSON, Obsidian .excalidraw.md, or PNG with an embedded scene (merge by default; binary stdin supported) |
-| `mermaid [file\|-]` | Render Mermaid onto the canvas (**browser tab required**) |
+| `mermaid [file\|-]` | Convert Mermaid and add it to the canvas (headless, no browser tab) |
 | `share` | Encrypted upload → shareable URL (excalidraw.com or a configured self-hosted target) |
 | `clear --yes` | Wipe the canvas |
 | `snapshot save\|list\|restore [name]` | Named canvas snapshots |
@@ -132,7 +132,7 @@ JSON results on stdout — except `describe` (plain text) and raw-content output
 
 | Tool | Description | Required params |
 |------|-------------|-----------------|
-| `create_from_mermaid` | Mermaid diagram to Excalidraw | `mermaidDiagram` |
+| `create_from_mermaid` | Mermaid diagram to Excalidraw (headless) | `mermaidDiagram`; optional `config`: `elbow`, `themeVariables.fontSize`, `maxEdges` (≤ 1000), `maxTextSize` (≤ 100000) |
 
 Notes:
 
@@ -162,7 +162,7 @@ Notes:
 | `GET` | `/api/elements/search?type=...` | Search with filters (exact string match + bbox) |
 | `POST` | `/api/elements/batch` | Batch create |
 | `POST` | `/api/elements/sync` | Overwrite import (clear + write) |
-| `POST` | `/api/elements/from-mermaid` | Mermaid conversion via frontend |
+| `POST` | `/api/elements/from-mermaid` | Mermaid conversion (runs in the server) |
 
 ### Export
 

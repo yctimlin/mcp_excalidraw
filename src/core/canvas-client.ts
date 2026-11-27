@@ -12,6 +12,11 @@ export interface ApiResponse {
   count?: number;
 }
 
+export interface MermaidResponse extends ApiResponse {
+  elementIds?: string[];
+  fileCount?: number;
+}
+
 export interface SyncResponse {
   element?: ServerElement;
   elements?: ServerElement[];
@@ -251,8 +256,8 @@ export async function getSnapshot(name: string): Promise<{ name: string; element
   return data.snapshot;
 }
 
-export async function sendMermaid(mermaidDiagram: string, config?: Record<string, unknown>): Promise<ApiResponse> {
-  return requestJson('/api/elements/from-mermaid', {
+export async function sendMermaid(mermaidDiagram: string, config?: Record<string, unknown>): Promise<MermaidResponse> {
+  return requestJson<MermaidResponse>('/api/elements/from-mermaid', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mermaidDiagram, config })

@@ -38,6 +38,14 @@ export interface ExcalidrawNodeModule {
     elements: readonly any[]; bounds: Record<string, any>; type: 'overlap';
   }) => any[];
   FONT_FAMILY: Record<string, number>;
+  convertToExcalidrawElements: (
+    skeletons: readonly any[],
+    opts?: { regenerateIds?: boolean }
+  ) => any[];
+  parseMermaidToExcalidraw: (
+    definition: string,
+    config?: Record<string, unknown>
+  ) => Promise<{ elements: any[]; files?: Record<string, any> }>;
   // The canvas tab's own scene preparation (frontend/src/utils/scene.ts)
   prepareServerScene: (elements: readonly any[]) => any[];
   cleanElementForExcalidraw: (element: any) => any;
