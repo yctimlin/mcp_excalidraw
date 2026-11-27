@@ -184,6 +184,27 @@ async function checkLimitsAndConfig() {
     `ignored keys should be reported: ${JSON.stringify(legacy.body.warnings)}`);
 }
 
+async function checkEntityHeadersStayOnTop() {
+  // Class and ER diagrams pin the name to the top of a tall box with the
+  // members below; scene preparation used to re-center it onto the divider.
+  const { prepareScene } = await import('../dist/core/render/excalidraw-node/index.js');
+  for (const [name, diagram, title] of [
+    ['class', 'classDiagram\n  class Runner {\n    +Run(ctx, wg)\n    -postMessage(entry)\n  }', 'Runner'],
+    ['ER', 'erDiagram\n  AGENT ||--o{ MESSAGE : sends\n  AGENT {\n    string id PK\n    string kind\n  }', 'AGENT'],
+  ]) {
+    await clear();
+    const result = await post('/api/elements/from-mermaid', { mermaidDiagram: diagram });
+    assert(result.body.success, `${name} diagram failed: ${JSON.stringify(result.body)}`);
+    const prepared = await prepareScene((await request('/api/elements')).body.elements);
+    const header = prepared.find(e => e.type === 'text' && e.text === title);
+    const dividers = prepared.filter(e => e.type === 'line').map(line => line.y);
+    assert(header && dividers.length > 0, `${name}: missing header or divider`);
+    const firstDivider = Math.min(...dividers);
+    assert(header.y + header.height <= firstDivider,
+      `${name}: "${title}" (y ${Math.round(header.y)}, h ${Math.round(header.height)}) overlaps the divider at y ${Math.round(firstDivider)}`);
+  }
+}
+
 async function checkErrors() {
   const empty = await post('/api/elements/from-mermaid', {});
   assert(empty.status === 400, 'missing diagram should be rejected');
@@ -257,6 +278,7 @@ try {
     ['conversions merge into the scene with unique ids', checkMerge],
     ['image-fallback diagrams store their files', checkImageFallback],
     ['size limits and config validation', checkLimitsAndConfig],
+    ['class and ER names stay above their member rows', checkEntityHeadersStayOnTop],
     ['invalid input is rejected', checkErrors],
     ['connected tab receives the converted elements once', checkConnectedTab],
     ['mermaid CLI works with no tab open', checkCli],

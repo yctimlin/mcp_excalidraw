@@ -148,10 +148,18 @@ const recenterBoundShapeTextElements = (
       return element
     }
 
+    // Only middle-aligned labels are centered vertically. Diagram converters
+    // (Mermaid class and ER entities) pin the name to the top of a tall box
+    // and lay the members out below it, so keep their vertical position.
+    const verticalAlign = (textElement as { verticalAlign?: string }).verticalAlign
+    const centerVertically = verticalAlign === undefined || verticalAlign === 'middle'
+
     return {
       ...element,
       x: container.x + (container.width - textElement.width) / 2,
-      y: container.y + (container.height - textElement.height) / 2,
+      y: centerVertically
+        ? container.y + (container.height - textElement.height) / 2
+        : element.y,
     }
   })
 }
