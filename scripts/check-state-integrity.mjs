@@ -134,6 +134,83 @@ async function checkSnapshotsAreImmutable() {
   );
 }
 
+async function checkBoundArrowsKeepWaypoints() {
+  await request('/api/elements/clear', { method: 'DELETE' });
+  const from = { id: 'from', type: 'rectangle', x: 100, y: 100, width: 160, height: 44 };
+  const to = { id: 'to', type: 'rectangle', x: 600, y: 400, width: 160, height: 44 };
+  // Out of the right edge of `from`, across, down, and into the left edge of `to`.
+  const given = [[0, 0], [120, 0], [120, 300], [340, 300]];
+  const bends = [[380, 122], [380, 422]];
+  await request('/api/elements/batch', {
+    method: 'POST',
+    ...json({ elements: [
+      from,
+      to,
+      { id: 'routed', type: 'arrow', x: 260, y: 122, points: given, start: { id: 'from' }, end: { id: 'to' } },
+      { id: 'plain', type: 'arrow', x: 0, y: 0, start: { id: 'from' }, end: { id: 'to' } },
+      { id: 'two', type: 'arrow', x: 0, y: 0, points: [[0, 0], [50, 50]], start: { id: 'from' }, end: { id: 'to' } },
+    ] }),
+  });
+  const byId = async () => new Map((await request('/api/elements')).body.elements.map(el => [el.id, el]));
+  const absolute = el => el.points.map(([px, py]) => [el.x + px, el.y + py]);
+  const same = (a, b) => Math.abs(a[0] - b[0]) < 0.01 && Math.abs(a[1] - b[1]) < 0.01;
+  // How far a point lies outside a box: 0 inside it, and no more than the binding gap at an anchored end.
+  const outside = (pt, box) => Math.hypot(
+    Math.max(box.x - pt[0], 0, pt[0] - (box.x + box.width)),
+    Math.max(box.y - pt[1], 0, pt[1] - (box.y + box.height)),
+  );
+  const anchored = (pt, box) => outside(pt, box) > 0 && outside(pt, box) <= 8.01;
+
+  let stored = await byId();
+  const routed = stored.get('routed');
+  assert(
+    routed.points.length === 4,
+    `a bound arrow created with 4 points was stored with ${routed.points.length}: ${JSON.stringify(routed.points)}`,
+  );
+  let path = absolute(routed);
+  assert(
+    same(path[1], bends[0]) && same(path[2], bends[1]),
+    `the caller's waypoints moved: ${JSON.stringify(path)}`,
+  );
+  assert(
+    anchored(path[0], from) && anchored(path[3], to),
+    `the ends of a routed bound arrow are not at its shapes' edges: ${JSON.stringify(path)}`,
+  );
+
+  // A bound arrow with no waypoints routes edge to edge, exactly as it always did.
+  const plain = stored.get('plain');
+  const two = stored.get('two');
+  assert(plain.points.length === 2 && two.points.length === 2, 'a plain bound arrow gained or lost points');
+  assert(
+    JSON.stringify([plain.x, plain.y, plain.points]) === JSON.stringify([two.x, two.y, two.points]),
+    'two points and no points no longer route the same way',
+  );
+  assert(
+    anchored(absolute(plain)[0], from) && anchored(absolute(plain)[1], to),
+    `a plain bound arrow is not anchored at its shapes' edges: ${JSON.stringify(absolute(plain))}`,
+  );
+
+  // The single-element create path.
+  await request('/api/elements', {
+    method: 'POST',
+    ...json({ id: 'single', type: 'arrow', x: 260, y: 122, points: given, start: { id: 'from' }, end: { id: 'to' } }),
+  });
+  assert((await byId()).get('single').points.length === 4, 'creating one bound arrow dropped its waypoints');
+
+  // Moving a shape re-anchors that end and leaves the waypoints where the caller put them.
+  await request('/api/elements/to', { method: 'PUT', ...json({ y: 500 }) });
+  stored = await byId();
+  path = absolute(stored.get('routed'));
+  assert(path.length === 4, `moving a bound shape flattened a routed arrow to ${path.length} points`);
+  assert(same(path[1], bends[0]) && same(path[2], bends[1]), `moving a bound shape moved the waypoints: ${JSON.stringify(path)}`);
+  assert(anchored(path[3], { ...to, y: 500 }), `the arrow did not follow the shape that moved: ${JSON.stringify(path)}`);
+  assert(anchored(path[0], from), 'the end bound to the shape that stayed came loose');
+
+  // An update that sets points keeps them, as it did before.
+  await request('/api/elements/plain', { method: 'PUT', ...json({ points: given }) });
+  assert((await byId()).get('plain').points.length === 4, 'an update with waypoints dropped them');
+}
+
 function runCli(args) {
   return new Promise(resolve => {
     const cli = spawn(process.execPath, [join(repoRoot, 'dist', 'bin.js'), ...args], {
@@ -261,6 +338,7 @@ try {
     ['replace imports are atomic', () => checkReplaceImportIsAtomic(importScene)],
     ['sync input is validated before use', checkSyncValidatesBeforeUse],
     ['saved snapshots are immutable', checkSnapshotsAreImmutable],
+    ['bound arrows keep the waypoints they were given', checkBoundArrowsKeepWaypoints],
     ['CLI snapshot restore is atomic and keeps frames', checkCliSnapshotRestore],
     ['MCP snapshot restore is atomic and keeps frames', () => checkMcpSnapshotRestore(callExcalidrawTool)],
   ];
